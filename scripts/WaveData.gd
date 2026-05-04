@@ -1,0 +1,214 @@
+extends Node
+
+# =============================================
+# 챕터 / 스테이지 / 웨이브 데이터 테이블
+# - 챕터: 배경·컨셉이 바뀌는 단위
+# - 스테이지: 플레이 버튼을 누르는 단위 (1-1, 1-2…)
+# - 웨이브: 스테이지 안의 전투 진행
+#
+# 웨이브 구조:
+#   base_hp / base_speed / base_damage : 해당 웨이브 기준치
+#   composition : [{"enemy": "타입", "count": N}, ...]
+#   적 타입: normal / scout(빠름) / brute(거인) / swarm(무리)
+#   타입별 배율은 Enemy.gd TYPE_PRESETS 참조
+# =============================================
+
+const CHAPTERS = [
+	{   # 챕터 1
+		"stages": [
+			{   # 스테이지 1-1 (FTUE 튜토리얼: 시스템 점진 도입)
+				"waves": [
+					# W1: 자동 공격 학습
+					{"type": "normal", "base_hp": 30, "base_speed": 50, "base_damage": 5,
+					 "composition": [{"enemy": "normal", "count": 3}]},
+
+					# W2: 카드 선택 학습
+					{"type": "normal", "base_hp": 35, "base_speed": 55, "base_damage": 6,
+					 "composition": [{"enemy": "normal", "count": 5}]},
+
+					# W3: 새 적 scout 등장
+					{"type": "normal", "base_hp": 40, "base_speed": 58, "base_damage": 6,
+					 "composition": [
+						{"enemy": "normal", "count": 4},
+						{"enemy": "scout",  "count": 2},
+					 ]},
+
+					# W4: 하인 소환 학습 (적 강도 약함)
+					{"type": "normal", "base_hp": 45, "base_speed": 60, "base_damage": 6,
+					 "composition": [
+						{"enemy": "normal", "count": 3},
+						{"enemy": "scout",  "count": 2},
+					 ]},
+
+					# W5: 새 적 brute 등장
+					{"type": "normal", "base_hp": 50, "base_speed": 60, "base_damage": 7,
+					 "composition": [
+						{"enemy": "normal", "count": 3},
+						{"enemy": "brute",  "count": 1},
+					 ]},
+
+					# W6: 영혼 상점 학습
+					{"type": "shop"},
+
+					# W7: 약한 미니 보스 (튜토리얼 마무리)
+					{"type": "mid_boss", "base_hp": 50, "base_speed": 60, "base_damage": 7,
+					 "composition": [
+						{"enemy": "normal", "count": 2},
+					 ],
+					 "boss_hp": 500, "boss_speed": 45, "boss_damage": 10,
+					 "boss_name": "사관후보생", "crown_shards": 2},
+				]
+			},
+			{   # 스테이지 1-2 (적 타입 하나씩 소개)
+				"waves": [
+					{"type": "normal", "base_hp": 50, "base_speed": 60, "base_damage": 8,
+					 "composition": [{"enemy": "normal", "count": 5}]},
+
+					{"type": "normal", "base_hp": 60, "base_speed": 62, "base_damage": 8,
+					 "composition": [
+						{"enemy": "normal", "count": 4},
+						{"enemy": "scout",  "count": 3},
+					 ]},
+
+					{"type": "normal", "base_hp": 70, "base_speed": 65, "base_damage": 10,
+					 "composition": [
+						{"enemy": "normal", "count": 5},
+						{"enemy": "brute",  "count": 1},
+					 ]},
+
+					{"type": "normal", "base_hp": 80, "base_speed": 65, "base_damage": 10,
+					 "composition": [
+						{"enemy": "swarm",  "count": 12},
+						{"enemy": "normal", "count": 2},
+					 ]},
+
+					{"type": "mid_boss", "base_hp": 70, "base_speed": 63, "base_damage": 8,
+					 "composition": [
+						{"enemy": "normal", "count": 3},
+						{"enemy": "scout",  "count": 2},
+					 ],
+					 "boss_hp": 1000, "boss_speed": 50, "boss_damage": 15, "boss_name": "수습 용사 인턴", "crown_shards": 3},
+
+					{"type": "shop"},
+
+					{"type": "normal", "base_hp": 90, "base_speed": 68, "base_damage": 12,
+					 "composition": [
+						{"enemy": "brute",  "count": 3},
+						{"enemy": "normal", "count": 3},
+					 ]},
+
+					{"type": "normal", "base_hp": 100, "base_speed": 70, "base_damage": 12,
+					 "composition": [
+						{"enemy": "scout",  "count": 6},
+						{"enemy": "normal", "count": 3},
+					 ]},
+
+					{"type": "normal", "base_hp": 110, "base_speed": 72, "base_damage": 14,
+					 "composition": [
+						{"enemy": "normal", "count": 4},
+						{"enemy": "scout",  "count": 3},
+						{"enemy": "brute",  "count": 2},
+						{"enemy": "swarm",  "count": 5},
+					 ]},
+
+					{"type": "boss", "base_hp": 100, "base_speed": 70, "base_damage": 12,
+					 "composition": [
+						{"enemy": "normal", "count": 3},
+						{"enemy": "brute",  "count": 2},
+					 ],
+					 "boss_hp": 3000, "boss_speed": 45, "boss_damage": 10, "boss_name": "정의의 용사 알바생", "crown_shards": 10},
+				]
+			},
+			{   # 스테이지 1-3 (특화 웨이브 비중 ↑)
+				"waves": [
+					{"type": "normal", "base_hp": 130, "base_speed": 70, "base_damage": 14,
+					 "composition": [
+						{"enemy": "normal", "count": 4},
+						{"enemy": "scout",  "count": 4},
+					 ]},
+
+					{"type": "normal", "base_hp": 150, "base_speed": 72, "base_damage": 15,
+					 "composition": [
+						{"enemy": "normal", "count": 5},
+						{"enemy": "brute",  "count": 2},
+						{"enemy": "swarm",  "count": 5},
+					 ]},
+
+					{"type": "normal", "base_hp": 170, "base_speed": 75, "base_damage": 17,
+					 "composition": [
+						{"enemy": "swarm", "count": 18},
+					 ]},  # 무리 폭주
+
+					{"type": "normal", "base_hp": 190, "base_speed": 76, "base_damage": 18,
+					 "composition": [
+						{"enemy": "brute", "count": 4},
+						{"enemy": "scout", "count": 4},
+					 ]},  # 양극 (느린 거인 + 빠른 척후병)
+
+					{"type": "mid_boss", "base_hp": 170, "base_speed": 74, "base_damage": 15,
+					 "composition": [
+						{"enemy": "scout", "count": 5},
+					 ],
+					 "boss_hp": 2000, "boss_speed": 58, "boss_damage": 22, "boss_name": "용사 대리", "crown_shards": 5},
+
+					{"type": "shop"},
+
+					{"type": "normal", "base_hp": 210, "base_speed": 78, "base_damage": 20,
+					 "composition": [
+						{"enemy": "normal", "count": 5},
+						{"enemy": "brute",  "count": 3},
+						{"enemy": "scout",  "count": 3},
+					 ]},
+
+					{"type": "normal", "base_hp": 225, "base_speed": 80, "base_damage": 22,
+					 "composition": [
+						{"enemy": "swarm", "count": 14},
+						{"enemy": "brute", "count": 2},
+					 ]},
+
+					{"type": "normal", "base_hp": 240, "base_speed": 82, "base_damage": 24,
+					 "composition": [
+						{"enemy": "normal", "count": 5},
+						{"enemy": "scout",  "count": 5},
+						{"enemy": "brute",  "count": 3},
+						{"enemy": "swarm",  "count": 8},
+					 ]},
+
+					{"type": "boss", "base_hp": 220, "base_speed": 78, "base_damage": 20,
+					 "composition": [
+						{"enemy": "brute", "count": 4},
+						{"enemy": "swarm", "count": 6},
+					 ],
+					 "boss_hp": 6000, "boss_speed": 52, "boss_damage": 18, "boss_name": "정의의 용사 과장", "crown_shards": 15},
+				]
+			},
+		]
+	},
+	# 챕터 2 이후 추가 예정
+]
+
+# 웨이브 데이터 반환
+static func get_wave(ch: int, st: int, w: int) -> Dictionary:
+	return CHAPTERS[ch]["stages"][st]["waves"][w]
+
+# 스테이지의 웨이브 수
+static func stage_wave_count(ch: int, st: int) -> int:
+	return CHAPTERS[ch]["stages"][st]["waves"].size()
+
+# 챕터의 스테이지 수
+static func chapter_stage_count(ch: int) -> int:
+	return CHAPTERS[ch]["stages"].size()
+
+# 챕터 수
+static func chapter_count() -> int:
+	return CHAPTERS.size()
+
+# 웨이브 총 적 수 (composition 합)
+static func wave_enemy_count(ch: int, st: int, w: int) -> int:
+	var data: Dictionary = get_wave(ch, st, w)
+	if not data.has("composition"):
+		return 0
+	var total: int = 0
+	for entry: Dictionary in data["composition"]:
+		total += entry["count"]
+	return total

@@ -1,0 +1,11 @@
+# Godot 4 생성 파일
+.godot/
+
+# 익스포트 설정 (API 키 포함 가능)
+export_presets.cfg
+
+# macOS
+.DS_Store
+
+# 게임 세이브 (로컬 테스트용)
+*.cfg

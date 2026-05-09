@@ -53,6 +53,8 @@ var _guide_layer: CanvasLayer = null
 var _guide_active: bool = false
 var _guide_tween: Tween = null
 var _special_atk_tip_shown: bool = false
+var _freeze_for_special_tip: bool = false
+var _special_atk_unlocked: bool = false
 
 # 카드 풀 - 스킬 카드는 획득 후 제거, 스탯 카드는 계속 등장
 const SKILL_CARDS = [
@@ -111,6 +113,7 @@ const WAVE_CLEAR_LINES = [
 	"...이 정도냐.",
 ]
 const BOSS_INTRO_DIALOGUES = {
+	"사관후보생":          "이, 이건 훈련 아닌가요...?",
 	"수습 용사 인턴":      "저, 저는 아직 수습 기간이라서요...!",
 	"용사 대리":           "부하들이 다 쓰러졌군요. 제가 직접 처리하겠습니다.",
 	"정의의 용사 알바생":  "의뢰받은 일은 끝내고 가겠습니다.",
@@ -134,6 +137,7 @@ var tracker_btns: Array = []
 
 @onready var wave_label = $UI/WaveLabel
 @onready var castle_hp_bar = $Castle/CastleHP
+@onready var castle_vis: Node2D = $Castle/CastleSprite
 @onready var card_panel = $UI/CardPanel
 @onready var card_btn1 = $UI/CardPanel/Card1
 @onready var card_btn2 = $UI/CardPanel/Card2
@@ -154,9 +158,12 @@ var tracker_btns: Array = []
 @onready var souls_label = $UI/SoulsLabel
 @onready var crown_label = $UI/ResultPanel/CrownLabel
 @onready var shop_panel = $UI/ShopPanel
+@onready var shop_title: Label = $UI/ShopPanel/ShopTitle
 @onready var shop_items_node = $UI/ShopPanel/ShopItems
 @onready var shop_close_btn = $UI/ShopPanel/CloseBtn
 @onready var fade_rect: ColorRect = $UI/FadeRect
+
+var _shop_btn_pulse_tween: Tween = null
 
 func _ready() -> void:
 	available_skill_cards = SKILL_CARDS.duplicate()
@@ -180,7 +187,7 @@ func _ready() -> void:
 	if _is_tutorial():
 		souls += 30
 	_update_souls_ui()
-	if randf() < 0.3:
+	if not _is_tutorial() and randf() < 0.3:
 		get_tree().create_timer(1.5).timeout.connect(func() -> void:
 			var line: String = GAME_START_LINES[randi() % GAME_START_LINES.size()]
 			show_dialogue(line, Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
@@ -213,6 +220,13 @@ func start_wave() -> void:
 	for entry: Dictionary in composition:
 		enemies_alive += entry["count"]
 
+	# 특수기 튜토리얼 웨이브는 화면 상단 근처에 스폰 (브루트가 너무 느려 화면 밖에서 동결되는 문제 방지)
+	var spawn_y_min: float = -200.0
+	var spawn_y_max: float = -50.0
+	if _is_tutorial() and current_wave == 4:
+		spawn_y_min = -40.0
+		spawn_y_max = 60.0
+
 	for entry: Dictionary in composition:
 		var preset: Dictionary = Enemy.TYPE_PRESETS[entry["enemy"]]
 		var e_hp: float = base_hp * preset["hp_mult"]
@@ -220,7 +234,7 @@ func start_wave() -> void:
 		var e_dmg: int = int(base_damage * preset["damage_mult"])
 		for i in entry["count"]:
 			var e = EnemyScene.instantiate()
-			e.position = Vector2(randf_range(100, 924), randf_range(-50, -200))
+			e.position = Vector2(randf_range(100, 924), randf_range(spawn_y_min, spawn_y_max))
 			e.enemy_type = entry["enemy"]
 			e.hp = e_hp
 			e.max_hp = e_hp
@@ -251,14 +265,17 @@ func start_wave() -> void:
 func _on_boss_entered(boss_node: Node) -> void:
 	_screen_shake(6.0, 0.35)
 	_show_boss_title(boss_node.boss_name)
-	# 보스 첫 대사 (보스 머리 위, 1.2초 후)
-	var intro: String = BOSS_INTRO_DIALOGUES.get(boss_node.boss_name, "...")
-	get_tree().create_timer(1.2).timeout.connect(func() -> void:
-		if is_instance_valid(boss_node):
-			show_dialogue(intro, Color(1.0, 0.9, 0.35, 1), boss_node.global_position + Vector2(0, -40))
-	)
-	# 영주 냉소 대사 (영주 머리 위, 2.5초 후)
+	# 보스 첫 대사 (보스 머리 위, 1.2초 후) - 보스가 아직 살아있고 웨이브 진행 중일 때만
+	var intro: String = BOSS_INTRO_DIALOGUES.get(boss_node.boss_name, "")
+	if intro != "":
+		get_tree().create_timer(1.2).timeout.connect(func() -> void:
+			if is_instance_valid(boss_node) and wave_active:
+				show_dialogue(intro, Color(1.0, 0.9, 0.35, 1), boss_node.global_position + Vector2(0, -40))
+		)
+	# 영주 냉소 대사 (영주 머리 위, 2.5초 후) - 웨이브 진행 중일 때만
 	get_tree().create_timer(2.5).timeout.connect(func() -> void:
+		if not wave_active:
+			return
 		var line: String = BOSS_ENTRANCE_PLAYER_LINES[randi() % BOSS_ENTRANCE_PLAYER_LINES.size()]
 		show_dialogue(line, Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 	)
@@ -311,6 +328,7 @@ func castle_take_damage(dmg: int) -> void:
 		return
 	castle_hp -= dmg
 	castle_hp_bar.value = float(castle_hp) / float(castle_max_hp) * 100.0
+	castle_vis.set_hp_ratio(float(castle_hp) / float(castle_max_hp))
 	if castle_hp <= 0:
 		castle_hp = 0
 		castle_hp_bar.value = 0.0
@@ -330,7 +348,7 @@ func end_wave() -> void:
 		game_clear()
 		return
 
-	if randf() < 0.3:
+	if not _is_tutorial() and randf() < 0.3:
 		var line: String = WAVE_CLEAR_LINES[randi() % WAVE_CLEAR_LINES.size()]
 		show_dialogue(line, Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 
@@ -474,6 +492,13 @@ func _show_shop() -> void:
 
 func _close_shop() -> void:
 	_close_guide()
+	# 튜토리얼 상점 가이드 복원
+	if _shop_btn_pulse_tween and _shop_btn_pulse_tween.is_valid():
+		_shop_btn_pulse_tween.kill()
+	_shop_btn_pulse_tween = null
+	shop_close_btn.modulate = Color.WHITE
+	shop_title.text = "영혼 상점"
+	shop_title.add_theme_font_size_override("font_size", 26)
 	shop_panel.visible = false
 	summon_container.visible = true
 	minion_slot_label.visible = true
@@ -535,6 +560,16 @@ func game_over() -> void:
 	shop_panel.visible = false
 	summon_container.visible = false
 	minion_slot_label.visible = false
+
+	# 적·하인 처리 정지
+	for e in enemies_node.get_children():
+		if is_instance_valid(e):
+			e.set_physics_process(false)
+			e.set_process(false)
+	for m in minions_node.get_children():
+		if is_instance_valid(m):
+			m.set_physics_process(false)
+			m.set_process(false)
 
 	# 영주 대사
 	var line: String = GAME_OVER_PLAYER_LINES[randi() % GAME_OVER_PLAYER_LINES.size()]
@@ -643,8 +678,11 @@ func _process(_delta) -> void:
 func _on_attack_pressed() -> void:
 	if not wave_active:
 		return
+	if _is_tutorial() and not _special_atk_unlocked:
+		return
 	if souls < SPECIAL_COST:
 		return
+	_close_guide()  # 특수기 팁 동결 중이면 즉시 해제
 	souls -= SPECIAL_COST
 	_update_souls_ui()
 	player.use_special_attack()
@@ -653,6 +691,10 @@ func _update_attack_button() -> void:
 	if not wave_active:
 		attack_button.disabled = true
 		attack_button.text = "⚔ 특수기 (%d)" % SPECIAL_COST
+		return
+	if _is_tutorial() and not _special_atk_unlocked:
+		attack_button.disabled = true
+		attack_button.text = "⚔ 특수기 🔒"
 		return
 	if souls >= SPECIAL_COST:
 		attack_button.disabled = false
@@ -682,9 +724,6 @@ func _apply_facility_bonuses() -> void:
 func add_souls(n: int) -> void:
 	souls += int(n * soul_gain_mult)
 	_update_souls_ui()
-	if _is_tutorial() and not _special_atk_tip_shown and souls >= SPECIAL_COST:
-		_special_atk_tip_shown = true
-		show_tutorial_tip("특수기로 적을 한번에 처리하세요!", attack_button, 8.0)
 
 func _update_souls_ui() -> void:
 	souls_label.text = "영혼: %d" % souls
@@ -958,18 +997,32 @@ func _is_tutorial() -> bool:
 func _trigger_wave_guide(wave_idx: int) -> void:
 	match wave_idx:
 		0:
-			show_tutorial_tip("적들이 자동으로 공격합니다.\n성의 HP를 지키세요!", castle_hp_bar, 4.5)
+			show_tutorial_tip("또 몰려오는군.\n성이 무너지면 끝이다.", castle_hp_bar, 4.5)
 		1:
 			if summon_btns.size() > 0:
 				show_tutorial_tip("전사를 소환해 방어를 강화하세요!", summon_btns[0], 12.0)
 		2:
 			get_tree().create_timer(1.5).timeout.connect(func() -> void:
-				show_dialogue("빠른 놈이군.", Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
+				if wave_active:
+					show_dialogue("빠른 놈이군.", Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 			)
 		4:
 			get_tree().create_timer(1.5).timeout.connect(func() -> void:
-				show_dialogue("...큰 놈이다.", Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
+				if wave_active:
+					show_dialogue("...큰 놈이다.", Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 			)
+			if not _special_atk_tip_shown:
+				get_tree().create_timer(2.0).timeout.connect(func() -> void:
+					if not wave_active or _special_atk_tip_shown:
+						return
+					souls = max(souls, SPECIAL_COST)
+					_update_souls_ui()
+					_special_atk_tip_shown = true
+					_special_atk_unlocked = true
+					show_tutorial_tip("특수기로 적을 한번에 처리하세요!", attack_button, 0.0)
+					_freeze_for_special_tip = true
+					_set_battle_freeze(true)
+				)
 
 func _show_card_guide() -> void:
 	var r1: Rect2 = card_btn1.get_global_rect()
@@ -982,7 +1035,16 @@ func _show_card_guide() -> void:
 	])
 
 func _show_shop_guide() -> void:
-	show_tutorial_tip("영혼으로 강화할 수 있습니다.\n닫기를 눌러 계속하세요.", shop_close_btn, 60.0)
+	# 타이틀을 튜토리얼 안내 문구로 교체
+	shop_title.text = "💡 영혼으로 강화하고 '다음 웨이브'를 누르세요"
+	shop_title.add_theme_font_size_override("font_size", 17)
+
+	# 닫기 버튼 노란 펄스 글로우
+	if _shop_btn_pulse_tween and _shop_btn_pulse_tween.is_valid():
+		_shop_btn_pulse_tween.kill()
+	_shop_btn_pulse_tween = create_tween().set_loops()
+	_shop_btn_pulse_tween.tween_property(shop_close_btn, "modulate", Color(1.6, 1.35, 0.5, 1), 0.5)
+	_shop_btn_pulse_tween.tween_property(shop_close_btn, "modulate", Color(1.0, 1.0, 1.0, 1), 0.5)
 
 func show_tutorial_tip(message: String, target: Control, duration: float = 4.0) -> void:
 	_close_guide()
@@ -1032,7 +1094,8 @@ func show_tutorial_tip(message: String, target: Control, duration: float = 4.0) 
 	_guide_tween.tween_property(arrow, "position:y", arrow_base_y + 8, 0.4)
 	_guide_tween.tween_property(arrow, "position:y", arrow_base_y, 0.4)
 
-	get_tree().create_timer(duration).timeout.connect(func() -> void: _close_guide())
+	if duration > 0:
+		get_tree().create_timer(duration).timeout.connect(func() -> void: _close_guide())
 
 func show_guide(message: String, targets: Array) -> void:
 	_close_guide()
@@ -1109,6 +1172,17 @@ func show_guide(message: String, targets: Array) -> void:
 	_guide_tween.tween_property(arrow, "position:y", arrow_base_y + 10, 0.45)
 	_guide_tween.tween_property(arrow, "position:y", arrow_base_y, 0.45)
 
+func _set_battle_freeze(frozen: bool) -> void:
+	for e in enemies_node.get_children():
+		if is_instance_valid(e):
+			e.set_physics_process(not frozen)
+			e.set_process(not frozen)
+	for m in minions_node.get_children():
+		if is_instance_valid(m):
+			m.set_physics_process(not frozen)
+			m.set_process(not frozen)
+	player.set_physics_process(not frozen)
+
 func _close_guide() -> void:
 	if _guide_tween != null and _guide_tween.is_valid():
 		_guide_tween.kill()
@@ -1117,3 +1191,6 @@ func _close_guide() -> void:
 		_guide_layer.queue_free()
 	_guide_layer = null
 	_guide_active = false
+	if _freeze_for_special_tip:
+		_freeze_for_special_tip = false
+		_set_battle_freeze(false)

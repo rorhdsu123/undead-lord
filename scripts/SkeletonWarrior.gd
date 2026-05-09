@@ -1,36 +1,33 @@
 extends CharacterBody2D
 
-# 언데드 하인 - 4종 + 경험치 진화 지원
-# (파일명은 호환성 위해 유지, 실질은 범용 Minion)
-
 const ArrowScene = preload("res://scenes/Arrow.tscn")
 
-const TYPE_PRESETS = {
+const TYPE_PRESETS: Dictionary = {
 	"warrior": {
 		"hp": 100, "speed": 90, "damage": 10, "range": 30, "interval": 1.0,
-		"color": Color(0.85, 0.85, 0.8, 1), "scale": 1.0,
-		"behavior": "melee", "evolves": true,
+		"scale": 1.0, "behavior": "melee", "evolves": true, "variant": 1,
 	},
 	"archer": {
 		"hp": 60, "speed": 80, "damage": 8, "range": 260, "interval": 1.2,
-		"color": Color(0.95, 0.85, 0.35, 1), "scale": 0.85,
-		"behavior": "ranged", "evolves": true,
+		"scale": 0.85, "behavior": "ranged", "evolves": true, "variant": 2,
 	},
 	"tank": {
 		"hp": 250, "speed": 50, "damage": 14, "range": 30, "interval": 1.3,
-		"color": Color(0.55, 0.55, 0.75, 1), "scale": 1.45,
-		"behavior": "melee", "evolves": true,
+		"scale": 1.45, "behavior": "melee", "evolves": true, "variant": 3,
 	},
 	"bomber": {
 		"hp": 50, "speed": 115, "damage": 60, "range": 25, "interval": 999.0,
-		"color": Color(1.0, 0.45, 0.2, 1), "scale": 0.85,
-		"behavior": "bomber", "evolves": false,
+		"scale": 0.85, "behavior": "bomber", "evolves": false, "variant": 1,
 	},
 }
 
-const EVOLUTION_THRESHOLDS = [5, 10]      # Lv2: 5킬, Lv3: 10킬
-const EVOLUTION_MULTS = [1.0, 1.25, 1.6]  # Lv1, Lv2, Lv3 (HP·데미지 배율)
+const EVOLUTION_THRESHOLDS: Array = [5, 10]
+const EVOLUTION_MULTS: Array = [1.0, 1.25, 1.6]
 const BOMB_RADIUS: float = 80.0
+const BASE_SPRITE_SCALE: float = 0.07
+const BOUNDS: Rect2 = Rect2(0, -230, 1024, 930)
+
+static var _cached_frames: Dictionary = {}
 
 var minion_type: String = "warrior"
 var hp: float = 100.0
@@ -44,21 +41,16 @@ var behavior: String = "melee"
 var evolves: bool = true
 var base_max_hp: float = 100.0
 var base_scale: float = 1.0
-var type_color: Color = Color.WHITE
 
-# 진화
 var kill_count: int = 0
 var level: int = 1
-
-# 내부 상태
 var attack_timer: float = 0.0
 var current_target = null
 var game = null
+var _anim_state: String = ""
 
-const BOUNDS = Rect2(0, -230, 1024, 930)
-
-@onready var hp_bar = $HPBar
-@onready var sprite = $Sprite
+@onready var hp_bar: ProgressBar = $HPBar
+@onready var anim_sprite: AnimatedSprite2D = $AnimSprite
 
 func _ready() -> void:
 	add_to_group("minions")
@@ -73,16 +65,81 @@ func _ready() -> void:
 	attack_interval = preset["interval"]
 	behavior = preset["behavior"]
 	evolves = preset["evolves"]
-	type_color = preset["color"]
 	base_scale = preset["scale"]
-	sprite.color = type_color
-	sprite.scale = Vector2.ONE * base_scale
+
+	var variant: int = preset["variant"]
+	anim_sprite.sprite_frames = _get_sprite_frames(variant)
+	anim_sprite.scale = Vector2.ONE * BASE_SPRITE_SCALE * base_scale
+	anim_sprite.animation_finished.connect(_on_animation_finished)
+	_play_anim("idle")
+
+static func _get_sprite_frames(variant: int) -> SpriteFrames:
+	if variant in _cached_frames:
+		return _cached_frames[variant]
+	var sf: SpriteFrames = _build_sprite_frames(variant)
+	_cached_frames[variant] = sf
+	return sf
+
+static func _build_sprite_frames(variant: int) -> SpriteFrames:
+	var sf: SpriteFrames = SpriteFrames.new()
+	sf.remove_animation("default")
+	var base_path: String = "res://assets/characters/skeleton_warrior_%d/" % variant
+	var anim_map: Dictionary = {
+		"idle": "Idle",
+		"walk": "Walking",
+		"slash": "Slashing",
+		"hurt": "Hurt",
+		"die": "Dying",
+	}
+	for anim_name: String in anim_map:
+		sf.add_animation(anim_name)
+		sf.set_animation_loop(anim_name, anim_name not in ["slash", "hurt", "die"])
+		sf.set_animation_speed(anim_name, 15.0)
+		var folder: String = anim_map[anim_name]
+		var dir: DirAccess = DirAccess.open(base_path + folder)
+		if not dir:
+			continue
+		var files: Array[String] = []
+		dir.list_dir_begin()
+		var fname: String = dir.get_next()
+		while fname != "":
+			if fname.ends_with(".png"):
+				files.append(fname)
+			fname = dir.get_next()
+		files.sort()
+		for f: String in files:
+			var tex: Texture2D = load(base_path + folder + "/" + f)
+			if tex:
+				sf.add_frame(anim_name, tex)
+	return sf
+
+func _play_anim(anim: String) -> void:
+	if not is_instance_valid(anim_sprite):
+		return
+	if _anim_state == anim:
+		return
+	_anim_state = anim
+	anim_sprite.play(anim)
+
+func _on_animation_finished() -> void:
+	match _anim_state:
+		"slash", "hurt":
+			_anim_state = ""
+		"die":
+			queue_free()
 
 func _physics_process(delta: float) -> void:
+	if _anim_state == "die":
+		return
+
 	if not is_instance_valid(current_target):
 		current_target = _find_nearest_enemy()
 	if not current_target:
 		velocity = Vector2.ZERO
+		if _anim_state not in ["slash", "hurt"]:
+			_play_anim("idle")
+		position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
+		position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
 		return
 
 	var dist: float = position.distance_to(current_target.position)
@@ -90,19 +147,25 @@ func _physics_process(delta: float) -> void:
 		var dir: Vector2 = (current_target.position - position).normalized()
 		velocity = dir * move_speed
 		move_and_slide()
-		position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
-		position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
 		attack_timer = 0.0
+		anim_sprite.flip_h = dir.x < 0
+		if _anim_state not in ["hurt"]:
+			_play_anim("walk")
 	else:
 		velocity = Vector2.ZERO
+		if _anim_state not in ["slash", "hurt"]:
+			_play_anim("idle")
 		attack_timer += delta
 		if attack_timer >= attack_interval:
 			attack_timer = 0.0
 			_do_attack()
+	position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
+	position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
 
 func _do_attack() -> void:
 	if not is_instance_valid(current_target):
 		return
+	_play_anim("slash")
 	match behavior:
 		"ranged":
 			_shoot_arrow()
@@ -155,11 +218,11 @@ func _evolve() -> void:
 	var prev_max: float = max_hp
 	var mult: float = EVOLUTION_MULTS[level - 1]
 	max_hp = base_max_hp * mult
-	hp += max_hp - prev_max  # 진화 시 증가분만큼 회복
+	hp += max_hp - prev_max
 	hp = min(hp, max_hp)
 	attack_damage = base_damage * mult
-	sprite.scale = Vector2.ONE * base_scale * (1.0 + 0.15 * (level - 1))
-	sprite.color = type_color.lerp(Color(1, 1, 1, 1), 0.25 * (level - 1))
+	anim_sprite.scale = Vector2.ONE * BASE_SPRITE_SCALE * base_scale * (1.0 + 0.15 * (level - 1))
+	anim_sprite.modulate = Color.WHITE.lerp(Color(1.3, 1.1, 0.5, 1.0), 0.35 * (level - 1))
 	hp_bar.value = (hp / max_hp) * 100.0
 	if game and game.has_method("spawn_evolve_effect"):
 		game.spawn_evolve_effect(global_position)
@@ -178,15 +241,19 @@ func _find_nearest_enemy():
 	return nearest
 
 func take_damage(dmg: float) -> void:
+	if _anim_state == "die":
+		return
 	hp -= dmg
 	hp_bar.value = (hp / max_hp) * 100.0
 	if hp <= 0:
 		_die()
+		return
+	_play_anim("hurt")
 
 func _die() -> void:
+	_play_anim("die")
 	if game:
 		if game.has_method("spawn_death_effect"):
-			game.spawn_death_effect(global_position, type_color)
+			game.spawn_death_effect(global_position, Color.WHITE)
 		if game.has_method("minion_died"):
 			game.minion_died()
-	queue_free()

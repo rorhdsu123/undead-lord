@@ -24,7 +24,7 @@ const TYPE_PRESETS: Dictionary = {
 const EVOLUTION_THRESHOLDS: Array = [5, 10]
 const EVOLUTION_MULTS: Array = [1.0, 1.25, 1.6]
 const BOMB_RADIUS: float = 80.0
-const BASE_SPRITE_SCALE: float = 0.07
+const BASE_SPRITE_SCALE: float = 0.246
 const BOUNDS: Rect2 = Rect2(0, -230, 1024, 930)
 
 static var _cached_frames: Dictionary = {}
@@ -48,12 +48,16 @@ var attack_timer: float = 0.0
 var current_target = null
 var game = null
 var _anim_state: String = ""
+var lifesteal: float = 0.0
+var _died_reported: bool = false
 
 @onready var hp_bar: ProgressBar = $HPBar
 @onready var anim_sprite: AnimatedSprite2D = $AnimSprite
 
 func _ready() -> void:
 	add_to_group("minions")
+	collision_layer = 2
+	collision_mask = 0
 	var preset: Dictionary = TYPE_PRESETS.get(minion_type, TYPE_PRESETS["warrior"])
 	hp = preset["hp"]
 	max_hp = preset["hp"]
@@ -80,37 +84,25 @@ static func _get_sprite_frames(variant: int) -> SpriteFrames:
 	_cached_frames[variant] = sf
 	return sf
 
+static func _load_anim(sf: SpriteFrames, anim: String, base_path: String, prefix: String, sub: String, count: int, loop: bool) -> void:
+	sf.add_animation(anim)
+	sf.set_animation_loop(anim, loop)
+	sf.set_animation_speed(anim, 15.0)
+	for i: int in count:
+		var tex: Texture2D = load("%s%s/%s_%s_%03d.png" % [base_path, sub, prefix, sub, i])
+		if tex:
+			sf.add_frame(anim, tex)
+
 static func _build_sprite_frames(variant: int) -> SpriteFrames:
 	var sf: SpriteFrames = SpriteFrames.new()
 	sf.remove_animation("default")
 	var base_path: String = "res://assets/characters/skeleton_warrior_%d/" % variant
-	var anim_map: Dictionary = {
-		"idle": "Idle",
-		"walk": "Walking",
-		"slash": "Slashing",
-		"hurt": "Hurt",
-		"die": "Dying",
-	}
-	for anim_name: String in anim_map:
-		sf.add_animation(anim_name)
-		sf.set_animation_loop(anim_name, anim_name not in ["slash", "hurt", "die"])
-		sf.set_animation_speed(anim_name, 15.0)
-		var folder: String = anim_map[anim_name]
-		var dir: DirAccess = DirAccess.open(base_path + folder)
-		if not dir:
-			continue
-		var files: Array[String] = []
-		dir.list_dir_begin()
-		var fname: String = dir.get_next()
-		while fname != "":
-			if fname.ends_with(".png"):
-				files.append(fname)
-			fname = dir.get_next()
-		files.sort()
-		for f: String in files:
-			var tex: Texture2D = load(base_path + folder + "/" + f)
-			if tex:
-				sf.add_frame(anim_name, tex)
+	var prefix: String = "0_Skeleton_Warrior"
+	_load_anim(sf, "idle",  base_path, prefix, "Idle",     18, true)
+	_load_anim(sf, "walk",  base_path, prefix, "Walking",  24, true)
+	_load_anim(sf, "slash", base_path, prefix, "Slashing", 12, false)
+	_load_anim(sf, "hurt",  base_path, prefix, "Hurt",     12, false)
+	_load_anim(sf, "die",   base_path, prefix, "Dying",    15, false)
 	return sf
 
 func _play_anim(anim: String) -> void:
@@ -177,6 +169,7 @@ func _do_attack() -> void:
 func _melee_strike() -> void:
 	var prev_hp: float = current_target.hp
 	current_target.take_damage(attack_damage)
+	_heal(attack_damage * lifesteal)
 	if prev_hp > 0 and prev_hp <= attack_damage:
 		_on_kill()
 
@@ -188,6 +181,8 @@ func _shoot_arrow() -> void:
 	arrow.position = position
 	arrow.direction = dir
 	arrow.damage = attack_damage
+	arrow.source = self
+	arrow.lifesteal = lifesteal
 	game.add_child(arrow)
 
 func _explode() -> void:
@@ -202,8 +197,7 @@ func _explode() -> void:
 			e.take_damage(attack_damage)
 	if game.has_method("spawn_explosion_effect"):
 		game.spawn_explosion_effect(position)
-	if game.has_method("minion_died"):
-		game.minion_died()
+	_report_died()
 	queue_free()
 
 func _on_kill() -> void:
@@ -240,6 +234,12 @@ func _find_nearest_enemy():
 			nearest = e
 	return nearest
 
+func _heal(amount: float) -> void:
+	if amount <= 0.0:
+		return
+	hp = min(hp + amount, max_hp)
+	hp_bar.value = (hp / max_hp) * 100.0
+
 func take_damage(dmg: float) -> void:
 	if _anim_state == "die":
 		return
@@ -252,8 +252,17 @@ func take_damage(dmg: float) -> void:
 
 func _die() -> void:
 	_play_anim("die")
-	if game:
-		if game.has_method("spawn_death_effect"):
-			game.spawn_death_effect(global_position, Color.WHITE)
-		if game.has_method("minion_died"):
-			game.minion_died()
+	if game and game.has_method("spawn_death_effect"):
+		game.spawn_death_effect(global_position, Color.WHITE)
+	_report_died()
+
+func _report_died() -> void:
+	if _died_reported:
+		return
+	_died_reported = true
+	if game and game.has_method("minion_died"):
+		game.minion_died(position, minion_type)
+
+func sacrifice() -> void:
+	_report_died()
+	queue_free()

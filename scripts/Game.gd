@@ -11,13 +11,16 @@ var max_minions: int = 3
 var minion_attack_bonus: float = 1.0
 var minion_move_speed_bonus: float = 1.0
 var minion_cost_reduction: int = 0
+var minion_hp_bonus: float = 1.0
+var minion_range_bonus: float = 0.0
+var minion_lifesteal: float = 0.0
 
 # 소환 가능 하인 타입 (영혼 비용 + UI 라벨)
 const MINION_TYPES = [
-	{"id": "warrior", "label": "⚔ 전사",  "cost": 15},
-	{"id": "archer",  "label": "🏹 궁수",  "cost": 25},
-	{"id": "bomber",  "label": "💣 폭탄병", "cost": 20},
-	{"id": "tank",    "label": "🛡 탱크",  "cost": 35},
+	{"id": "warrior", "label": "전사",  "cost": 15},
+	{"id": "archer",  "label": "궁수",  "cost": 25},
+	{"id": "bomber",  "label": "폭탄병", "cost": 20},
+	{"id": "tank",    "label": "탱크",  "cost": 35},
 ]
 var summon_btns: Array = []
 
@@ -37,9 +40,33 @@ var graveyard_heal: int = 0
 # 영혼 자원
 var souls: int = 0
 const SPECIAL_COST: int = 50
+const DOOM_SPECIAL_COST: int = 35
+var special_cost: int = SPECIAL_COST
 
 # 언데드 하인 상태
 var active_minions: int = 0
+
+# 키스톤 (런 빌드 곱 레이어)
+var lord_card_count: int = 0
+var summoner_card_count: int = 0
+var keystone1: String = ""   # "" | "kingdom"(영주) | "legion"(소환사)
+var keystone2: String = ""   # "" | "berserker" | "cataclysm" | "horde" | "echo" | "ritual"
+# 파생값(_recompute_keystones에서 재계산)
+var keystone_lord_atk_mult: float = 1.0
+var keystone_minion_atk_mult: float = 1.0
+var keystone_revive_chance: float = 0.0
+var keystone_echo_dmg: float = 0.0
+var keystone_special_mult: float = 1.0
+const KEYSTONE_ECHO_RADIUS: float = 90.0
+var keystone_sacrifice_dmg_mult: float = 1.0
+var keystone_sacrifice_radius_mult: float = 1.0
+var keystone_sacrifice_refill: bool = false
+
+# MD10 희생 시스템 (1탭 자동)
+const SACRIFICE_RADIUS: float = 70.0      # 가제: 폭발 반경 (폭탄병 BOMB_RADIUS=80보다 작게)
+const SACRIFICE_DMG: float = 40.0         # 가제: 폭발 피해 (폭탄병 60보다 약하게, MD8 위계)
+const SACRIFICE_COOLDOWN: float = 8.0     # 가제: 발동당 쿨다운
+var sacrifice_cooldown: float = 0.0       # 남은 쿨다운(초)
 
 # 이번 판 왕관 조각 획득량
 var crowns_this_run: int = 0
@@ -58,21 +85,24 @@ var _special_atk_unlocked: bool = false
 
 # 카드 풀 - 스킬 카드는 획득 후 제거, 스탯 카드는 계속 등장
 const SKILL_CARDS = [
-	{"id": "death_aura",  "label": "죽음의 오라\n주변 적 지속 피해"},
-	{"id": "skull_throw", "label": "저주 해골 던지기\n관통 투사체 발사"},
-	{"id": "decay_curse", "label": "부패의 저주\n범위 내 적 슬로우"},
+	{"id": "death_aura"},
+	{"id": "skull_throw"},
+	{"id": "decay_curse"},
 ]
 const STAT_CARDS = [
-	{"id": "arsenal",       "label": "무기고\n공격력 +20%"},
-	{"id": "wall",          "label": "성벽 강화\n최대 HP +50"},
-	{"id": "graveyard",     "label": "묘지\n웨이브 클리어 시 HP +20 회복"},
-	{"id": "atk_speed",     "label": "영주 공격속도 +20%"},
-	{"id": "minion_speed",  "label": "언데드 가속\n하인 이동 속도 +15%"},
-	{"id": "range_basic",   "label": "저주의 손길\n기본 공격 범위 +30"},
-	{"id": "range_all",     "label": "어둠의 확장\n모든 범위 +25%"},
-	{"id": "minion_attack", "label": "언데드 강화\n하인 공격력 +20%"},
-	{"id": "minion_count",  "label": "군세 확장\n최대 소환 수 +1"},
-	{"id": "summon_speed",  "label": "어둠의 효율\n소환 비용 -5 영혼"},
+	{"id": "arsenal"},
+	{"id": "wall"},
+	{"id": "graveyard"},
+	{"id": "atk_speed"},
+	{"id": "minion_speed"},
+	{"id": "range_basic"},
+	{"id": "range_all"},
+	{"id": "minion_attack"},
+	{"id": "minion_count"},
+	{"id": "summon_speed"},
+	{"id": "minion_hp"},
+	{"id": "minion_range"},
+	{"id": "minion_lifesteal"},
 ]
 
 var available_skill_cards: Array = []
@@ -89,13 +119,25 @@ const CARD_CATEGORY_MAP = {
 	"graveyard":     "castle",
 	"range_basic":   "range",
 	"range_all":     "range",
-	"minion_speed":  "minion",
-	"minion_attack": "minion",
-	"minion_count":  "minion",
-	"summon_speed":  "minion",
+	"minion_speed":    "minion",
+	"minion_attack":   "minion",
+	"minion_count":    "minion",
+	"summon_speed":    "minion",
+	"minion_hp":       "minion",
+	"minion_range":    "minion",
+	"minion_lifesteal": "minion",
 	"death_aura":    "skill",
 	"skull_throw":   "skill",
 	"decay_curse":   "skill",
+}
+
+# 카드 → 축 분류
+const CARD_AXIS = {
+	"arsenal": "lord", "atk_speed": "lord", "range_basic": "lord", "range_all": "lord",
+	"death_aura": "lord", "skull_throw": "lord", "decay_curse": "lord",
+	"minion_speed": "summoner", "minion_attack": "summoner", "minion_count": "summoner", "summon_speed": "summoner",
+	"minion_hp": "summoner", "minion_range": "summoner", "minion_lifesteal": "summoner",
+	"wall": "neutral", "graveyard": "neutral",
 }
 
 # 연출/대사 텍스트
@@ -139,9 +181,6 @@ var tracker_btns: Array = []
 @onready var castle_hp_bar = $Castle/CastleHP
 @onready var castle_vis: Node2D = $Castle/CastleSprite
 @onready var card_panel = $UI/CardPanel
-@onready var card_btn1 = $UI/CardPanel/Card1
-@onready var card_btn2 = $UI/CardPanel/Card2
-@onready var card_btn3 = $UI/CardPanel/Card3
 @onready var result_panel = $UI/ResultPanel
 @onready var result_label = $UI/ResultPanel/ResultLabel
 @onready var sub_label = $UI/ResultPanel/SubLabel
@@ -152,6 +191,7 @@ var tracker_btns: Array = []
 @onready var wave_tracker = $UI/WaveTracker
 @onready var player = $Player
 @onready var attack_button = $UI/AttackButton
+var sacrifice_button: Button = null
 @onready var summon_container: HBoxContainer = $UI/SummonContainer
 @onready var minion_slot_label: Label = $UI/MinionSlotLabel
 @onready var minions_node = $Minions
@@ -164,18 +204,23 @@ var tracker_btns: Array = []
 @onready var fade_rect: ColorRect = $UI/FadeRect
 
 var _shop_btn_pulse_tween: Tween = null
+var _card_rows: Array = []
 
 func _ready() -> void:
 	available_skill_cards = SKILL_CARDS.duplicate()
-	card_btn1.pressed.connect(func(): _pick_card(0))
-	card_btn2.pressed.connect(func(): _pick_card(1))
-	card_btn3.pressed.connect(func(): _pick_card(2))
 	result_btn1.pressed.connect(_on_result_btn1_pressed)
 	result_btn2.pressed.connect(_on_result_btn2_pressed)
 	attack_button.pressed.connect(_on_attack_pressed)
+	attack_button.add_theme_font_size_override("font_size", 16)
+	sacrifice_button = Button.new()
+	sacrifice_button.focus_mode = Control.FOCUS_NONE
+	sacrifice_button.add_theme_font_size_override("font_size", 20)
+	sacrifice_button.pressed.connect(_on_sacrifice_pressed)
+	attack_button.get_parent().add_child(sacrifice_button)
 	shop_close_btn.pressed.connect(_close_shop)
 	_build_shop_buttons()
 	_build_summon_buttons()
+	_layout_bottom_ui()
 	current_chapter = GameSave.start_chapter
 	current_stage = GameSave.start_stage
 	current_wave = 0
@@ -227,6 +272,7 @@ func start_wave() -> void:
 		spawn_y_min = -40.0
 		spawn_y_max = 60.0
 
+	var vp_w: float = get_viewport_rect().size.x
 	for entry: Dictionary in composition:
 		var preset: Dictionary = Enemy.TYPE_PRESETS[entry["enemy"]]
 		var e_hp: float = base_hp * preset["hp_mult"]
@@ -234,7 +280,7 @@ func start_wave() -> void:
 		var e_dmg: int = int(base_damage * preset["damage_mult"])
 		for i in entry["count"]:
 			var e = EnemyScene.instantiate()
-			e.position = Vector2(randf_range(100, 924), randf_range(spawn_y_min, spawn_y_max))
+			e.position = Vector2(randf_range(30, vp_w - 30), randf_range(spawn_y_min, spawn_y_max))
 			e.enemy_type = entry["enemy"]
 			e.hp = e_hp
 			e.max_hp = e_hp
@@ -247,7 +293,7 @@ func start_wave() -> void:
 	if data["type"] == "mid_boss" or data["type"] == "boss":
 		enemies_alive += 1
 		var b = BossScene.instantiate()
-		b.position = Vector2(512, -250)
+		b.position = Vector2(240, -250)
 		b.hp = data["boss_hp"]
 		b.max_hp = data["boss_hp"]
 		b.speed = data["boss_speed"]
@@ -284,11 +330,52 @@ func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool) -> void:
 	_screen_flash(Color(1.0, 0.85, 0.2, 0.55), 0.5)
 	if shards > 0:
 		_show_crown_shard_gain(kill_pos, shards)
+
+	# 해골 +1 또는 만랩 시 영혼 보너스 변환
+	var gained: bool = GameSave.gain_skeleton()
+	if gained:
+		_show_skeleton_gain(kill_pos)
+		if GameSave.skeleton_count == 1:
+			get_tree().create_timer(1.2).timeout.connect(func() -> void:
+				show_dialogue("해골 1마리가 당신을 따른다...", Color(0.7, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
+			)
+	else:
+		add_souls(50)
+		_show_souls_overflow(kill_pos)
+
 	var lines: Array = BOSS_KILLED_FINAL_LINES if is_final else BOSS_KILLED_MID_LINES
 	var line: String = lines[randi() % lines.size()]
 	get_tree().create_timer(0.4).timeout.connect(func() -> void:
 		show_dialogue(line, Color(0.85, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 	)
+
+func _show_skeleton_gain(pos: Vector2) -> void:
+	var label: Label = Label.new()
+	label.text = "해골 +1"
+	label.add_theme_font_size_override("font_size", 26)
+	label.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0, 1))
+	label.size = Vector2(200, 50)
+	label.position = pos + Vector2(-100, -140)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(label)
+	var tween: Tween = create_tween()
+	tween.parallel().tween_property(label, "position:y", label.position.y - 60, 1.2)
+	tween.parallel().tween_property(label, "modulate:a", 0.0, 1.2)
+	tween.tween_callback(label.queue_free)
+
+func _show_souls_overflow(pos: Vector2) -> void:
+	var label: Label = Label.new()
+	label.text = "영혼 +50 (해골 만랩)"
+	label.add_theme_font_size_override("font_size", 22)
+	label.add_theme_color_override("font_color", Color(0.85, 0.65, 1.0, 1))
+	label.size = Vector2(260, 50)
+	label.position = pos + Vector2(-130, -140)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(label)
+	var tween: Tween = create_tween()
+	tween.parallel().tween_property(label, "position:y", label.position.y - 60, 1.2)
+	tween.parallel().tween_property(label, "modulate:a", 0.0, 1.2)
+	tween.tween_callback(label.queue_free)
 
 func boss_summon(enemy_type: String, count: int) -> void:
 	if not wave_active:
@@ -298,9 +385,10 @@ func boss_summon(enemy_type: String, count: int) -> void:
 	var e_hp: float = data["base_hp"] * preset["hp_mult"]
 	var e_spd: float = data["base_speed"] * preset["speed_mult"]
 	var e_dmg: int = int(data["base_damage"] * preset["damage_mult"])
+	var vp_w: float = get_viewport_rect().size.x
 	for i in count:
 		var e = EnemyScene.instantiate()
-		e.position = Vector2(randf_range(100, 924), randf_range(-150, -50))
+		e.position = Vector2(randf_range(30, vp_w - 30), randf_range(-150, -50))
 		e.enemy_type = enemy_type
 		e.hp = e_hp
 		e.max_hp = e_hp
@@ -352,17 +440,34 @@ func end_wave() -> void:
 		var line: String = WAVE_CLEAR_LINES[randi() % WAVE_CLEAR_LINES.size()]
 		show_dialogue(line, Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 
+	await get_tree().create_timer(1.2).timeout
+	if not _is_tutorial():
+		var wtype: String = WaveData.get_wave(current_chapter, current_stage, current_wave).get("type", "normal")
+		if current_wave == 0 and keystone1 == "":
+			_show_keystones(["kingdom", "legion"])
+			return
+		elif wtype == "mid_boss" and keystone2 == "" and keystone1 != "":
+			var pool: Array = ["berserker", "cataclysm", "doom"] if keystone1 == "kingdom" else ["horde", "echo", "ritual"]
+			pool.shuffle()
+			_show_keystones(pool.slice(0, 2))
+			return
 	_show_cards()
 
 func _show_cards() -> void:
+	for n: Node in _card_rows:
+		if is_instance_valid(n):
+			n.queue_free()
+	_card_rows.clear()
+
 	var pool: Array = available_skill_cards.duplicate()
-	pool.append_array(STAT_CARDS)
+	for stat_card: Dictionary in STAT_CARDS:
+		pool.append(stat_card)
 	pool.shuffle()
 
 	var skill_ids: Array = SKILL_CARDS.map(func(c: Dictionary) -> String: return c["id"])
 	current_cards = []
 	for c: Dictionary in pool.slice(0, 3):
-		var card: Dictionary = c.duplicate()
+		var card: Dictionary = {"id": c["id"]}
 		if skill_ids.has(c["id"]) or ALWAYS_RARE.has(c["id"]):
 			card["rare"] = true
 		elif NEVER_RARE.has(c["id"]):
@@ -371,23 +476,30 @@ func _show_cards() -> void:
 			card["rare"] = randf() < RARE_CHANCE
 		current_cards.append(card)
 
-	var btns: Array[Button] = [card_btn1, card_btn2, card_btn3]
+	var card_h: float = 120.0
+	var gap: float = 10.0
+	var start_y: float = 50.0
 	for i: int in 3:
-		var card: Dictionary = current_cards[i]
-		btns[i].text = ("✦ " + card["label"] + " ✦") if card["rare"] else card["label"]
-		_apply_card_btn_style(btns[i], card["rare"])
+		var row: Control = _build_card_row(current_cards[i], i, start_y + float(i) * (card_h + gap))
+		card_panel.add_child(row)
+		_card_rows.append(row)
+		if current_cards[i]["rare"]:
+			_flash_card_glow(row)
 
 	card_panel.visible = true
 	if _is_tutorial() and current_wave == 0:
 		_show_card_guide.call_deferred()
 
-	for i: int in 3:
-		if current_cards[i]["rare"]:
-			_flash_button_glow(btns[i])
-
 func _pick_card(index: int) -> void:
 	_close_guide()
 	var card: Dictionary = current_cards[index]
+	if card.get("keystone", false):
+		_apply_keystone(card["id"])
+		card_panel.visible = false
+		_spawn_card_pickup_effect(card["id"])
+		current_wave += 1
+		start_wave()
+		return
 	var mult: float = 1.5 if card.get("rare", false) else 1.0
 	_apply_card(card["id"], mult)
 
@@ -396,10 +508,233 @@ func _pick_card(index: int) -> void:
 			available_skill_cards.remove_at(i)
 			break
 
+	# 축 카운트 증가 (일반 카드만)
+	var axis: String = CARD_AXIS.get(card["id"], "neutral")
+	if axis == "lord":
+		lord_card_count += 1
+	elif axis == "summoner":
+		summoner_card_count += 1
+	_recompute_keystones()
+
 	card_panel.visible = false
 	_spawn_card_pickup_effect(card["id"])
 	current_wave += 1
 	start_wave()
+
+func _recompute_keystones() -> void:
+	keystone_lord_atk_mult = 1.0
+	keystone_minion_atk_mult = 1.0
+	keystone_revive_chance = 0.0
+	keystone_echo_dmg = 0.0
+	keystone_special_mult = 1.0
+	keystone_sacrifice_dmg_mult = 1.0
+	keystone_sacrifice_radius_mult = 1.0
+	keystone_sacrifice_refill = false
+	match keystone1:
+		"kingdom":
+			keystone_lord_atk_mult *= (1.30 + 0.06 * float(lord_card_count))
+		"legion":
+			keystone_minion_atk_mult *= (1.0 + 0.08 * float(summoner_card_count))
+	match keystone2:
+		"berserker":
+			keystone_lord_atk_mult *= (1.0 + 0.08 * float(lord_card_count))
+		"cataclysm":
+			keystone_lord_atk_mult *= (1.0 + 0.08 * float(lord_card_count))
+		"horde":
+			keystone_revive_chance = min(0.30 + 0.04 * float(summoner_card_count), 0.80)
+		"echo":
+			keystone_echo_dmg = 20.0 * (1.0 + 0.10 * float(summoner_card_count))
+		"doom":
+			keystone_special_mult *= (1.0 + 0.12 * float(lord_card_count))
+		"ritual":
+			keystone_sacrifice_dmg_mult = 1.0 + 0.12 * float(summoner_card_count)
+			keystone_sacrifice_radius_mult = 1.3
+			keystone_sacrifice_refill = true
+
+func _apply_keystone(id: String) -> void:
+	match id:
+		"kingdom":
+			keystone1 = "kingdom"
+		"legion":
+			keystone1 = "legion"
+			max_minions += 2
+			_refresh_summon_buttons()
+		"berserker":
+			keystone2 = "berserker"
+			player.attack_speed *= 1.5
+		"cataclysm":
+			keystone2 = "cataclysm"
+			player.basic_range *= 1.4
+			player.aura_radius *= 1.4
+			player.curse_radius *= 1.4
+			player._update_range_circles()
+		"horde":
+			keystone2 = "horde"
+		"echo":
+			keystone2 = "echo"
+		"doom":
+			keystone2 = "doom"
+			special_cost = DOOM_SPECIAL_COST
+			_update_attack_button()
+		"ritual":
+			keystone2 = "ritual"
+	_recompute_keystones()
+
+func _show_keystones(ids: Array) -> void:
+	for n: Node in _card_rows:
+		if is_instance_valid(n):
+			n.queue_free()
+	_card_rows.clear()
+
+	current_cards = []
+	for id: String in ids:
+		current_cards.append({"id": id, "rare": true, "keystone": true})
+	var stat_pool: Array = STAT_CARDS.duplicate()
+	stat_pool.shuffle()
+	var filler_id: String = stat_pool[0]["id"]
+	current_cards.append({"id": filler_id, "rare": false})
+
+	var card_h: float = 120.0
+	var gap: float = 10.0
+	var start_y: float = 50.0
+	for i: int in current_cards.size():
+		var row: Control = _build_card_row(current_cards[i], i, start_y + float(i) * (card_h + gap))
+		card_panel.add_child(row)
+		_card_rows.append(row)
+		if current_cards[i].get("rare", false):
+			_flash_card_glow(row)
+
+	card_panel.visible = true
+
+func _card_name(id: String) -> String:
+	var full: String = Loc.t("card_%s" % id)
+	var nl: int = full.find("\n")
+	return full.substr(0, nl) if nl >= 0 else full
+
+func _card_desc(id: String) -> String:
+	var full: String = Loc.t("card_%s" % id)
+	var nl: int = full.find("\n")
+	return full.substr(nl + 1) if nl >= 0 else ""
+
+func _format_axis_tags(s: String) -> String:
+	s = s.replace("[영주]", "[color=#b5341f][lb]영주[rb][/color]")
+	s = s.replace("[군단]", "[color=#0a7d6b][lb]군단[rb][/color]")
+	return s
+
+func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
+	var is_rare: bool = card.get("rare", false)
+	var bg_col: Color    = Color(0.97, 0.93, 0.82, 1.0) if is_rare else Color(0.91, 0.89, 0.97, 1.0)
+	var border_col: Color = Color(0.88, 0.62, 0.08, 1.0) if is_rare else Color(0.48, 0.40, 0.75, 1.0)
+	var badge_col: Color  = Color(0.88, 0.52, 0.04, 1.0) if is_rare else Color(0.50, 0.42, 0.76, 1.0)
+	var art_col: Color    = Color(0.18, 0.11, 0.04, 1.0) if is_rare else Color(0.12, 0.08, 0.20, 1.0)
+	var name_col: Color   = Color(0.13, 0.08, 0.05, 1.0)
+	var desc_col: Color   = Color(0.35, 0.30, 0.28, 1.0)
+
+	var card_w: float  = 444.0
+	var card_h: float  = 120.0
+	var art_sz: float  = 96.0
+	var art_x: float   = 10.0
+	var art_y: float   = 12.0
+	var badge_w: float = 54.0
+	var badge_h: float = 22.0
+	var right_x: float = art_x + art_sz + 12.0
+	var right_w: float = card_w - right_x - 8.0
+
+	var root: Control = Control.new()
+	root.position = Vector2(8.0, y_pos)
+	root.size = Vector2(card_w, card_h)
+
+	var bg: Panel = Panel.new()
+	bg.size = Vector2(card_w, card_h)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bg_style: StyleBoxFlat = StyleBoxFlat.new()
+	bg_style.bg_color = bg_col
+	bg_style.set_border_width_all(2)
+	bg_style.border_color = border_col
+	bg_style.set_corner_radius_all(8)
+	bg.add_theme_stylebox_override("panel", bg_style)
+	root.add_child(bg)
+
+	var art: Panel = Panel.new()
+	art.position = Vector2(art_x, art_y)
+	art.size = Vector2(art_sz, art_sz)
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var art_style: StyleBoxFlat = StyleBoxFlat.new()
+	art_style.bg_color = art_col
+	art_style.set_border_width_all(3)
+	art_style.border_color = border_col
+	art_style.set_corner_radius_all(6)
+	art.add_theme_stylebox_override("panel", art_style)
+	root.add_child(art)
+
+	var badge_x: float = art_x + (art_sz - badge_w) * 0.5
+	var badge_y: float = art_y - badge_h * 0.5
+	var badge_bg: Panel = Panel.new()
+	badge_bg.position = Vector2(badge_x, badge_y)
+	badge_bg.size = Vector2(badge_w, badge_h)
+	badge_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var badge_style: StyleBoxFlat = StyleBoxFlat.new()
+	badge_style.bg_color = badge_col
+	badge_style.set_border_width_all(1)
+	badge_style.border_color = Color(1, 1, 1, 0.35)
+	badge_style.set_corner_radius_all(11)
+	badge_bg.add_theme_stylebox_override("panel", badge_style)
+	root.add_child(badge_bg)
+
+	var badge_lbl: Label = Label.new()
+	badge_lbl.text = Loc.t("rarity_legendary") if is_rare else Loc.t("rarity_common")
+	badge_lbl.position = Vector2(badge_x, badge_y)
+	badge_lbl.size = Vector2(badge_w, badge_h)
+	badge_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	badge_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge_lbl.add_theme_font_size_override("font_size", 13)
+	badge_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+	badge_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(badge_lbl)
+
+	var name_lbl: Label = Label.new()
+	name_lbl.text = _card_name(card["id"])
+	name_lbl.position = Vector2(right_x, 16.0)
+	name_lbl.size = Vector2(right_w, 34.0)
+	name_lbl.add_theme_font_size_override("font_size", 20)
+	name_lbl.add_theme_color_override("font_color", name_col)
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(name_lbl)
+
+	var desc: String = _card_desc(card["id"])
+	if desc != "":
+		var desc_lbl: RichTextLabel = RichTextLabel.new()
+		desc_lbl.bbcode_enabled = true
+		desc_lbl.fit_content = true
+		desc_lbl.scroll_active = false
+		desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		desc_lbl.position = Vector2(right_x, 54.0)
+		desc_lbl.size = Vector2(right_w, 58.0)
+		desc_lbl.add_theme_font_size_override("normal_font_size", 14)
+		desc_lbl.add_theme_color_override("default_color", desc_col)
+		desc_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		desc_lbl.text = _format_axis_tags(desc)
+		root.add_child(desc_lbl)
+
+	var btn: Button = Button.new()
+	btn.size = Vector2(card_w, card_h)
+	btn.flat = true
+	btn.focus_mode = Control.FOCUS_NONE
+	var empty: StyleBoxEmpty = StyleBoxEmpty.new()
+	btn.add_theme_stylebox_override("normal", empty)
+	btn.add_theme_stylebox_override("hover", empty)
+	btn.add_theme_stylebox_override("pressed", empty)
+	btn.add_theme_stylebox_override("focus", empty)
+	var idx: int = index
+	btn.pressed.connect(func(): _pick_card(idx))
+	root.add_child(btn)
+
+	return root
+
+func _flash_card_glow(row: Control) -> void:
+	var tween: Tween = create_tween()
+	tween.tween_property(row, "modulate", Color(1.6, 1.35, 0.5, 1), 0.12)
+	tween.tween_property(row, "modulate", Color(1.0, 1.0, 1.0, 1), 0.35)
 
 func _apply_card(id: String, mult: float = 1.0) -> void:
 	match id:
@@ -444,6 +779,12 @@ func _apply_card(id: String, mult: float = 1.0) -> void:
 			player.aura_radius *= range_mult
 			player.curse_radius *= range_mult
 			player._update_range_circles()
+		"minion_hp":
+			minion_hp_bonus *= (1.0 + 0.25 * mult)
+		"minion_range":
+			minion_range_bonus += 40.0 * mult
+		"minion_lifesteal":
+			minion_lifesteal += 0.20 * mult
 
 func _build_wave_tracker() -> void:
 	for child in wave_tracker.get_children():
@@ -457,9 +798,9 @@ func _build_wave_tracker() -> void:
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		match wave_data.get("type", "normal"):
-			"boss":     btn.text = "💀"
-			"mid_boss": btn.text = "⚠"
-			"shop":     btn.text = "💰"
+			"boss":     btn.text = "보스"
+			"mid_boss": btn.text = "중간"
+			"shop":     btn.text = "상점"
 			_:          btn.text = str(w_idx + 1)
 		wave_tracker.add_child(btn)
 		tracker_btns.append(btn)
@@ -578,7 +919,7 @@ func game_over() -> void:
 	# 붉은 오버레이 페이드인 → 패널 등장
 	var overlay: ColorRect = ColorRect.new()
 	overlay.color = Color(0.4, 0.0, 0.0, 0.0)
-	overlay.size = Vector2(1024, 700)
+	overlay.size = Vector2(480, 960)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	$UI.add_child(overlay)
 	var elapsed: float = Time.get_ticks_msec() / 1000.0 - run_start_time
@@ -589,8 +930,8 @@ func game_over() -> void:
 		overlay.queue_free()
 		result_label.text = "성이 함락됐다..."
 		sub_label.text = "스테이지 %d-%d  웨이브 %d" % [current_chapter + 1, current_stage + 1, current_wave + 1]
-		time_label.text = "⏱ %s" % _format_time(elapsed)
-		crown_label.text = "👑 +%d (총 %d개)" % [crowns_this_run, GameSave.crown_shards] if crowns_this_run > 0 else ""
+		time_label.text = "%s" % _format_time(elapsed)
+		crown_label.text = "왕관 조각 +%d (총 %d개)" % [crowns_this_run, GameSave.crown_shards] if crowns_this_run > 0 else ""
 		result_btn1.text = "↩  다시 시작"
 		result_btn1.disabled = false
 		result_btn1.set_meta("action", "retry")
@@ -611,7 +952,7 @@ func game_clear() -> void:
 	# 금빛 오버레이 페이드인 → 패널 등장
 	var overlay: ColorRect = ColorRect.new()
 	overlay.color = Color(0.9, 0.8, 0.1, 0.0)
-	overlay.size = Vector2(1024, 700)
+	overlay.size = Vector2(480, 960)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	$UI.add_child(overlay)
 	var elapsed: float = Time.get_ticks_msec() / 1000.0 - run_start_time
@@ -628,8 +969,8 @@ func game_clear() -> void:
 		overlay.queue_free()
 		result_label.text = "스테이지 클리어!"
 		sub_label.text = "%d-%d 완료" % [current_chapter + 1, current_stage + 1]
-		time_label.text = "⏱ %s" % _format_time(elapsed)
-		crown_label.text = "👑 +%d (총 %d개)" % [crowns_this_run, GameSave.crown_shards]
+		time_label.text = "%s" % _format_time(elapsed)
+		crown_label.text = "왕관 조각 +%d (총 %d개)" % [crowns_this_run, GameSave.crown_shards]
 		if has_next:
 			if current_chapter == 0 and current_stage == 0:
 				GameSave.tutorial_completed = true
@@ -639,7 +980,7 @@ func game_clear() -> void:
 			result_btn1.disabled = false
 		else:
 			result_btn1.disabled = true
-		result_btn1.text = "▶  다음 스테이지"
+		result_btn1.text = "다음 스테이지"
 		result_btn1.set_meta("action", "next_stage")
 		result_panel.visible = true
 	)
@@ -671,37 +1012,114 @@ func _fade_to_scene(path: String) -> void:
 		get_tree().change_scene_to_file(path)
 	)
 
-func _process(_delta) -> void:
+func _process(delta: float) -> void:
+	if sacrifice_cooldown > 0.0:
+		sacrifice_cooldown = max(0.0, sacrifice_cooldown - delta)
 	_update_attack_button()
 	_refresh_summon_buttons()
+	_update_sacrifice_button()
 
 func _on_attack_pressed() -> void:
 	if not wave_active:
 		return
 	if _is_tutorial() and not _special_atk_unlocked:
 		return
-	if souls < SPECIAL_COST:
+	if souls < special_cost:
 		return
 	_close_guide()  # 특수기 팁 동결 중이면 즉시 해제
-	souls -= SPECIAL_COST
+	souls -= special_cost
 	_update_souls_ui()
 	player.use_special_attack()
 
 func _update_attack_button() -> void:
 	if not wave_active:
 		attack_button.disabled = true
-		attack_button.text = "⚔ 특수기 (%d)" % SPECIAL_COST
+		attack_button.text = "특수기 (%d)" % special_cost
 		return
 	if _is_tutorial() and not _special_atk_unlocked:
 		attack_button.disabled = true
-		attack_button.text = "⚔ 특수기 🔒"
+		attack_button.text = "특수기 (잠금)"
 		return
-	if souls >= SPECIAL_COST:
+	if souls >= special_cost:
 		attack_button.disabled = false
-		attack_button.text = "⚔ 특수기 (%d)" % SPECIAL_COST
+		attack_button.text = "특수기 (%d)" % special_cost
 	else:
 		attack_button.disabled = true
-		attack_button.text = "⚔ 특수기 (%d/%d)" % [souls, SPECIAL_COST]
+		attack_button.text = "특수기 (%d/%d)" % [souls, special_cost]
+
+func _update_sacrifice_button() -> void:
+	if not is_instance_valid(sacrifice_button):
+		return
+	if not wave_active:
+		sacrifice_button.disabled = true
+		sacrifice_button.text = Loc.t("sacrifice_btn_idle")
+		return
+	if _is_tutorial() and current_wave < 1:
+		sacrifice_button.disabled = true
+		sacrifice_button.text = Loc.t("sacrifice_btn_locked")
+		return
+	if sacrifice_cooldown > 0.0:
+		sacrifice_button.disabled = true
+		sacrifice_button.text = Loc.t("sacrifice_btn_cooldown") % ceili(sacrifice_cooldown)
+		return
+	# 희생할 상주 하인이 없으면 비활성
+	if _find_frontline_minion() == null:
+		sacrifice_button.disabled = true
+		sacrifice_button.text = Loc.t("sacrifice_btn_idle")
+		return
+	sacrifice_button.disabled = false
+	sacrifice_button.text = Loc.t("sacrifice_btn_idle")
+
+func _on_sacrifice_pressed() -> void:
+	if not wave_active:
+		return
+	if _is_tutorial() and current_wave < 1:
+		return
+	if sacrifice_cooldown > 0.0:
+		return
+	var target: Node = _find_frontline_minion()
+	if target == null:
+		return
+	_close_guide()
+	_sacrifice_minion(target)
+	sacrifice_cooldown = SACRIFICE_COOLDOWN
+
+func _find_frontline_minion() -> Node:
+	var enemies: Array = get_tree().get_nodes_in_group("enemies")
+	var best: Node = null
+	var best_dist: float = INF
+	var fallback: Node = null   # 적이 없을 때용 (첫 상주 하인)
+	for m in minions_node.get_children():
+		if not is_instance_valid(m):
+			continue
+		if m.get("minion_type") == null or m.minion_type == "bomber":
+			continue
+		if fallback == null:
+			fallback = m
+		for e in enemies:
+			if not is_instance_valid(e):
+				continue
+			var d: float = m.position.distance_to(e.position)
+			if d < best_dist:
+				best_dist = d
+				best = m
+	return best if best != null else fallback
+
+func _sacrifice_minion(m: Node) -> void:
+	var t: String = m.minion_type
+	_sacrifice_explosion(m.position)
+	m.sacrifice()
+	# 제물의 의식: 희생 경로에서만 무료 재소환 (일반 사망 경로 제외)
+	if keystone_sacrifice_refill and active_minions < max_minions:
+		_spawn_minion(t)
+
+func _sacrifice_explosion(pos: Vector2) -> void:
+	var radius: float = SACRIFICE_RADIUS * keystone_sacrifice_radius_mult
+	var dmg: float = SACRIFICE_DMG * keystone_sacrifice_dmg_mult
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(e) and e.position.distance_to(pos) <= radius:
+			e.take_damage(dmg)
+	spawn_explosion_effect(pos)
 
 func _apply_facility_bonuses() -> void:
 	var fl: Dictionary = GameSave.facility_levels
@@ -740,9 +1158,41 @@ func _build_summon_buttons() -> void:
 		summon_container.add_child(btn)
 		summon_btns.append(btn)
 
+func _layout_bottom_ui() -> void:
+	var vp: Vector2 = get_viewport_rect().size
+	var mx: float = 10.0
+	var btn_w: float = vp.x - mx * 2
+	var atk_h: float = 50.0
+	var sum_h: float = 48.0
+	var lbl_h: float = 20.0
+	var bottom_margin: float = 20.0
+	var gap: float = 22.0
+
+	var btn_gap: float = 8.0
+	var attack_w: float = (btn_w - btn_gap) * 0.6
+	var sacrifice_w: float = (btn_w - btn_gap) * 0.4
+	var atk_y: float = vp.y - bottom_margin - atk_h
+	attack_button.position = Vector2(mx, atk_y)
+	attack_button.size = Vector2(attack_w, atk_h)
+	if is_instance_valid(sacrifice_button):
+		sacrifice_button.position = Vector2(mx + attack_w + btn_gap, atk_y)
+		sacrifice_button.size = Vector2(sacrifice_w, atk_h)
+
+	summon_container.position = Vector2(mx, attack_button.position.y - gap - sum_h)
+	summon_container.size = Vector2(btn_w, sum_h)
+
+	minion_slot_label.position = Vector2(0, summon_container.position.y - 4 - lbl_h)
+	minion_slot_label.size = Vector2(vp.x - mx, lbl_h)
+	minion_slot_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+	souls_label.position = Vector2(mx, minion_slot_label.position.y)
+	souls_label.size = Vector2(vp.x * 0.5, lbl_h)
+	souls_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	souls_label.add_theme_font_size_override("font_size", 16)
+
 func _refresh_summon_buttons() -> void:
 	var slot_full: bool = active_minions >= max_minions
-	minion_slot_label.text = "🧟 하인 슬롯 %d/%d" % [active_minions, max_minions]
+	minion_slot_label.text = "하인 슬롯 %d/%d" % [active_minions, max_minions]
 	if slot_full:
 		minion_slot_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5))
 	else:
@@ -753,10 +1203,10 @@ func _refresh_summon_buttons() -> void:
 		var cost: int = max(5, entry["cost"] - minion_cost_reduction)
 		var btn: Button = summon_btns[i]
 		if is_tut and (current_wave < 1 or i > 0):
-			btn.text = "%s\n🔒" % [entry["label"]]
+			btn.text = "%s (잠금)" % [entry["label"]]
 			btn.disabled = true
 		else:
-			btn.text = "%s\n💀 %d" % [entry["label"], cost]
+			btn.text = "%s\n%d 영혼" % [entry["label"], cost]
 			btn.disabled = (not wave_active) or slot_full or souls < cost
 
 func _on_summon_pressed(index: int) -> void:
@@ -772,6 +1222,7 @@ func _on_summon_pressed(index: int) -> void:
 		return
 	souls -= cost
 	_update_souls_ui()
+	_close_guide()
 	_spawn_minion(entry["id"])
 
 func _spawn_minion(type_id: String) -> void:
@@ -781,20 +1232,56 @@ func _spawn_minion(type_id: String) -> void:
 	m.minion_type = type_id
 	minions_node.add_child(m)
 	# 카드 보너스 반영 (프리셋 적용 후)
-	m.base_damage *= minion_attack_bonus
+	m.base_damage *= minion_attack_bonus * keystone_minion_atk_mult
 	m.attack_damage = m.base_damage
 	m.move_speed *= minion_move_speed_bonus
+	m.max_hp *= minion_hp_bonus
+	m.base_max_hp *= minion_hp_bonus
+	m.hp = m.max_hp
+	m.attack_range += minion_range_bonus
+	m.lifesteal = minion_lifesteal
 	active_minions += 1
 	spawn_summon_effect(m.position)
 
-func minion_died() -> void:
+func minion_died(pos = null, type_id: String = "") -> void:
 	active_minions = max(0, active_minions - 1)
+	if pos == null:
+		return
+	# 죽음의 메아리: 사망 폭발
+	if keystone_echo_dmg > 0.0:
+		for e in get_tree().get_nodes_in_group("enemies"):
+			if is_instance_valid(e) and e.position.distance_to(pos) <= KEYSTONE_ECHO_RADIUS:
+				e.take_damage(keystone_echo_dmg)
+		_spawn_echo_effect(pos)
+	# 영원한 군세: 재소환
+	if keystone_revive_chance > 0.0 and type_id != "" and active_minions < max_minions:
+		if randf() < keystone_revive_chance:
+			_spawn_minion(type_id)
 
-func show_dialogue(text: String, color: Color = Color(1, 1, 0.3, 1), world_pos: Vector2 = Vector2(512, 300)) -> void:
+func _spawn_echo_effect(pos: Vector2) -> void:
+	var n: Node2D = Node2D.new()
+	n.position = pos
+	add_child(n)
+	var seg: int = 32
+	var base_r: float = 10.0
+	var fill: Polygon2D = Polygon2D.new()
+	var pts: PackedVector2Array = PackedVector2Array()
+	for i: int in seg:
+		var a: float = (TAU / seg) * i
+		pts.append(Vector2(cos(a) * base_r, sin(a) * base_r))
+	fill.polygon = pts
+	fill.color = Color(0.4, 0.8, 1.0, 0.7)
+	n.add_child(fill)
+	var tween: Tween = create_tween()
+	tween.parallel().tween_property(n, "scale", Vector2.ONE * (KEYSTONE_ECHO_RADIUS / base_r), 0.4)
+	tween.parallel().tween_property(n, "modulate:a", 0.0, 0.4)
+	tween.tween_callback(n.queue_free)
+
+func show_dialogue(text: String, color: Color = Color(1, 1, 0.3, 1), world_pos: Vector2 = Vector2(240, 400)) -> void:
 	var label: Label = Label.new()
 	label.text = '"%s"' % text
-	label.size = Vector2(700, 60)
-	label.position = Vector2(world_pos.x - 350, world_pos.y - 60)
+	label.size = Vector2(440, 60)
+	label.position = Vector2(world_pos.x - 220, world_pos.y - 60)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", 20)
 	label.add_theme_color_override("font_color", color)
@@ -803,6 +1290,13 @@ func show_dialogue(text: String, color: Color = Color(1, 1, 0.3, 1), world_pos: 
 	tween.tween_interval(2.0)
 	tween.tween_property(label, "modulate:a", 0.0, 1.0)
 	tween.tween_callback(label.queue_free)
+
+func hit_stop(duration: float = 0.06) -> void:
+	# 순간 정지 → 무게감. time_scale=0이라 ignore_time_scale 타이머로 실시간 복구.
+	Engine.time_scale = 0.0
+	var t: SceneTreeTimer = get_tree().create_timer(duration, true, false, true)
+	await t.timeout
+	Engine.time_scale = 1.0
 
 func _screen_shake(intensity: float = 6.0, duration: float = 0.35) -> void:
 	var origin: Vector2 = position
@@ -816,7 +1310,7 @@ func _screen_shake(intensity: float = 6.0, duration: float = 0.35) -> void:
 func _screen_flash(color: Color, duration: float = 0.4) -> void:
 	var rect: ColorRect = ColorRect.new()
 	rect.color = color
-	rect.size = Vector2(1024, 700)
+	rect.size = Vector2(480, 960)
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	$UI.add_child(rect)
 	var tween: Tween = create_tween()
@@ -824,12 +1318,13 @@ func _screen_flash(color: Color, duration: float = 0.4) -> void:
 	tween.tween_callback(rect.queue_free)
 
 func _show_boss_title(boss_name: String) -> void:
+	var vp_w: float = get_viewport_rect().size.x
 	var label: Label = Label.new()
 	label.text = "— %s —" % boss_name
 	label.add_theme_font_size_override("font_size", 30)
 	label.add_theme_color_override("font_color", Color(1.0, 0.25, 0.25, 1))
-	label.size = Vector2(900, 50)
-	label.position = Vector2(62, 210)
+	label.size = Vector2(vp_w, 50)
+	label.position = Vector2(0, 210)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.modulate.a = 0.0
 	$UI.add_child(label)
@@ -841,7 +1336,7 @@ func _show_boss_title(boss_name: String) -> void:
 
 func _show_crown_shard_gain(pos: Vector2, shards: int) -> void:
 	var label: Label = Label.new()
-	label.text = "+%d 👑" % shards
+	label.text = "+%d 왕관" % shards
 	label.add_theme_font_size_override("font_size", 28)
 	label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2, 1))
 	label.size = Vector2(200, 50)
@@ -853,16 +1348,61 @@ func _show_crown_shard_gain(pos: Vector2, shards: int) -> void:
 	tween.parallel().tween_property(label, "modulate:a", 0.0, 1.2)
 	tween.tween_callback(label.queue_free)
 
-func spawn_damage_number(pos: Vector2, dmg: float) -> void:
+func spawn_damage_number(pos: Vector2, dmg: float, tier: String = "normal") -> void:
 	var label: Label = Label.new()
 	label.text = "-%d" % int(dmg)
-	label.position = pos + Vector2(-12, -32)
-	label.add_theme_font_size_override("font_size", 18)
-	label.add_theme_color_override("font_color", Color(1, 0.85, 0.85, 1))
 	add_child(label)
+
+	match tier:
+		"resist":
+			label.add_theme_font_size_override("font_size", 14)
+			label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6, 1))
+			label.position = pos + Vector2(-12, -32)
+			var tween: Tween = create_tween()
+			tween.parallel().tween_property(label, "position:y", label.position.y - 20, 0.6)
+			tween.parallel().tween_property(label, "modulate:a", 0.0, 0.6)
+			tween.tween_callback(label.queue_free)
+		"crit":
+			label.add_theme_font_size_override("font_size", 32)
+			label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.4, 1))
+			label.position = pos + Vector2(-20, -48)
+			var tween: Tween = create_tween()
+			tween.parallel().tween_property(label, "position:y", label.position.y - 45, 0.8)
+			tween.parallel().tween_property(label, "modulate:a", 0.0, 0.8)
+			tween.parallel().tween_property(label, "modulate", Color(1.0, 0.8, 0.1, 1), 0.8)
+			# 좌우 살짝 흔들림
+			var shake_tween: Tween = create_tween()
+			shake_tween.tween_property(label, "position:x", label.position.x + 6.0, 0.08)
+			shake_tween.tween_property(label, "position:x", label.position.x - 6.0, 0.08)
+			shake_tween.tween_property(label, "position:x", label.position.x + 3.0, 0.06)
+			shake_tween.tween_property(label, "position:x", label.position.x, 0.06)
+			tween.tween_callback(label.queue_free)
+		_: # "normal"
+			label.add_theme_font_size_override("font_size", 18)
+			label.add_theme_color_override("font_color", Color(1, 0.85, 0.85, 1))
+			label.position = pos + Vector2(-12, -32)
+			var tween: Tween = create_tween()
+			tween.parallel().tween_property(label, "position:y", label.position.y - 30, 0.6)
+			tween.parallel().tween_property(label, "modulate:a", 0.0, 0.6)
+			tween.tween_callback(label.queue_free)
+
+func show_crit_text() -> void:
+	var vp_size: Vector2 = get_viewport_rect().size
+	var label: Label = Label.new()
+	label.text = "치명타!"
+	label.add_theme_font_size_override("font_size", 42)
+	label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2, 1))
+	label.size = Vector2(vp_size.x, 80)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.position = Vector2(0, vp_size.y * 0.38)
+	label.scale = Vector2(0.4, 0.4)
+	label.pivot_offset = Vector2(vp_size.x * 0.5, 40)
+	label.modulate.a = 1.0
+	$UI.add_child(label)
 	var tween: Tween = create_tween()
-	tween.parallel().tween_property(label, "position:y", label.position.y - 30, 0.6)
-	tween.parallel().tween_property(label, "modulate:a", 0.0, 0.6)
+	tween.tween_property(label, "scale", Vector2(1.0, 1.0), 0.15).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_interval(0.2)
+	tween.tween_property(label, "modulate:a", 0.0, 0.25)
 	tween.tween_callback(label.queue_free)
 
 func spawn_death_effect(pos: Vector2, color: Color = Color(1, 0.6, 0.4, 1)) -> void:
@@ -910,24 +1450,6 @@ func spawn_evolve_effect(pos: Vector2) -> void:
 		tween.parallel().tween_property(ring, "modulate:a", 0.0, 0.4)
 		tween.tween_callback(ring.queue_free)
 
-func _apply_card_btn_style(btn: Button, is_rare: bool) -> void:
-	if is_rare:
-		var style: StyleBoxFlat = StyleBoxFlat.new()
-		style.bg_color = Color(0.18, 0.13, 0.02, 1)
-		style.set_border_width_all(3)
-		style.border_color = Color(1.0, 0.85, 0.2, 1)
-		style.set_corner_radius_all(4)
-		btn.add_theme_stylebox_override("normal", style)
-		btn.add_theme_color_override("font_color", Color(1.0, 0.92, 0.5, 1))
-	else:
-		btn.remove_theme_stylebox_override("normal")
-		btn.remove_theme_color_override("font_color")
-
-func _flash_button_glow(btn: Button) -> void:
-	var tween: Tween = create_tween()
-	tween.tween_property(btn, "modulate", Color(1.6, 1.35, 0.5, 1), 0.12)
-	tween.tween_property(btn, "modulate", Color(1.0, 1.0, 1.0, 1), 0.3)
-
 func _spawn_card_pickup_effect(card_id: String) -> void:
 	var category: String = CARD_CATEGORY_MAP.get(card_id, "player")
 	var castle_pos: Vector2 = $Castle.global_position
@@ -949,28 +1471,22 @@ func _spawn_card_pickup_effect(card_id: String) -> void:
 		"skill":
 			_spawn_pulse_ring(player.global_position, 280.0, Color(1.0, 0.85, 0.25, 0.7), 7.0)
 
-func _spawn_pulse_ring(pos: Vector2, max_radius: float, color: Color, line_width: float = 5.0) -> void:
+func _spawn_pulse_ring(pos: Vector2, max_radius: float, color: Color, _line_width: float = 5.0) -> void:
 	var n: Node2D = Node2D.new()
 	n.position = pos
-	var script: GDScript = GDScript.new()
-	script.source_code = """
-extends Node2D
-var r: float = 10.0
-var c: Color = Color(1, 1, 1, 0.5)
-var w: float = 5.0
-func _draw():
-	draw_arc(Vector2.ZERO, r, 0.0, TAU, 48, c, w)
-"""
-	script.reload()
-	n.set_script(script)
-	n.set("c", color)
-	n.set("w", line_width)
 	add_child(n)
+	var base_r: float = 12.0
+	var seg: int = 32
+	var fill: Polygon2D = Polygon2D.new()
+	var pts: PackedVector2Array = PackedVector2Array()
+	for i: int in seg:
+		var a: float = (TAU / seg) * i
+		pts.append(Vector2(cos(a) * base_r, sin(a) * base_r))
+	fill.polygon = pts
+	fill.color = Color(color.r, color.g, color.b, color.a * 0.6)
+	n.add_child(fill)
 	var tween: Tween = create_tween()
-	tween.tween_method(func(v: float) -> void:
-		n.set("r", v)
-		n.queue_redraw()
-	, 12.0, max_radius, 0.55)
+	tween.parallel().tween_property(n, "scale", Vector2.ONE * (max_radius / base_r), 0.55)
 	tween.parallel().tween_property(n, "modulate:a", 0.0, 0.55)
 	tween.tween_callback(n.queue_free)
 
@@ -1015,7 +1531,7 @@ func _trigger_wave_guide(wave_idx: int) -> void:
 				get_tree().create_timer(2.0).timeout.connect(func() -> void:
 					if not wave_active or _special_atk_tip_shown:
 						return
-					souls = max(souls, SPECIAL_COST)
+					souls = max(souls, special_cost)
 					_update_souls_ui()
 					_special_atk_tip_shown = true
 					_special_atk_unlocked = true
@@ -1025,18 +1541,17 @@ func _trigger_wave_guide(wave_idx: int) -> void:
 				)
 
 func _show_card_guide() -> void:
-	var r1: Rect2 = card_btn1.get_global_rect()
-	var r2: Rect2 = card_btn2.get_global_rect()
-	var r3: Rect2 = card_btn3.get_global_rect()
+	if _card_rows.size() < 3:
+		return
 	show_guide("카드를 선택하세요. 영주가 강해집니다.", [
-		{"rect": r1, "callback": func() -> void: _pick_card(0)},
-		{"rect": r2, "callback": func() -> void: _pick_card(1)},
-		{"rect": r3, "callback": func() -> void: _pick_card(2)},
+		{"rect": _card_rows[0].get_global_rect(), "callback": func() -> void: _pick_card(0), "text": _card_name(current_cards[0]["id"]), "rare": current_cards[0]["rare"]},
+		{"rect": _card_rows[1].get_global_rect(), "callback": func() -> void: _pick_card(1), "text": _card_name(current_cards[1]["id"]), "rare": current_cards[1]["rare"]},
+		{"rect": _card_rows[2].get_global_rect(), "callback": func() -> void: _pick_card(2), "text": _card_name(current_cards[2]["id"]), "rare": current_cards[2]["rare"]},
 	])
 
 func _show_shop_guide() -> void:
 	# 타이틀을 튜토리얼 안내 문구로 교체
-	shop_title.text = "💡 영혼으로 강화하고 '다음 웨이브'를 누르세요"
+	shop_title.text = "영혼으로 강화하고 '다음 웨이브'를 누르세요"
 	shop_title.add_theme_font_size_override("font_size", 17)
 
 	# 닫기 버튼 노란 펄스 글로우
@@ -1085,8 +1600,8 @@ func show_tutorial_tip(message: String, target: Control, duration: float = 4.0) 
 	msg.add_theme_color_override("font_color", Color(1.0, 0.95, 0.8, 1))
 	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	msg.size = Vector2(600, 70)
-	msg.position = Vector2(212, msg_y)
+	msg.size = Vector2(440, 70)
+	msg.position = Vector2(20, msg_y)
 	msg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_guide_layer.add_child(msg)
 
@@ -1106,7 +1621,7 @@ func show_guide(message: String, targets: Array) -> void:
 
 	var bg: ColorRect = ColorRect.new()
 	bg.color = Color(0, 0, 0, 0.65)
-	bg.size = Vector2(1024, 700)
+	bg.size = Vector2(480, 960)
 	bg.mouse_filter = Control.MOUSE_FILTER_STOP
 	_guide_layer.add_child(bg)
 
@@ -1128,12 +1643,20 @@ func show_guide(message: String, targets: Array) -> void:
 		var proxy: Button = Button.new()
 		proxy.position = rect.position
 		proxy.size = rect.size
-		var flat: StyleBoxFlat = StyleBoxFlat.new()
-		flat.bg_color = Color(0, 0, 0, 0)
-		proxy.add_theme_stylebox_override("normal", flat)
-		proxy.add_theme_stylebox_override("hover", flat)
-		proxy.add_theme_stylebox_override("pressed", flat)
-		proxy.add_theme_stylebox_override("focus", flat)
+		var is_rare: bool = tgt.get("rare", false)
+		var card_bg: StyleBoxFlat = StyleBoxFlat.new()
+		card_bg.bg_color = Color(0.97, 0.93, 0.82, 1) if is_rare else Color(0.91, 0.89, 0.97, 1)
+		card_bg.set_border_width_all(2)
+		card_bg.border_color = Color(0.88, 0.62, 0.08, 1) if is_rare else Color(0.48, 0.40, 0.75, 1)
+		card_bg.set_corner_radius_all(8)
+		proxy.add_theme_stylebox_override("normal", card_bg)
+		proxy.add_theme_stylebox_override("hover", card_bg)
+		proxy.add_theme_stylebox_override("pressed", card_bg)
+		proxy.add_theme_stylebox_override("focus", card_bg)
+		if tgt.has("text"):
+			proxy.text = tgt["text"]
+			proxy.add_theme_font_size_override("font_size", 18)
+			proxy.add_theme_color_override("font_color", Color(0.13, 0.08, 0.05, 1))
 		var cb: Callable = tgt["callback"]
 		proxy.pressed.connect(func() -> void:
 			_close_guide()
@@ -1163,8 +1686,8 @@ func show_guide(message: String, targets: Array) -> void:
 	msg.add_theme_color_override("font_color", Color(1.0, 0.95, 0.8, 1))
 	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	msg.size = Vector2(700, 70)
-	msg.position = Vector2(162, msg_y)
+	msg.size = Vector2(440, 70)
+	msg.position = Vector2(20, msg_y)
 	msg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_guide_layer.add_child(msg)
 
@@ -1194,3 +1717,4 @@ func _close_guide() -> void:
 	if _freeze_for_special_tip:
 		_freeze_for_special_tip = false
 		_set_battle_freeze(false)
+

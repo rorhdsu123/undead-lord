@@ -18,13 +18,19 @@ config/icon="res://icon.svg"
 [autoload]
 
 GameSave="*res://scripts/GameSave.gd"
+Loc="*res://scripts/Loc.gd"
 
 [display]
 
-window/size/viewport_width=1024
-window/size/viewport_height=700
+window/size/viewport_width=480
+window/size/viewport_height=960
 window/stretch/mode="canvas_items"
+
+[gui]
+
+theme/custom_font="res://assets/fonts/NotoSansKR-Regular.ttf"
 
 [rendering]
 
 renderer/rendering_method="mobile"
+textures/vram_compression/import_etc2_astc=true

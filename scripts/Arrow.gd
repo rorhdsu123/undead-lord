@@ -4,6 +4,8 @@ var direction: Vector2 = Vector2.UP
 var damage: float = 8.0
 var speed: float = 420.0
 var lifetime: float = 1.8
+var source: Node = null
+var lifesteal: float = 0.0
 
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
@@ -18,4 +20,6 @@ func _process(delta: float) -> void:
 func _on_body_entered(body: Node) -> void:
 	if body.is_in_group("enemies"):
 		body.take_damage(damage)
+		if lifesteal > 0.0 and is_instance_valid(source) and source.has_method("_heal"):
+			source._heal(damage * lifesteal)
 		queue_free()

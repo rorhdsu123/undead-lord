@@ -50,7 +50,7 @@ var active_minions: int = 0
 var lord_card_count: int = 0
 var summoner_card_count: int = 0
 var keystone1: String = ""   # "" | "kingdom"(영주) | "legion"(소환사)
-var keystone2: String = ""   # "" | "berserker" | "cataclysm" | "horde" | "echo"
+var keystone2: String = ""   # "" | "berserker" | "cataclysm" | "horde" | "echo" | "ritual"
 # 파생값(_recompute_keystones에서 재계산)
 var keystone_lord_atk_mult: float = 1.0
 var keystone_minion_atk_mult: float = 1.0
@@ -58,6 +58,15 @@ var keystone_revive_chance: float = 0.0
 var keystone_echo_dmg: float = 0.0
 var keystone_special_mult: float = 1.0
 const KEYSTONE_ECHO_RADIUS: float = 90.0
+var keystone_sacrifice_dmg_mult: float = 1.0
+var keystone_sacrifice_radius_mult: float = 1.0
+var keystone_sacrifice_refill: bool = false
+
+# MD10 희생 시스템 (1탭 자동)
+const SACRIFICE_RADIUS: float = 70.0      # 가제: 폭발 반경 (폭탄병 BOMB_RADIUS=80보다 작게)
+const SACRIFICE_DMG: float = 40.0         # 가제: 폭발 피해 (폭탄병 60보다 약하게, MD8 위계)
+const SACRIFICE_COOLDOWN: float = 8.0     # 가제: 발동당 쿨다운
+var sacrifice_cooldown: float = 0.0       # 남은 쿨다운(초)
 
 # 이번 판 왕관 조각 획득량
 var crowns_this_run: int = 0
@@ -182,6 +191,7 @@ var tracker_btns: Array = []
 @onready var wave_tracker = $UI/WaveTracker
 @onready var player = $Player
 @onready var attack_button = $UI/AttackButton
+var sacrifice_button: Button = null
 @onready var summon_container: HBoxContainer = $UI/SummonContainer
 @onready var minion_slot_label: Label = $UI/MinionSlotLabel
 @onready var minions_node = $Minions
@@ -201,7 +211,12 @@ func _ready() -> void:
 	result_btn1.pressed.connect(_on_result_btn1_pressed)
 	result_btn2.pressed.connect(_on_result_btn2_pressed)
 	attack_button.pressed.connect(_on_attack_pressed)
-	attack_button.add_theme_font_size_override("font_size", 20)
+	attack_button.add_theme_font_size_override("font_size", 16)
+	sacrifice_button = Button.new()
+	sacrifice_button.focus_mode = Control.FOCUS_NONE
+	sacrifice_button.add_theme_font_size_override("font_size", 20)
+	sacrifice_button.pressed.connect(_on_sacrifice_pressed)
+	attack_button.get_parent().add_child(sacrifice_button)
 	shop_close_btn.pressed.connect(_close_shop)
 	_build_shop_buttons()
 	_build_summon_buttons()
@@ -432,7 +447,7 @@ func end_wave() -> void:
 			_show_keystones(["kingdom", "legion"])
 			return
 		elif wtype == "mid_boss" and keystone2 == "" and keystone1 != "":
-			var pool: Array = ["berserker", "cataclysm", "doom"] if keystone1 == "kingdom" else ["horde", "echo"]
+			var pool: Array = ["berserker", "cataclysm", "doom"] if keystone1 == "kingdom" else ["horde", "echo", "ritual"]
 			pool.shuffle()
 			_show_keystones(pool.slice(0, 2))
 			return
@@ -512,6 +527,9 @@ func _recompute_keystones() -> void:
 	keystone_revive_chance = 0.0
 	keystone_echo_dmg = 0.0
 	keystone_special_mult = 1.0
+	keystone_sacrifice_dmg_mult = 1.0
+	keystone_sacrifice_radius_mult = 1.0
+	keystone_sacrifice_refill = false
 	match keystone1:
 		"kingdom":
 			keystone_lord_atk_mult *= (1.30 + 0.06 * float(lord_card_count))
@@ -528,6 +546,10 @@ func _recompute_keystones() -> void:
 			keystone_echo_dmg = 20.0 * (1.0 + 0.10 * float(summoner_card_count))
 		"doom":
 			keystone_special_mult *= (1.0 + 0.12 * float(lord_card_count))
+		"ritual":
+			keystone_sacrifice_dmg_mult = 1.0 + 0.12 * float(summoner_card_count)
+			keystone_sacrifice_radius_mult = 1.3
+			keystone_sacrifice_refill = true
 
 func _apply_keystone(id: String) -> void:
 	match id:
@@ -554,6 +576,8 @@ func _apply_keystone(id: String) -> void:
 			keystone2 = "doom"
 			special_cost = DOOM_SPECIAL_COST
 			_update_attack_button()
+		"ritual":
+			keystone2 = "ritual"
 	_recompute_keystones()
 
 func _show_keystones(ids: Array) -> void:
@@ -988,9 +1012,12 @@ func _fade_to_scene(path: String) -> void:
 		get_tree().change_scene_to_file(path)
 	)
 
-func _process(_delta) -> void:
+func _process(delta: float) -> void:
+	if sacrifice_cooldown > 0.0:
+		sacrifice_cooldown = max(0.0, sacrifice_cooldown - delta)
 	_update_attack_button()
 	_refresh_summon_buttons()
+	_update_sacrifice_button()
 
 func _on_attack_pressed() -> void:
 	if not wave_active:
@@ -1019,6 +1046,80 @@ func _update_attack_button() -> void:
 	else:
 		attack_button.disabled = true
 		attack_button.text = "특수기 (%d/%d)" % [souls, special_cost]
+
+func _update_sacrifice_button() -> void:
+	if not is_instance_valid(sacrifice_button):
+		return
+	if not wave_active:
+		sacrifice_button.disabled = true
+		sacrifice_button.text = Loc.t("sacrifice_btn_idle")
+		return
+	if _is_tutorial() and current_wave < 1:
+		sacrifice_button.disabled = true
+		sacrifice_button.text = Loc.t("sacrifice_btn_locked")
+		return
+	if sacrifice_cooldown > 0.0:
+		sacrifice_button.disabled = true
+		sacrifice_button.text = Loc.t("sacrifice_btn_cooldown") % ceili(sacrifice_cooldown)
+		return
+	# 희생할 상주 하인이 없으면 비활성
+	if _find_frontline_minion() == null:
+		sacrifice_button.disabled = true
+		sacrifice_button.text = Loc.t("sacrifice_btn_idle")
+		return
+	sacrifice_button.disabled = false
+	sacrifice_button.text = Loc.t("sacrifice_btn_idle")
+
+func _on_sacrifice_pressed() -> void:
+	if not wave_active:
+		return
+	if _is_tutorial() and current_wave < 1:
+		return
+	if sacrifice_cooldown > 0.0:
+		return
+	var target: Node = _find_frontline_minion()
+	if target == null:
+		return
+	_close_guide()
+	_sacrifice_minion(target)
+	sacrifice_cooldown = SACRIFICE_COOLDOWN
+
+func _find_frontline_minion() -> Node:
+	var enemies: Array = get_tree().get_nodes_in_group("enemies")
+	var best: Node = null
+	var best_dist: float = INF
+	var fallback: Node = null   # 적이 없을 때용 (첫 상주 하인)
+	for m in minions_node.get_children():
+		if not is_instance_valid(m):
+			continue
+		if m.get("minion_type") == null or m.minion_type == "bomber":
+			continue
+		if fallback == null:
+			fallback = m
+		for e in enemies:
+			if not is_instance_valid(e):
+				continue
+			var d: float = m.position.distance_to(e.position)
+			if d < best_dist:
+				best_dist = d
+				best = m
+	return best if best != null else fallback
+
+func _sacrifice_minion(m: Node) -> void:
+	var t: String = m.minion_type
+	_sacrifice_explosion(m.position)
+	m.sacrifice()
+	# 제물의 의식: 희생 경로에서만 무료 재소환 (일반 사망 경로 제외)
+	if keystone_sacrifice_refill and active_minions < max_minions:
+		_spawn_minion(t)
+
+func _sacrifice_explosion(pos: Vector2) -> void:
+	var radius: float = SACRIFICE_RADIUS * keystone_sacrifice_radius_mult
+	var dmg: float = SACRIFICE_DMG * keystone_sacrifice_dmg_mult
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(e) and e.position.distance_to(pos) <= radius:
+			e.take_damage(dmg)
+	spawn_explosion_effect(pos)
 
 func _apply_facility_bonuses() -> void:
 	var fl: Dictionary = GameSave.facility_levels
@@ -1067,8 +1168,15 @@ func _layout_bottom_ui() -> void:
 	var bottom_margin: float = 20.0
 	var gap: float = 22.0
 
-	attack_button.position = Vector2(mx, vp.y - bottom_margin - atk_h)
-	attack_button.size = Vector2(btn_w, atk_h)
+	var btn_gap: float = 8.0
+	var attack_w: float = (btn_w - btn_gap) * 0.6
+	var sacrifice_w: float = (btn_w - btn_gap) * 0.4
+	var atk_y: float = vp.y - bottom_margin - atk_h
+	attack_button.position = Vector2(mx, atk_y)
+	attack_button.size = Vector2(attack_w, atk_h)
+	if is_instance_valid(sacrifice_button):
+		sacrifice_button.position = Vector2(mx + attack_w + btn_gap, atk_y)
+		sacrifice_button.size = Vector2(sacrifice_w, atk_h)
 
 	summon_container.position = Vector2(mx, attack_button.position.y - gap - sum_h)
 	summon_container.size = Vector2(btn_w, sum_h)
@@ -1609,3 +1717,4 @@ func _close_guide() -> void:
 	if _freeze_for_special_tip:
 		_freeze_for_special_tip = false
 		_set_battle_freeze(false)
+

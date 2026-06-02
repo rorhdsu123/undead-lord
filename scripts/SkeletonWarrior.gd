@@ -262,3 +262,7 @@ func _report_died() -> void:
 	_died_reported = true
 	if game and game.has_method("minion_died"):
 		game.minion_died(position, minion_type)
+
+func sacrifice() -> void:
+	_report_died()
+	queue_free()

@@ -29,6 +29,12 @@ static var _strings: Dictionary = {
 	"card_doom":          "파멸의 일격\n특수기 영혼 비용 −30%. [영주] 카드를 모을수록 특수기가 강해진다",
 	"card_horde":         "영원한 군세\n하인 사망 시 재소환. [군단] 카드를 모을수록 부활이 강해진다",
 	"card_echo":          "죽음의 메아리\n하인이 죽으면 폭발. [군단] 카드를 모을수록 폭발이 강해진다",
+	"card_ritual":        "제물의 의식\n하인을 희생하면 같은 하인을 즉시 무료로 다시 소환한다. [군단] 카드를 모을수록 희생 폭발이 강해진다",
+
+	# MD10 희생 버튼 텍스트 (1탭 자동)
+	"sacrifice_btn_idle":     "희생",
+	"sacrifice_btn_locked":   "희생 (잠금)",
+	"sacrifice_btn_cooldown": "희생 (%ds)",
 }
 
 static func t(key: String) -> String:

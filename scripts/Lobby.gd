@@ -7,6 +7,14 @@ extends Node2D
 
 var skeleton_label: Label = null
 
+# ── 위엄 HUD ─────────────────────────────────────────────────
+var _majesty_gauge: Control = null   # 위엄 라디얼 게이지 위젯
+var _majesty_lv_label: Label = null  # HUD 내 "위엄 Lv N" 텍스트
+
+# ── 알현실 거점 ───────────────────────────────────────────────
+var _throne_btn: Button = null          # 탭 가능 거점 버튼
+var _throne_badge: Panel = null         # 레드닷 알림 뱃지
+
 const INTRO_LINES: Array[String] = [
 	"왕관이 있었다. 빼앗겼다.",
 	"그 후로 한 200년쯤.\n\n...아직도 죽지 못했다.",
@@ -76,6 +84,10 @@ var _panel_cur_lbl: Label = null
 var _panel_next_lbl: Label = null
 var _panel_upgrade_btn: Button = null
 
+# ── 알현 오버레이 ─────────────────────────────────────────────
+var _court_overlay: CanvasLayer = null   # 중복 생성 방지용 참조
+var _throne_node: Node2D = null          # 거점 비주얼 (bounce 대상)
+
 func _ready() -> void:
 	for path: String in ["UI/TitleLabel", "UI/SubtitleLabel", "UI/Sep1",
 						  "UI/FacilityHeaderLabel", "UI/FacilityPanel",
@@ -84,16 +96,19 @@ func _ready() -> void:
 		if n:
 			n.visible = false
 
-	crown_label.position = Vector2(0, 12)
-	crown_label.size = Vector2(480, 36)
+	# HUD 상단 한 줄 레이아웃: [위엄 게이지(좌)] [왕관(중)] [해골(우)]
+	# 위엄 게이지는 _build_majesty_hud()에서 생성 (좌측, x=8)
+	# 왕관·해골 라벨은 중앙·우측으로 재배치
+	crown_label.position = Vector2(100, 8)
+	crown_label.size = Vector2(180, 30)
 	crown_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	crown_label.add_theme_font_size_override("font_size", 18)
+	crown_label.add_theme_font_size_override("font_size", 15)
 
 	skeleton_label = Label.new()
-	skeleton_label.position = Vector2(0, 44)
-	skeleton_label.size = Vector2(480, 24)
-	skeleton_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	skeleton_label.add_theme_font_size_override("font_size", 14)
+	skeleton_label.position = Vector2(290, 8)
+	skeleton_label.size = Vector2(182, 30)
+	skeleton_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	skeleton_label.add_theme_font_size_override("font_size", 15)
 	skeleton_label.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0, 0.9))
 	skeleton_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui.add_child(skeleton_label)
@@ -105,7 +120,9 @@ func _ready() -> void:
 	_update_crown_label()
 	_update_skeleton_label()
 	_update_start_btn()
+	_build_majesty_hud()
 	_build_castle()
+	_build_throne_room()
 	_build_facility_buttons()
 	_build_skeleton_garden()
 	_build_bottom_panel()
@@ -118,6 +135,9 @@ func _ready() -> void:
 			get_tree().create_timer(0.7).timeout.connect(_show_first_facility_guide)
 		elif GameSave.tutorial_completed:
 			pass
+		# 로비 진입 시 알현 보상 있으면 거점 통통 튀는 어텐션 (화면 비차단)
+		if GameSave.has_court_reward() and is_instance_valid(_throne_btn):
+			get_tree().create_timer(0.5).timeout.connect(_play_throne_attention)
 
 func _update_start_btn() -> void:
 	start_btn.text = "출정  (%d-%d)" % [GameSave.current_chapter + 1, GameSave.current_stage + 1]
@@ -133,6 +153,84 @@ func _update_crown_label() -> void:
 func _update_skeleton_label() -> void:
 	if is_instance_valid(skeleton_label):
 		skeleton_label.text = "해골: %d / %d" % [GameSave.skeleton_count, GameSave.SKELETON_CAP]
+
+func _update_majesty_hud() -> void:
+	if not is_instance_valid(_majesty_gauge):
+		return
+	_majesty_gauge.queue_redraw()
+	if is_instance_valid(_majesty_lv_label):
+		if GameSave.majesty_level >= GameSave.MAJESTY_CAP:
+			_majesty_lv_label.text = Loc.t("majesty_max")
+		else:
+			_majesty_lv_label.text = Loc.t("majesty_lv") % GameSave.majesty_level
+
+# ── 위엄 라디얼 HUD ──────────────────────────────────────────
+
+func _build_majesty_hud() -> void:
+	# 컨테이너: 좌상단, 위엄 게이지 + 레벨 라벨
+	const GAUGE_SIZE: float = 44.0
+	const GAUGE_X: float = 8.0
+	const GAUGE_Y: float = 4.0
+
+	# 커스텀 Control: draw_arc()로 원형 EXP 게이지
+	_majesty_gauge = Control.new()
+	_majesty_gauge.position = Vector2(GAUGE_X, GAUGE_Y)
+	_majesty_gauge.size = Vector2(GAUGE_SIZE, GAUGE_SIZE)
+	_majesty_gauge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# draw() 는 스크립트 없이 직접 연결 불가 → 인라인 스크립트 대신
+	# set_script()으로 익명 스크립트 없이, _draw 시그널을 draw_item을 통해 구현
+	# Godot 4에서는 Control에 스크립트 없이 draw_arc 연결 불가 →
+	# 간단한 익명 클래스 대신 _draw callback을 서브노드 없이
+	# ReferenceRect + draw_arc 패턴: 커스텀 스크립트를 set_script로 부착
+	var gauge_script: GDScript = GDScript.new()
+	gauge_script.source_code = """
+extends Control
+var _fill: float = 0.0
+var _capped: bool = false
+func _draw() -> void:
+	var cx: float = size.x * 0.5
+	var cy: float = size.y * 0.5
+	var r: float = cx - 3.0
+	# 배경 링
+	draw_arc(Vector2(cx, cy), r, 0.0, TAU, 48, Color(0.25, 0.20, 0.35, 0.8), 4.0, true)
+	# 전경 링 (시계방향: -PI*0.5(12시) 시작, 각도 = _fill * TAU)
+	if _fill > 0.001 or _capped:
+		var fill_angle: float = TAU if _capped else _fill * TAU
+		var col: Color = Color(1.0, 0.85, 0.2, 1.0) if not _capped else Color(1.0, 0.7, 0.1, 1.0)
+		draw_arc(Vector2(cx, cy), r, -PI * 0.5, -PI * 0.5 + fill_angle, 48, col, 4.0, true)
+"""
+	gauge_script.reload()
+	_majesty_gauge.set_script(gauge_script)
+
+	# 레벨 라벨 (게이지 중앙)
+	_majesty_lv_label = Label.new()
+	_majesty_lv_label.position = Vector2(0, 0)
+	_majesty_lv_label.size = Vector2(GAUGE_SIZE, GAUGE_SIZE)
+	_majesty_lv_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_majesty_lv_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_majesty_lv_label.add_theme_font_size_override("font_size", 10)
+	_majesty_lv_label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.6, 1.0))
+	_majesty_lv_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_majesty_gauge.add_child(_majesty_lv_label)
+
+	_ui.add_child(_majesty_gauge)
+	_refresh_majesty_gauge_fill()
+	_update_majesty_hud()
+
+func _refresh_majesty_gauge_fill() -> void:
+	if not is_instance_valid(_majesty_gauge):
+		return
+	var capped: bool = GameSave.majesty_level >= GameSave.MAJESTY_CAP
+	var fill: float = 0.0
+	if capped:
+		fill = 1.0
+	elif GameSave.majesty_level < GameSave.MAJESTY_LEVEL_REQ.size():
+		var req: int = GameSave.MAJESTY_LEVEL_REQ[GameSave.majesty_level]
+		fill = float(GameSave.majesty_exp) / float(req) if req > 0 else 0.0
+	_majesty_gauge.set("_fill", fill)
+	_majesty_gauge.set("_capped", capped)
+	_majesty_gauge.queue_redraw()
 
 # ── 성 시각 및 시설 버튼 ────────────────────────────────────
 
@@ -484,3 +582,480 @@ func _on_start_pressed() -> void:
 	tween.tween_callback(func() -> void:
 		get_tree().change_scene_to_file("res://scenes/Game.tscn")
 	)
+
+# ── C-2 알현실 거점 ────────────────────────────────────────────
+
+# 원형 레드닷 알림 뱃지 생성 (공용)
+func _make_red_dot(diam: float = 14.0) -> Panel:
+	var dot: Panel = Panel.new()
+	dot.size = Vector2(diam, diam)
+	var sb: StyleBoxFlat = StyleBoxFlat.new()
+	sb.bg_color = Color(0.92, 0.18, 0.18, 1.0)
+	sb.set_corner_radius_all(int(diam * 0.5))
+	sb.set_border_width_all(2)
+	sb.border_color = Color(1.0, 0.85, 0.85, 0.95)
+	dot.add_theme_stylebox_override("panel", sb)
+	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return dot
+
+func _build_throne_room() -> void:
+	# 좌하단 (70, 630) — 시설 버튼과 겹치지 않는 위치
+	const THRONE_POS: Vector2 = Vector2(70, 630)
+	const THRONE_W: float = 90.0
+	const THRONE_H: float = 72.0
+
+	# Node2D 컨테이너 (bounce 대상)
+	_throne_node = Node2D.new()
+	_throne_node.position = THRONE_POS
+
+	# --- 단상 비주얼 (ColorRect 두 겹으로 옥좌 실루엣) ---
+	# 기단부
+	var base_rect: ColorRect = ColorRect.new()
+	base_rect.position = Vector2(-THRONE_W * 0.5, 10)
+	base_rect.size = Vector2(THRONE_W, 28)
+	base_rect.color = Color(0.22, 0.16, 0.34, 0.95)
+	_throne_node.add_child(base_rect)
+
+	# 등받이 (좁고 높음)
+	var back_rect: ColorRect = ColorRect.new()
+	back_rect.position = Vector2(-18, -24)
+	back_rect.size = Vector2(36, 38)
+	back_rect.color = Color(0.38, 0.25, 0.55, 0.98)
+	_throne_node.add_child(back_rect)
+
+	# 팔걸이 좌
+	var arm_l: ColorRect = ColorRect.new()
+	arm_l.position = Vector2(-THRONE_W * 0.5 + 6, -4)
+	arm_l.size = Vector2(10, 18)
+	arm_l.color = Color(0.50, 0.34, 0.70, 0.95)
+	_throne_node.add_child(arm_l)
+
+	# 팔걸이 우
+	var arm_r: ColorRect = ColorRect.new()
+	arm_r.position = Vector2(THRONE_W * 0.5 - 16, -4)
+	arm_r.size = Vector2(10, 18)
+	arm_r.color = Color(0.50, 0.34, 0.70, 0.95)
+	_throne_node.add_child(arm_r)
+
+	# 금색 테두리 (상단 가로선)
+	var crown_line: ColorRect = ColorRect.new()
+	crown_line.position = Vector2(-THRONE_W * 0.5, -26)
+	crown_line.size = Vector2(THRONE_W, 4)
+	crown_line.color = Color(1.0, 0.82, 0.2, 0.9)
+	_throne_node.add_child(crown_line)
+
+	add_child(_throne_node)
+
+	# --- 탭 버튼 (_ui CanvasLayer 에 붙임, 시설 버튼 패턴과 동일) ---
+	_throne_btn = Button.new()
+	_throne_btn.position = THRONE_POS - Vector2(THRONE_W * 0.5, THRONE_H * 0.5)
+	_throne_btn.size = Vector2(THRONE_W, THRONE_H)
+	_throne_btn.modulate = Color(1, 1, 1, 0)   # 투명 — 비주얼은 Node2D
+	_throne_btn.pressed.connect(_open_court_overlay)
+	_ui.add_child(_throne_btn)
+
+	# --- "알현실" 라벨 ---
+	var lbl: Label = Label.new()
+	lbl.text = Loc.t("throne_room_label")
+	lbl.position = THRONE_POS + Vector2(-THRONE_W * 0.5, 40)
+	lbl.size = Vector2(THRONE_W, 20)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_color_override("font_color", Color(0.85, 0.75, 1.0, 0.85))
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ui.add_child(lbl)
+
+	# --- 레드닷 알림 뱃지 ---
+	const DOT_SIZE: float = 14.0
+	_throne_badge = _make_red_dot(DOT_SIZE)
+	_throne_badge.position = THRONE_POS + Vector2(THRONE_W * 0.5 - DOT_SIZE, -THRONE_H * 0.5)
+	_throne_badge.visible = false
+	_ui.add_child(_throne_badge)
+
+	_refresh_throne_affordance()
+
+func _refresh_throne_affordance() -> void:
+	# 어포던스 = 레드닷 표시/숨김만 (거점 글로우 펄스 없음)
+	if is_instance_valid(_throne_badge):
+		_throne_badge.visible = GameSave.has_court_reward()
+
+func _play_throne_attention() -> void:
+	if not is_instance_valid(_throne_node):
+		return
+	# 거점만 scale bounce — 화면 입력 차단 없음
+	var orig_scale: Vector2 = _throne_node.scale
+	var tween: Tween = create_tween()
+	tween.set_trans(Tween.TRANS_BACK)
+	tween.set_ease(Tween.EASE_OUT)
+	tween.tween_property(_throne_node, "scale", orig_scale * 1.25, 0.18)
+	tween.tween_property(_throne_node, "scale", orig_scale, 0.22)
+
+# ── C-3 알현 오버레이 ─────────────────────────────────────────
+
+func _open_court_overlay() -> void:
+	# 중복 방지
+	if is_instance_valid(_court_overlay):
+		return
+
+	var layer: CanvasLayer = CanvasLayer.new()
+	layer.layer = 92
+	add_child(layer)
+	_court_overlay = layer
+
+	var vp: Vector2 = get_viewport_rect().size
+
+	# 반투명 배경 (탭 닫기)
+	var bg: ColorRect = ColorRect.new()
+	bg.color = Color(0.04, 0.02, 0.10, 0.90)
+	bg.size = vp
+	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	bg.gui_input.connect(func(ev: InputEvent) -> void:
+		if ev is InputEventScreenTouch and ev.pressed:
+			_close_court_overlay()
+		elif ev is InputEventMouseButton and ev.pressed:
+			_close_court_overlay()
+	)
+	layer.add_child(bg)
+
+	# 패널 컨테이너
+	const PANEL_X: float = 16.0
+	const PANEL_Y: float = 60.0
+	const PANEL_W: float = 448.0
+
+	var panel: Control = Control.new()
+	panel.position = Vector2(PANEL_X, PANEL_Y)
+	panel.size = Vector2(PANEL_W, vp.y - PANEL_Y - 20)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(panel)
+
+	var panel_bg: ColorRect = ColorRect.new()
+	panel_bg.color = Color(0.07, 0.04, 0.14, 0.98)
+	panel_bg.size = panel.size
+	panel_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(panel_bg)
+
+	# 패널 상단 테두리
+	var border: ColorRect = ColorRect.new()
+	border.color = Color(0.55, 0.32, 0.85, 1.0)
+	border.size = Vector2(PANEL_W, 2)
+	panel.add_child(border)
+
+	# 닫기 버튼
+	var close_btn: Button = Button.new()
+	close_btn.text = "닫기"
+	close_btn.size = Vector2(80, 34)
+	close_btn.position = Vector2(PANEL_W - 90, 10)
+	close_btn.add_theme_font_size_override("font_size", 13)
+	close_btn.pressed.connect(_close_court_overlay)
+	panel.add_child(close_btn)
+
+	# 위엄 레벨 라벨
+	var lv_lbl: Label = Label.new()
+	lv_lbl.name = "LvLabel"
+	if GameSave.majesty_level >= GameSave.MAJESTY_CAP:
+		lv_lbl.text = Loc.t("majesty_max")
+	else:
+		lv_lbl.text = Loc.t("majesty_lv") % GameSave.majesty_level
+	lv_lbl.position = Vector2(12, 12)
+	lv_lbl.size = Vector2(PANEL_W - 110, 32)
+	lv_lbl.add_theme_font_size_override("font_size", 20)
+	lv_lbl.add_theme_color_override("font_color", Color(1.0, 0.88, 0.25, 1.0))
+	lv_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(lv_lbl)
+
+	# EXP 게이지 (ProgressBar)
+	var prog: ProgressBar = ProgressBar.new()
+	prog.name = "ExpBar"
+	prog.position = Vector2(12, 50)
+	prog.size = Vector2(PANEL_W - 24, 14)
+	prog.min_value = 0.0
+	prog.max_value = 1.0
+	if GameSave.majesty_level >= GameSave.MAJESTY_CAP:
+		prog.value = 1.0
+	else:
+		var req: int = GameSave.MAJESTY_LEVEL_REQ[GameSave.majesty_level]
+		prog.value = float(GameSave.majesty_exp) / float(req) if req > 0 else 0.0
+	prog.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(prog)
+
+	# 해제권 라벨
+	var credits_lbl: Label = Label.new()
+	credits_lbl.name = "CreditsLabel"
+	credits_lbl.text = Loc.t("unlock_credits_label") % GameSave.unlock_credits
+	credits_lbl.position = Vector2(12, 70)
+	credits_lbl.size = Vector2(PANEL_W - 24, 24)
+	credits_lbl.add_theme_font_size_override("font_size", 14)
+	credits_lbl.add_theme_color_override("font_color", Color(0.75, 0.92, 0.78, 1.0))
+	credits_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(credits_lbl)
+
+	# 구분선
+	var sep1: ColorRect = ColorRect.new()
+	sep1.color = Color(0.40, 0.25, 0.65, 0.6)
+	sep1.position = Vector2(12, 100)
+	sep1.size = Vector2(PANEL_W - 24, 1)
+	panel.add_child(sep1)
+
+	# [알현하다] 버튼
+	var court_btn: Button = Button.new()
+	court_btn.name = "CourtBtn"
+	court_btn.position = Vector2(12, 108)
+	court_btn.size = Vector2(PANEL_W - 24, 48)
+	court_btn.add_theme_font_size_override("font_size", 16)
+	if GameSave.can_hold_court():
+		court_btn.text = Loc.t("court_btn_available")
+		court_btn.disabled = false
+	else:
+		court_btn.text = Loc.t("court_btn_done")
+		court_btn.disabled = true
+	court_btn.pressed.connect(func() -> void: _on_court_btn_pressed(panel))
+	panel.add_child(court_btn)
+
+	# 알현하다 버튼 레드닷 — 알현 가능할 때만 (버튼 우상단)
+	var court_dot: Panel = _make_red_dot()
+	court_dot.name = "CourtDot"
+	court_dot.position = Vector2(PANEL_W - 26, 102)
+	court_dot.visible = GameSave.can_hold_court()
+	panel.add_child(court_dot)
+
+	# 구분선
+	var sep2: ColorRect = ColorRect.new()
+	sep2.color = Color(0.40, 0.25, 0.65, 0.6)
+	sep2.position = Vector2(12, 164)
+	sep2.size = Vector2(PANEL_W - 24, 1)
+	panel.add_child(sep2)
+
+	# 교리 트리 (ScrollContainer)
+	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.name = "DoctrineScroll"
+	scroll.position = Vector2(0, 170)
+	scroll.size = Vector2(PANEL_W, panel.size.y - 175)
+	scroll.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.add_child(scroll)
+
+	var doctrine_vbox: VBoxContainer = VBoxContainer.new()
+	doctrine_vbox.name = "DoctrineVBox"
+	doctrine_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	doctrine_vbox.add_theme_constant_override("separation", 6)
+	scroll.add_child(doctrine_vbox)
+
+	_build_doctrine_tree(doctrine_vbox, PANEL_W)
+
+	# 페이드인
+	bg.modulate.a = 0.0
+	var fade: Tween = create_tween()
+	fade.tween_property(bg, "modulate:a", 1.0, 0.25)
+
+func _close_court_overlay() -> void:
+	if not is_instance_valid(_court_overlay):
+		return
+	var layer: CanvasLayer = _court_overlay
+	_court_overlay = null
+	var bg: ColorRect = layer.get_child(0) if layer.get_child_count() > 0 else null
+	if is_instance_valid(bg):
+		var tween: Tween = create_tween()
+		tween.tween_property(bg, "modulate:a", 0.0, 0.20)
+		tween.tween_callback(func() -> void:
+			if is_instance_valid(layer):
+				layer.queue_free()
+		)
+	else:
+		layer.queue_free()
+
+func _on_court_btn_pressed(panel: Control) -> void:
+	var lv: int = GameSave.hold_court()
+	_update_majesty_hud()
+	_refresh_majesty_gauge_fill()
+	_refresh_throne_affordance()
+	_refresh_court_overlay_content(panel)
+	if lv > 0:
+		_show_levelup_toast(panel)
+
+func _refresh_court_overlay_content(panel: Control) -> void:
+	var lv_lbl: Label = panel.get_node_or_null("LvLabel")
+	if is_instance_valid(lv_lbl):
+		if GameSave.majesty_level >= GameSave.MAJESTY_CAP:
+			lv_lbl.text = Loc.t("majesty_max")
+		else:
+			lv_lbl.text = Loc.t("majesty_lv") % GameSave.majesty_level
+
+	var prog: ProgressBar = panel.get_node_or_null("ExpBar")
+	if is_instance_valid(prog):
+		if GameSave.majesty_level >= GameSave.MAJESTY_CAP:
+			prog.value = 1.0
+		else:
+			var req: int = GameSave.MAJESTY_LEVEL_REQ[GameSave.majesty_level]
+			prog.value = float(GameSave.majesty_exp) / float(req) if req > 0 else 0.0
+
+	var credits_lbl: Label = panel.get_node_or_null("CreditsLabel")
+	if is_instance_valid(credits_lbl):
+		credits_lbl.text = Loc.t("unlock_credits_label") % GameSave.unlock_credits
+
+	var court_btn: Button = panel.get_node_or_null("CourtBtn")
+	if is_instance_valid(court_btn):
+		if GameSave.can_hold_court():
+			court_btn.text = Loc.t("court_btn_available")
+			court_btn.disabled = false
+		else:
+			court_btn.text = Loc.t("court_btn_done")
+			court_btn.disabled = true
+
+	var court_dot: Panel = panel.get_node_or_null("CourtDot")
+	if is_instance_valid(court_dot):
+		court_dot.visible = GameSave.can_hold_court()
+
+	var scroll: ScrollContainer = panel.get_node_or_null("DoctrineScroll")
+	if is_instance_valid(scroll):
+		var vbox: VBoxContainer = scroll.get_node_or_null("DoctrineVBox")
+		if is_instance_valid(vbox):
+			for c: Node in vbox.get_children():
+				c.queue_free()
+			_build_doctrine_tree(vbox, panel.size.x)
+
+func _show_levelup_toast(panel: Control) -> void:
+	var toast: Label = Label.new()
+	toast.text = Loc.t("majesty_levelup")
+	toast.position = Vector2(12, 108)
+	toast.size = Vector2(panel.size.x - 24, 48)
+	toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	toast.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	toast.add_theme_font_size_override("font_size", 16)
+	toast.add_theme_color_override("font_color", Color(1.0, 0.90, 0.2, 1.0))
+	toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	toast.modulate.a = 0.0
+	panel.add_child(toast)
+
+	# 크기 scale + 페이드아웃
+	toast.pivot_offset = toast.size * 0.5
+	toast.scale = Vector2(0.8, 0.8)
+	var tween: Tween = create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(toast, "modulate:a", 1.0, 0.22)
+	tween.tween_property(toast, "scale", Vector2(1.0, 1.0), 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.set_parallel(false)
+	tween.tween_interval(1.8)
+	tween.tween_property(toast, "modulate:a", 0.0, 0.4)
+	tween.tween_callback(func() -> void:
+		if is_instance_valid(toast):
+			toast.queue_free()
+	)
+
+# ── D 교리 트리 ───────────────────────────────────────────────
+
+const DOCTRINE_CATS: Array[String] = ["death", "war", "soul", "minion", "rule"]
+
+func _build_doctrine_tree(vbox: VBoxContainer, panel_w: float) -> void:
+	const INNER_PAD: float = 8.0
+	const CELL_W_FRAC: float = 0.44   # 각 A/B 칸 너비 비율
+
+	for cat: String in DOCTRINE_CATS:
+		var chosen: String = GameSave.doctrines.get(cat, "")
+		var has_credits: bool = GameSave.unlock_credits > 0
+
+		# 카테고리 행 컨테이너
+		var row: VBoxContainer = VBoxContainer.new()
+		row.add_theme_constant_override("separation", 2)
+		vbox.add_child(row)
+
+		# 카테고리 이름 라벨
+		var cat_lbl: Label = Label.new()
+		cat_lbl.text = Loc.t("doctrine_category_" + cat)
+		cat_lbl.add_theme_font_size_override("font_size", 13)
+		cat_lbl.add_theme_color_override("font_color", Color(0.85, 0.72, 1.0, 1.0))
+		cat_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cat_lbl.custom_minimum_size = Vector2(panel_w - INNER_PAD * 2, 20)
+		row.add_child(cat_lbl)
+
+		# A / B 칸 가로 배치
+		var hbox: HBoxContainer = HBoxContainer.new()
+		hbox.add_theme_constant_override("separation", 6)
+		row.add_child(hbox)
+
+		for choice: String in ["A", "B"]:
+			var name_key: String = "doctrine_%s_%s_name" % [cat, choice]
+			var desc_key: String = "doctrine_%s_%s_desc" % [cat, choice]
+			var cell_name: String = Loc.t(name_key)
+			var cell_desc: String = Loc.t(desc_key)
+
+			var is_selected: bool = chosen == choice
+			var is_opposite_selected: bool = chosen != "" and chosen != choice
+			var can_pick: bool = chosen == "" and has_credits
+
+			var cell: Control = Control.new()
+			cell.custom_minimum_size = Vector2((panel_w - INNER_PAD * 2 - 6) * 0.5, 58)
+			hbox.add_child(cell)
+
+			# 배경 색
+			var cell_bg: ColorRect = ColorRect.new()
+			cell_bg.size = cell.custom_minimum_size
+			if is_selected:
+				cell_bg.color = Color(0.30, 0.22, 0.08, 0.95)   # 금색 강조
+			elif is_opposite_selected:
+				cell_bg.color = Color(0.10, 0.09, 0.14, 0.90)   # 회색 잠금
+			elif can_pick:
+				cell_bg.color = Color(0.12, 0.08, 0.22, 0.95)   # 선택 가능
+			else:
+				cell_bg.color = Color(0.09, 0.07, 0.16, 0.90)   # 프리뷰
+			cell.add_child(cell_bg)
+
+			# 이름 라벨
+			var name_lbl: Label = Label.new()
+			name_lbl.text = cell_name
+			name_lbl.position = Vector2(6, 4)
+			name_lbl.size = Vector2(cell.custom_minimum_size.x - 12, 18)
+			name_lbl.add_theme_font_size_override("font_size", 12)
+			if is_selected:
+				name_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2, 1.0))
+			elif is_opposite_selected:
+				name_lbl.add_theme_color_override("font_color", Color(0.45, 0.42, 0.52, 1.0))
+			else:
+				name_lbl.add_theme_color_override("font_color", Color(0.88, 0.84, 0.96, 1.0))
+			name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			cell.add_child(name_lbl)
+
+			# 설명 라벨
+			var desc_lbl: Label = Label.new()
+			desc_lbl.text = cell_desc
+			desc_lbl.position = Vector2(6, 22)
+			desc_lbl.size = Vector2(cell.custom_minimum_size.x - 12, 34)
+			desc_lbl.add_theme_font_size_override("font_size", 10)
+			desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			if is_opposite_selected:
+				desc_lbl.add_theme_color_override("font_color", Color(0.38, 0.36, 0.44, 1.0))
+			else:
+				desc_lbl.add_theme_color_override("font_color", Color(0.72, 0.70, 0.82, 1.0))
+			desc_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			cell.add_child(desc_lbl)
+
+			# 선택 오버레이 버튼 (활성 시만)
+			if can_pick:
+				var pick_btn: Button = Button.new()
+				pick_btn.size = cell.custom_minimum_size
+				pick_btn.modulate = Color(1, 1, 1, 0)   # 투명 — 비주얼은 cell_bg
+				var _cat: String = cat
+				var _choice: String = choice
+				pick_btn.pressed.connect(func() -> void:
+					var ok: bool = GameSave.assign_doctrine(_cat, _choice)
+					if ok:
+						# 오버레이 컨텐츠 갱신
+						var panel: Control = vbox.get_parent().get_parent()
+						_refresh_court_overlay_content(panel)
+						_update_majesty_hud()
+						_refresh_throne_affordance()
+				)
+				cell.add_child(pick_btn)
+
+			# 선택 완료 테두리
+			if is_selected:
+				var sel_border: ColorRect = ColorRect.new()
+				sel_border.color = Color(1.0, 0.82, 0.15, 0.85)
+				sel_border.size = Vector2(cell.custom_minimum_size.x, 2)
+				sel_border.position = Vector2(0, 0)
+				sel_border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				cell.add_child(sel_border)
+
+		# 행 하단 구분선
+		var row_sep: ColorRect = ColorRect.new()
+		row_sep.color = Color(0.30, 0.20, 0.50, 0.4)
+		row_sep.custom_minimum_size = Vector2(panel_w - INNER_PAD * 2, 1)
+		vbox.add_child(row_sep)

@@ -35,6 +35,66 @@ static var _strings: Dictionary = {
 	"sacrifice_btn_idle":     "희생",
 	"sacrifice_btn_locked":   "희생 (잠금)",
 	"sacrifice_btn_cooldown": "희생 (%ds)",
+
+	# ── 위엄(Majesty) 시스템 ───────────────────────────────────
+	# HUD
+	"majesty_lv":             "위엄 Lv %d",
+	"majesty_max":            "위엄 MAX",
+
+	# 알현실 거점
+	"throne_room_label":      "알현실",
+
+	# 알현 오버레이 — 버튼
+	"court_btn_available":    "알현하다",
+	"court_btn_done":         "오늘의 알현 완료 — 내일 다시",
+
+	# 알현 레벨업
+	"majesty_levelup":        "위엄이 깊어졌습니다.",
+	"majesty_levelup_en":     "Your Majesty deepens.",
+
+	# 해제권
+	"unlock_credits_label":   "해제권 %d",
+
+	# 전투 결과 위엄 EXP
+	"majesty_exp_gain":       "위엄 +%d",
+
+	# ── 교리(Doctrine) — 카테고리 이름 ───────────────────────
+	"doctrine_category_death":  "죽음의 율법",
+	"doctrine_category_war":    "전쟁의 율법",
+	"doctrine_category_soul":   "영혼의 율법",
+	"doctrine_category_minion": "부하의 율법",
+	"doctrine_category_rule":   "지배의 율법",
+
+	# ── 교리 — 선택지 이름 + 설명 ────────────────────────────
+	# 죽음의 율법
+	"doctrine_death_A_name":  "처형",
+	"doctrine_death_A_desc":  "처치 시 1초 내 가까운 적 연쇄 즉사",
+	"doctrine_death_B_name":  "자비",
+	"doctrine_death_B_desc":  "적 일부 도주, 다음 웨이브 약화",
+
+	# 전쟁의 율법
+	"doctrine_war_A_name":    "전선 사수",
+	"doctrine_war_A_desc":    "적이 성에 가까울수록 영주 공격력↑",
+	"doctrine_war_B_name":    "기동전",
+	"doctrine_war_B_desc":    "영주 기본공격이 방향성을 가짐",
+
+	# 영혼의 율법
+	"doctrine_soul_A_name":   "영혼 비축",
+	"doctrine_soul_A_desc":   "미사용 영혼 일부 메타 이월",
+	"doctrine_soul_B_name":   "영혼 폭주",
+	"doctrine_soul_B_desc":   "특수기 후 5초 영혼 드롭 ×2",
+
+	# 부하의 율법
+	"doctrine_minion_A_name": "명예",
+	"doctrine_minion_A_desc": "해골 사망 시 유령으로 5초 잔존",
+	"doctrine_minion_B_name": "소모",
+	"doctrine_minion_B_desc": "해골 사망 시 주변 적 폭발",
+
+	# 지배의 율법
+	"doctrine_rule_A_name":   "카리스마",
+	"doctrine_rule_A_desc":   "시야 내 하인 공격속도 ×2",
+	"doctrine_rule_B_name":   "공포",
+	"doctrine_rule_B_desc":   "보스 제외 적 패닉 (무작위 정지)",
 }
 
 static func t(key: String) -> String:

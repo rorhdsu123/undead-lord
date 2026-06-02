@@ -72,6 +72,9 @@ var sacrifice_cooldown: float = 0.0       # 남은 쿨다운(초)
 var crowns_this_run: int = 0
 var run_start_time: float = 0.0
 
+# 위엄 EXP — 런당 1회 부여 방지 (중복 호출 가드)
+var _majesty_exp_granted: bool = false
+
 # 시설 보너스
 var soul_gain_mult: float = 1.0
 
@@ -889,6 +892,14 @@ func earn_crown_shards(n: int) -> void:
 	crowns_this_run += n
 	GameSave.add_crown_shards(n)
 
+# 현재 스테이지에 "boss" 타입 웨이브가 있는지 확인 (위엄 EXP 보너스 판정용)
+func _stage_has_final_boss() -> bool:
+	var wave_count: int = WaveData.stage_wave_count(current_chapter, current_stage)
+	for w: int in wave_count:
+		if WaveData.get_wave(current_chapter, current_stage, w).get("type", "") == "boss":
+			return true
+	return false
+
 func _format_time(seconds: float) -> String:
 	var mins: int = int(seconds) / 60
 	var secs: int = int(seconds) % 60
@@ -931,7 +942,14 @@ func game_over() -> void:
 		result_label.text = "성이 함락됐다..."
 		sub_label.text = "스테이지 %d-%d  웨이브 %d" % [current_chapter + 1, current_stage + 1, current_wave + 1]
 		time_label.text = "%s" % _format_time(elapsed)
-		crown_label.text = "왕관 조각 +%d (총 %d개)" % [crowns_this_run, GameSave.crown_shards] if crowns_this_run > 0 else ""
+		# 위엄 EXP 부여 (실패 완충 — 소량, 런당 1회)
+		var majesty_line: String = ""
+		if not _majesty_exp_granted:
+			_majesty_exp_granted = true
+			const GAME_OVER_MAJESTY: int = 5
+			GameSave.add_majesty_exp(GAME_OVER_MAJESTY)
+			majesty_line = "\n" + Loc.t("majesty_exp_gain") % GAME_OVER_MAJESTY
+		crown_label.text = ("왕관 조각 +%d (총 %d개)" % [crowns_this_run, GameSave.crown_shards] if crowns_this_run > 0 else "") + majesty_line
 		result_btn1.text = "↩  다시 시작"
 		result_btn1.disabled = false
 		result_btn1.set_meta("action", "retry")
@@ -970,7 +988,14 @@ func game_clear() -> void:
 		result_label.text = "스테이지 클리어!"
 		sub_label.text = "%d-%d 완료" % [current_chapter + 1, current_stage + 1]
 		time_label.text = "%s" % _format_time(elapsed)
-		crown_label.text = "왕관 조각 +%d (총 %d개)" % [crowns_this_run, GameSave.crown_shards]
+		# 위엄 EXP 부여 (런당 1회): 일반 클리어 +20, 보스 스테이지 +40
+		var majesty_gain: int = 0
+		if not _majesty_exp_granted:
+			_majesty_exp_granted = true
+			majesty_gain = 40 if _stage_has_final_boss() else 20
+			GameSave.add_majesty_exp(majesty_gain)
+		var majesty_line: String = ("\n" + Loc.t("majesty_exp_gain") % majesty_gain) if majesty_gain > 0 else ""
+		crown_label.text = "왕관 조각 +%d (총 %d개)" % [crowns_this_run, GameSave.crown_shards] + majesty_line
 		if has_next:
 			if current_chapter == 0 and current_stage == 0:
 				GameSave.tutorial_completed = true
@@ -1054,7 +1079,8 @@ func _update_sacrifice_button() -> void:
 		sacrifice_button.disabled = true
 		sacrifice_button.text = Loc.t("sacrifice_btn_idle")
 		return
-	if _is_tutorial() and current_wave < 1:
+	# 1-1 튜토리얼 전체에서 희생 잠금 (열리는 웨이브는 추후 튜토리얼 기획 때 보강)
+	if _is_tutorial():
 		sacrifice_button.disabled = true
 		sacrifice_button.text = Loc.t("sacrifice_btn_locked")
 		return
@@ -1073,7 +1099,7 @@ func _update_sacrifice_button() -> void:
 func _on_sacrifice_pressed() -> void:
 	if not wave_active:
 		return
-	if _is_tutorial() and current_wave < 1:
+	if _is_tutorial():
 		return
 	if sacrifice_cooldown > 0.0:
 		return

@@ -9,3 +9,12 @@ export_presets.cfg
 
 # 게임 세이브 (로컬 테스트용)
 *.cfg
+
+# 웹 빌드 산출물 (대용량)
+build/
+
+# 원본 스프라이트 다운로드 — 게임은 assets/ 만 참조 (대용량)
+craftpix-*/
+
+# Claude Code 로컬 설정
+.claude/

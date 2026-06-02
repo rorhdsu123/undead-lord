@@ -14,8 +14,9 @@ const TYPE_PRESETS: Dictionary = {
 const BASE_HP: float = 50.0
 const BASE_SPEED: float = 60.0
 const BASE_DAMAGE: int = 10
-const BASE_SPRITE_SCALE: float = 0.07
+const BASE_SPRITE_SCALE: float = 0.246
 const MINION_ENGAGE_RANGE: float = 100.0
+const KNOCKBACK_DECAY: float = 700.0
 
 static var _cached_frames: Dictionary = {}
 
@@ -27,6 +28,9 @@ var damage: int = 10
 var attack_cooldown: float = 1.5
 var attack_timer: float = 0.0
 var slow_timer: float = 0.0
+var knockback_vel: Vector2 = Vector2.ZERO
+var knockback_resist: float = 1.0  # 질량 대용(hp_mult). 클수록 덜 밀림
+var _sprite_base_scale: Vector2 = Vector2.ONE
 var enemy_type: String = "normal"
 var _attack_anim: String = "slash"
 var _anim_state: String = ""
@@ -45,11 +49,13 @@ func _ready() -> void:
 	speed = BASE_SPEED * preset["speed_mult"]
 	base_speed = speed
 	damage = int(BASE_DAMAGE * preset["damage_mult"])
+	knockback_resist = preset["hp_mult"]
 	_attack_anim = preset["attack_anim"].to_lower()
 
 	var folder: String = preset["folder"]
 	anim_sprite.sprite_frames = _get_sprite_frames(folder, preset["attack_anim"])
 	anim_sprite.scale = Vector2.ONE * BASE_SPRITE_SCALE * base_scale
+	_sprite_base_scale = anim_sprite.scale
 	anim_sprite.animation_finished.connect(_on_animation_finished)
 	_play_anim("idle")
 
@@ -60,37 +66,32 @@ static func _get_sprite_frames(folder: String, attack_folder: String) -> SpriteF
 	_cached_frames[folder] = sf
 	return sf
 
+static func _get_char_prefix(folder: String) -> String:
+	match folder:
+		"enemy_normal", "enemy_brute": return "0_Bloody_Alchemist"
+		"enemy_scout",  "enemy_swarm": return "0_Forest_Ranger"
+	return "0_Bloody_Alchemist"
+
+static func _load_anim(sf: SpriteFrames, anim: String, base_path: String, prefix: String, sub: String, count: int, loop: bool) -> void:
+	sf.add_animation(anim)
+	sf.set_animation_loop(anim, loop)
+	sf.set_animation_speed(anim, 15.0)
+	for i: int in count:
+		var tex: Texture2D = load("%s%s/%s_%s_%03d.png" % [base_path, sub, prefix, sub, i])
+		if tex:
+			sf.add_frame(anim, tex)
+
 static func _build_sprite_frames(folder: String, attack_folder: String) -> SpriteFrames:
 	var sf: SpriteFrames = SpriteFrames.new()
 	sf.remove_animation("default")
 	var base_path: String = "res://assets/characters/%s/" % folder
-	var anim_map: Dictionary = {
-		"idle":   "Idle",
-		"walk":   "Walking",
-		"attack": attack_folder,
-		"hurt":   "Hurt",
-		"die":    "Dying",
-	}
-	for anim_name: String in anim_map:
-		sf.add_animation(anim_name)
-		sf.set_animation_loop(anim_name, anim_name not in ["attack", "hurt", "die"])
-		sf.set_animation_speed(anim_name, 15.0)
-		var src_folder: String = anim_map[anim_name]
-		var dir: DirAccess = DirAccess.open(base_path + src_folder)
-		if not dir:
-			continue
-		var files: Array[String] = []
-		dir.list_dir_begin()
-		var fname: String = dir.get_next()
-		while fname != "":
-			if fname.ends_with(".png"):
-				files.append(fname)
-			fname = dir.get_next()
-		files.sort()
-		for f: String in files:
-			var tex: Texture2D = load(base_path + src_folder + "/" + f)
-			if tex:
-				sf.add_frame(anim_name, tex)
+	var prefix: String = _get_char_prefix(folder)
+	var attack_frames: int = 9 if attack_folder == "Shooting" else 12
+	_load_anim(sf, "idle",   base_path, prefix, "Idle",        18, true)
+	_load_anim(sf, "walk",   base_path, prefix, "Walking",     24, true)
+	_load_anim(sf, "attack", base_path, prefix, attack_folder, attack_frames, false)
+	_load_anim(sf, "hurt",   base_path, prefix, "Hurt",        12, false)
+	_load_anim(sf, "die",    base_path, prefix, "Dying",       15, false)
 	return sf
 
 func _play_anim(anim: String) -> void:
@@ -113,6 +114,11 @@ func _physics_process(delta: float) -> void:
 		return
 	if _anim_state == "die":
 		return
+
+	# 넉백: 직접 위치 이동 + 선형 감쇠 (이동 로직과 독립적으로 누적)
+	if knockback_vel.length_squared() > 1.0:
+		global_position += knockback_vel * delta
+		knockback_vel = knockback_vel.move_toward(Vector2.ZERO, KNOCKBACK_DECAY * delta)
 
 	if slow_timer > 0:
 		slow_timer -= delta
@@ -175,8 +181,20 @@ func take_damage(dmg: float) -> void:
 	if hp <= 0:
 		_die()
 
+func apply_knockback(from_pos: Vector2, force: float) -> void:
+	if _anim_state == "die":
+		return
+	var dir: Vector2 = global_position - from_pos
+	if dir.length_squared() < 0.01:
+		dir = Vector2.UP
+	knockback_vel += dir.normalized() * (force / sqrt(max(knockback_resist, 0.1)))
+
 func _hit_flash() -> void:
 	anim_sprite.modulate = Color(1.5, 0.4, 0.4, 1.0)
+	anim_sprite.scale = _sprite_base_scale * 1.18
+	var tw: Tween = create_tween()
+	tw.tween_property(anim_sprite, "scale", _sprite_base_scale, 0.13) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	var t: SceneTreeTimer = get_tree().create_timer(0.1)
 	t.timeout.connect(func() -> void:
 		if is_instance_valid(self):

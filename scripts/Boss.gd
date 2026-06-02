@@ -9,12 +9,12 @@ const BOSS_SPRITE_MAP: Dictionary = {
 	"정의의 용사 과장":   "boss_manager",
 }
 const BOSS_SCALE_MAP: Dictionary = {
-	"boss_intern":    0.060,
-	"boss_parttime":  0.115,
-	"boss_assistant": 0.130,
-	"boss_manager":   0.165,
+	"boss_intern":    0.211,
+	"boss_parttime":  0.404,
+	"boss_assistant": 0.457,
+	"boss_manager":   0.580,
 }
-const BASE_SPRITE_SCALE: float = 0.09
+const BASE_SPRITE_SCALE: float = 0.316
 
 const COLOR_NORMAL: Color  = Color.WHITE
 const COLOR_DASH: Color    = Color(1.0, 0.85, 0.3, 1.0)
@@ -62,11 +62,13 @@ var rage_timer: float = 0.0
 var rage_interval: float = 6.0
 var is_charging_rage: bool = false
 var rage_charge_time: float = 0.0
+var is_stunned: bool = false
 var rage_charge_duration: float = 1.5
 var rage_damage: int = 50
 
 var summon_timer: float = 0.0
-var summon_interval: float = 10.0
+var summon_interval: float = 18.0
+var summon_count: int = 2
 
 @onready var hp_bar: ProgressBar = $HPBar
 @onready var name_label: Label = $NameLabel
@@ -77,7 +79,7 @@ func _ready() -> void:
 	base_speed = speed
 	base_damage = damage
 	name_label.text = boss_name
-	collision_mask = 0
+	collision_mask = 4  # 영주(레이어 3)하고만 충돌 — 겹침 방지. 잡몹(레이어1)·하인(레이어2) 무리엔 안 낌
 	if boss_type == "mid_boss":
 		rage_interval = 6.0
 		rage_charge_duration = 1.5
@@ -101,37 +103,33 @@ static func _get_sprite_frames(folder: String) -> SpriteFrames:
 	_cached_frames[folder] = sf
 	return sf
 
+static func _get_char_prefix(folder: String) -> String:
+	match folder:
+		"boss_intern":    return "0_Goblin"
+		"boss_parttime":  return "0_Orc"
+		"boss_assistant": return "0_Valkyrie"
+		"boss_manager":   return "0_Golem"
+	return "0_Goblin"
+
+static func _load_anim(sf: SpriteFrames, anim: String, base_path: String, prefix: String, sub: String, count: int, loop: bool) -> void:
+	sf.add_animation(anim)
+	sf.set_animation_loop(anim, loop)
+	sf.set_animation_speed(anim, 15.0)
+	for i: int in count:
+		var tex: Texture2D = load("%s%s/%s_%s_%03d.png" % [base_path, sub, prefix, sub, i])
+		if tex:
+			sf.add_frame(anim, tex)
+
 static func _build_sprite_frames(folder: String) -> SpriteFrames:
 	var sf: SpriteFrames = SpriteFrames.new()
 	sf.remove_animation("default")
 	var base_path: String = "res://assets/characters/%s/" % folder
-	var anim_map: Dictionary = {
-		"idle":  "Idle",
-		"walk":  "Walking",
-		"slash": "Slashing",
-		"hurt":  "Hurt",
-		"die":   "Dying",
-	}
-	for anim_name: String in anim_map:
-		sf.add_animation(anim_name)
-		sf.set_animation_loop(anim_name, anim_name not in ["slash", "hurt", "die"])
-		sf.set_animation_speed(anim_name, 15.0)
-		var src_folder: String = anim_map[anim_name]
-		var dir: DirAccess = DirAccess.open(base_path + src_folder)
-		if not dir:
-			continue
-		var files: Array[String] = []
-		dir.list_dir_begin()
-		var fname: String = dir.get_next()
-		while fname != "":
-			if fname.ends_with(".png"):
-				files.append(fname)
-			fname = dir.get_next()
-		files.sort()
-		for f: String in files:
-			var tex: Texture2D = load(base_path + src_folder + "/" + f)
-			if tex:
-				sf.add_frame(anim_name, tex)
+	var prefix: String = _get_char_prefix(folder)
+	_load_anim(sf, "idle",  base_path, prefix, "Idle",     18, true)
+	_load_anim(sf, "walk",  base_path, prefix, "Walking",  24, true)
+	_load_anim(sf, "slash", base_path, prefix, "Slashing", 12, false)
+	_load_anim(sf, "hurt",  base_path, prefix, "Hurt",     12, false)
+	_load_anim(sf, "die",   base_path, prefix, "Dying",    15, false)
 	return sf
 
 func _play_anim(anim: String) -> void:
@@ -153,6 +151,10 @@ func _physics_process(delta: float) -> void:
 	if not game:
 		return
 	if _anim_state == "die":
+		return
+	if is_stunned:
+		velocity = Vector2.ZERO
+		move_and_slide()
 		return
 
 	if boss_type == "mid_boss":
@@ -177,6 +179,11 @@ func _pattern_intern(delta: float) -> void:
 	if is_charging_rage:
 		_process_charge(delta)
 		return
+
+	summon_timer += delta
+	if summon_timer >= summon_interval:
+		summon_timer = 0.0
+		_summon_companions()
 
 	var castle_pos: Vector2 = game.get_node("Castle").global_position
 
@@ -240,19 +247,26 @@ func _pattern_albaeng(delta: float) -> void:
 	if _anim_state not in ["slash", "hurt", "die"]:
 		_play_anim("walk")
 
-	if overtime_triggered:
-		summon_timer += delta
-		if summon_timer >= summon_interval:
-			summon_timer = 0.0
-			rage_timer = 0.0
-			_summon_companions()
+	summon_timer += delta
+	if summon_timer >= summon_interval:
+		summon_timer = 0.0
+		_summon_companions()
 
+	# 분노 충전(와인드업)을 전 페이즈에서 주기 발동 — 치명타 윈도우 보장.
+	# 페이즈가 깊어질수록 더 잦게(escalation), phase3는 발악 대사·색.
+	rage_timer += delta
+	var interval: float = rage_interval
 	if phase3_triggered:
-		rage_timer += delta
-		if rage_timer >= rage_interval:
-			rage_timer = 0.0
-			summon_timer = 0.0
+		interval = rage_interval * 0.6
+	elif overtime_triggered:
+		interval = rage_interval * 0.8
+	if rage_timer >= interval:
+		rage_timer = 0.0
+		summon_timer = 0.0
+		if phase3_triggered:
 			_start_rage_charge("이건 내 인생을 건 보고서다!!", Color(1.0, 0.2, 0.2))
+		else:
+			_start_rage_charge(RAGE_DIALOGUES.get(boss_name, "이건 진심이다."), Color(1.0, 0.5, 0.2))
 
 func _enter_overtime() -> void:
 	overtime_triggered = true
@@ -261,6 +275,8 @@ func _enter_overtime() -> void:
 	attack_cooldown = 0.7
 	anim_sprite.modulate = COLOR_OVERTIME
 	name_label.text = boss_name + "\n[야근 모드]"
+	summon_interval = 10.0
+	summon_count = 3
 	summon_timer = summon_interval * 0.5
 	if game and game.has_method("show_dialogue"):
 		game.show_dialogue("야근 수당이라도 달란 말이야!!", Color(1.0, 0.6, 0.1, 1), global_position + Vector2(0, -80))
@@ -273,6 +289,7 @@ func _enter_phase3() -> void:
 	anim_sprite.modulate = COLOR_PHASE3
 	name_label.text = boss_name + "\n[초과 야근]"
 	summon_interval = 7.0
+	summon_count = 3
 	rage_timer = rage_interval * 0.5
 	if game and game.has_method("show_dialogue"):
 		game.show_dialogue("...그냥 쓰러질 때까지 달린다!!", Color(1.0, 0.2, 0.2, 1), global_position + Vector2(0, -80))
@@ -306,9 +323,7 @@ func _execute_rage_attack() -> void:
 
 func _summon_companions() -> void:
 	if game and game.has_method("boss_summon"):
-		game.boss_summon("swarm", 3)
-		if game.has_method("show_dialogue"):
-			game.show_dialogue("동료들도 같이 야근하자!", Color(0.95, 0.7, 0.2), global_position + Vector2(0, -150))
+		game.boss_summon("swarm", summon_count)
 
 func _restore_phase_modulate() -> void:
 	if phase3_triggered:
@@ -318,19 +333,85 @@ func _restore_phase_modulate() -> void:
 	else:
 		anim_sprite.modulate = COLOR_NORMAL
 
+# ============ 와인드업 중단 / 스턴 ============
+func interrupt_windup() -> void:
+	if not is_charging_rage:
+		return
+	is_charging_rage = false
+	rage_charge_time = 0.0
+	_restore_phase_modulate()
+	_spawn_cancel_mark()
+	apply_stun(1.5)
+
+func apply_stun(duration: float) -> void:
+	is_stunned = true
+	var stars: Node2D = _spawn_stun_stars()
+	var t: SceneTreeTimer = get_tree().create_timer(duration)
+	t.timeout.connect(func() -> void:
+		if is_instance_valid(self):
+			is_stunned = false
+			_restore_phase_modulate()
+		if is_instance_valid(stars):
+			stars.queue_free()
+	)
+
+func _spawn_cancel_mark() -> void:
+	var container: Node2D = Node2D.new()
+	container.position = Vector2(0, -80)
+	add_child(container)
+
+	var x_label: Label = Label.new()
+	x_label.text = "✕"
+	x_label.add_theme_font_size_override("font_size", 36)
+	x_label.add_theme_color_override("font_color", Color(1.0, 0.15, 0.15, 1))
+	x_label.position = Vector2(-18, -40)
+	container.add_child(x_label)
+
+	var text_label: Label = Label.new()
+	text_label.text = "차단!"
+	text_label.add_theme_font_size_override("font_size", 20)
+	text_label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3, 1))
+	text_label.position = Vector2(-22, 0)
+	container.add_child(text_label)
+
+	var tween: Tween = create_tween()
+	tween.tween_interval(0.4)
+	tween.tween_property(container, "modulate:a", 0.0, 0.2)
+	tween.tween_callback(container.queue_free)
+
+func _spawn_stun_stars() -> Node2D:
+	var container: Node2D = Node2D.new()
+	container.position = Vector2(0, -100)
+	add_child(container)
+
+	var star_label: Label = Label.new()
+	star_label.text = "★★★"
+	star_label.add_theme_font_size_override("font_size", 22)
+	star_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.2, 1))
+	star_label.position = Vector2(-28, 0)
+	container.add_child(star_label)
+
+	# 좌우 흔들림 루프 tween
+	var tween: Tween = create_tween().set_loops()
+	tween.tween_property(container, "position:x", 6.0, 0.18)
+	tween.tween_property(container, "position:x", -6.0, 0.18)
+	tween.tween_property(container, "position:x", 0.0, 0.14)
+
+	return container
+
 # ============ 피격 / 사망 ============
-func take_damage(dmg: float) -> void:
+func take_damage(dmg: float, tier: String = "normal") -> void:
 	if _anim_state == "die":
 		return
 	hp -= dmg
 	hp_bar.value = (hp / max_hp) * 100.0
 	_hit_flash()
 	if game:
-		game.spawn_damage_number(global_position, dmg)
+		game.spawn_damage_number(global_position, dmg, tier)
 	if hp <= 0:
 		_die()
 		return
-	if not is_charging_rage:
+	if not is_charging_rage and not is_stunned:
 		_play_anim("hurt")
 
 func _hit_flash() -> void:
@@ -346,6 +427,9 @@ func _hit_flash() -> void:
 func _clamp_to_bounds() -> void:
 	position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
 	position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
+
+func apply_knockback(_from_pos: Vector2, _force: float) -> void:
+	pass  # 보스는 넉백 면역
 
 func apply_slow(_duration: float) -> void:
 	pass  # 보스는 슬로우 면역

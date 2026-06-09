@@ -5,6 +5,10 @@ static var _strings: Dictionary = {
 	"rarity_common":    "일반",
 	"rarity_legendary": "전설",
 
+	# 카드 선택 오버레이
+	"card_select_title":    "카드 선택",
+	"card_select_subtitle": "카드 1장 선택",
+
 	# 카드 이름/설명
 	"card_arsenal":       "무기고\n[영주] 공격력 +20%",
 	"card_wall":          "성벽 강화\n최대 HP +50",

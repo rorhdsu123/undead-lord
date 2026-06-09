@@ -39,6 +39,9 @@ var graveyard_heal: int = 0
 
 # 영혼 자원
 var souls: int = 0
+var _souls_shown: int = 0
+var _souls_roll_tween: Tween = null
+var _souls_bump_tween: Tween = null
 const SPECIAL_COST: int = 50
 const DOOM_SPECIAL_COST: int = 35
 var special_cost: int = SPECIAL_COST
@@ -184,6 +187,8 @@ var tracker_btns: Array = []
 @onready var castle_hp_bar = $Castle/CastleHP
 @onready var castle_vis: Node2D = $Castle/CastleSprite
 @onready var card_panel = $UI/CardPanel
+@onready var card_title: Label = $UI/CardPanel/Title
+@onready var card_subtitle: Label = $UI/CardPanel/Subtitle
 @onready var result_panel = $UI/ResultPanel
 @onready var result_label = $UI/ResultPanel/ResultLabel
 @onready var sub_label = $UI/ResultPanel/SubLabel
@@ -199,6 +204,8 @@ var sacrifice_button: Button = null
 @onready var minion_slot_label: Label = $UI/MinionSlotLabel
 @onready var minions_node = $Minions
 @onready var souls_label = $UI/SoulsLabel
+var souls_icon: Label = null
+var slot_icon: Label = null
 @onready var crown_label = $UI/ResultPanel/CrownLabel
 @onready var shop_panel = $UI/ShopPanel
 @onready var shop_title: Label = $UI/ShopPanel/ShopTitle
@@ -211,6 +218,8 @@ var _card_rows: Array = []
 
 func _ready() -> void:
 	available_skill_cards = SKILL_CARDS.duplicate()
+	card_title.text = Loc.t("card_select_title")
+	card_subtitle.text = Loc.t("card_select_subtitle")
 	result_btn1.pressed.connect(_on_result_btn1_pressed)
 	result_btn2.pressed.connect(_on_result_btn2_pressed)
 	attack_button.pressed.connect(_on_attack_pressed)
@@ -223,6 +232,17 @@ func _ready() -> void:
 	shop_close_btn.pressed.connect(_close_shop)
 	_build_shop_buttons()
 	_build_summon_buttons()
+	souls_icon = Label.new()
+	souls_icon.text = "◆"
+	souls_icon.add_theme_font_size_override("font_size", 16)
+	souls_icon.add_theme_color_override("font_color", Color(1.0, 0.82, 0.35))
+	souls_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	souls_label.get_parent().add_child(souls_icon)
+	slot_icon = Label.new()
+	slot_icon.text = "●"
+	slot_icon.add_theme_font_size_override("font_size", 16)
+	slot_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	minion_slot_label.get_parent().add_child(slot_icon)
 	_layout_bottom_ui()
 	current_chapter = GameSave.start_chapter
 	current_stage = GameSave.start_stage
@@ -481,7 +501,7 @@ func _show_cards() -> void:
 
 	var card_h: float = 120.0
 	var gap: float = 10.0
-	var start_y: float = 50.0
+	var start_y: float = 250.0
 	for i: int in 3:
 		var row: Control = _build_card_row(current_cards[i], i, start_y + float(i) * (card_h + gap))
 		card_panel.add_child(row)
@@ -599,7 +619,7 @@ func _show_keystones(ids: Array) -> void:
 
 	var card_h: float = 120.0
 	var gap: float = 10.0
-	var start_y: float = 50.0
+	var start_y: float = 250.0
 	for i: int in current_cards.size():
 		var row: Control = _build_card_row(current_cards[i], i, start_y + float(i) * (card_h + gap))
 		card_panel.add_child(row)
@@ -1170,7 +1190,27 @@ func add_souls(n: int) -> void:
 	_update_souls_ui()
 
 func _update_souls_ui() -> void:
-	souls_label.text = "영혼: %d" % souls
+	if _souls_roll_tween and _souls_roll_tween.is_valid():
+		_souls_roll_tween.kill()
+	if _souls_shown == souls:
+		souls_label.text = "영혼: %d" % souls
+	else:
+		_souls_roll_tween = create_tween()
+		_souls_roll_tween.tween_method(_set_souls_display, _souls_shown, souls, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_bump_souls_label()
+
+func _set_souls_display(v: float) -> void:
+	_souls_shown = int(round(v))
+	souls_label.text = "영혼: %d" % _souls_shown
+
+func _bump_souls_label() -> void:
+	if _souls_bump_tween and _souls_bump_tween.is_valid():
+		_souls_bump_tween.kill()
+	souls_label.pivot_offset = Vector2(0.0, souls_label.size.y * 0.5)
+	souls_label.scale = Vector2.ONE
+	_souls_bump_tween = create_tween()
+	_souls_bump_tween.tween_property(souls_label, "scale", Vector2(1.15, 1.15), 0.07).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_souls_bump_tween.tween_property(souls_label, "scale", Vector2.ONE, 0.10).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 func _build_summon_buttons() -> void:
 	for i in MINION_TYPES.size():
@@ -1211,18 +1251,32 @@ func _layout_bottom_ui() -> void:
 	minion_slot_label.size = Vector2(vp.x - mx, lbl_h)
 	minion_slot_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
-	souls_label.position = Vector2(mx, minion_slot_label.position.y)
-	souls_label.size = Vector2(vp.x * 0.5, lbl_h)
+	var icon_w: float = 18.0
+	var icon_gap: float = 4.0
+	souls_icon.position = Vector2(mx, minion_slot_label.position.y)
+	souls_icon.size = Vector2(icon_w, lbl_h)
+	souls_label.position = Vector2(mx + icon_w + icon_gap, minion_slot_label.position.y)
+	souls_label.size = Vector2(vp.x * 0.5 - icon_w - icon_gap, lbl_h)
 	souls_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	souls_label.add_theme_font_size_override("font_size", 16)
+	slot_icon.size = Vector2(icon_w, lbl_h)
+	slot_icon.position.y = minion_slot_label.position.y
 
 func _refresh_summon_buttons() -> void:
 	var slot_full: bool = active_minions >= max_minions
-	minion_slot_label.text = "하인 슬롯 %d/%d" % [active_minions, max_minions]
-	if slot_full:
-		minion_slot_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5))
-	else:
-		minion_slot_label.add_theme_color_override("font_color", Color(0.85, 1.0, 0.85))
+	minion_slot_label.text = "%d/%d" % [active_minions, max_minions]
+	var slot_col: Color = Color(1.0, 0.5, 0.5) if slot_full else Color(0.85, 1.0, 0.85)
+	minion_slot_label.add_theme_color_override("font_color", slot_col)
+	if is_instance_valid(slot_icon):
+		slot_icon.add_theme_color_override("font_color", slot_col)
+		slot_icon.visible = minion_slot_label.visible
+		var f: Font = minion_slot_label.get_theme_font("font")
+		var fs: int = minion_slot_label.get_theme_font_size("font")
+		var tw: float = f.get_string_size(minion_slot_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		var num_left: float = minion_slot_label.position.x + minion_slot_label.size.x - tw
+		slot_icon.position.x = num_left - 4.0 - slot_icon.size.x
+	if is_instance_valid(souls_icon):
+		souls_icon.visible = souls_label.visible
 	var is_tut: bool = _is_tutorial()
 	for i in MINION_TYPES.size():
 		var entry: Dictionary = MINION_TYPES[i]

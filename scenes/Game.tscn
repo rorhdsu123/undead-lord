@@ -46,19 +46,19 @@ position = Vector2(240, 620)
 
 [node name="UI" type="CanvasLayer" parent="."]
 
-[node name="WaveTracker" type="HBoxContainer" parent="UI"]
+[node name="WaveLabel" type="Label" parent="UI"]
 offset_left = 10.0
 offset_top = 10.0
 offset_right = 470.0
-offset_bottom = 38.0
-theme_override_constants/separation = 2
+offset_bottom = 32.0
+text = "스테이지 1-1"
 
-[node name="WaveLabel" type="Label" parent="UI"]
+[node name="WaveTracker" type="HBoxContainer" parent="UI"]
 offset_left = 10.0
-offset_top = 42.0
-offset_right = 200.0
-offset_bottom = 62.0
-text = "Wave 1 / 10"
+offset_top = 36.0
+offset_right = 470.0
+offset_bottom = 64.0
+theme_override_constants/separation = 2
 
 [node name="SoulsLabel" type="Label" parent="UI"]
 offset_left = 10.0

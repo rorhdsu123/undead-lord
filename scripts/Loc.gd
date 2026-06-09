@@ -1,6 +1,9 @@
 extends Node
 
 static var _strings: Dictionary = {
+	# 스테이지 HUD
+	"stage_label": "스테이지 %d-%d",
+
 	# 카드 등급
 	"rarity_common":    "일반",
 	"rarity_legendary": "전설",

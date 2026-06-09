@@ -181,7 +181,6 @@ const SHOP_ITEMS = [
 	{"id": "range_up",    "label": "저주 확장",  "desc": "기본 범위 +50",      "cost": 30},
 ]
 var shop_btns: Array = []
-var tracker_btns: Array = []
 
 @onready var wave_label = $UI/WaveLabel
 @onready var castle_hp_bar = $Castle/CastleHP
@@ -264,7 +263,7 @@ func _ready() -> void:
 
 func start_wave() -> void:
 	card_panel.visible = false
-	wave_label.text = "%d-%d" % [current_chapter + 1, current_stage + 1]
+	wave_label.text = Loc.t("stage_label") % [current_chapter + 1, current_stage + 1]
 	if current_wave == 0:
 		_build_wave_tracker()
 	update_wave_tracker()
@@ -809,33 +808,76 @@ func _apply_card(id: String, mult: float = 1.0) -> void:
 		"minion_lifesteal":
 			minion_lifesteal += 0.20 * mult
 
-func _build_wave_tracker() -> void:
-	for child in wave_tracker.get_children():
-		child.queue_free()
-	tracker_btns.clear()
+## 노드 종류별 임시 글리프 (아트 입고 전 placeholder, NotoSansKR 커버 도형으로 한정)
+const TRACKER_GLYPH_NORMAL:   String = "●"
+const TRACKER_GLYPH_SHOP:     String = "■"
+const TRACKER_GLYPH_MID_BOSS: String = "▲"
+const TRACKER_GLYPH_BOSS:     String = "★"
 
-	var waves: Array = WaveData.CHAPTERS[current_chapter]["stages"][current_stage]["waves"]
-	for w_idx in waves.size():
-		var wave_data: Dictionary = waves[w_idx]
-		var btn: Button = Button.new()
-		btn.focus_mode = Control.FOCUS_NONE
-		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		match wave_data.get("type", "normal"):
-			"boss":     btn.text = "보스"
-			"mid_boss": btn.text = "중간"
-			"shop":     btn.text = "상점"
-			_:          btn.text = str(w_idx + 1)
-		wave_tracker.add_child(btn)
-		tracker_btns.append(btn)
+func _wave_glyph(wave_data: Dictionary) -> String:
+	match wave_data.get("type", "normal"):
+		"boss":     return TRACKER_GLYPH_BOSS
+		"mid_boss": return TRACKER_GLYPH_MID_BOSS
+		"shop":     return TRACKER_GLYPH_SHOP
+		_:          return TRACKER_GLYPH_NORMAL
+
+func _build_wave_tracker() -> void:
+	## 초기 1회 호출 — 실제 구성은 update_wave_tracker()에 위임
+	update_wave_tracker()
 
 func update_wave_tracker() -> void:
-	for i in tracker_btns.size():
-		if i == current_wave:
-			tracker_btns[i].modulate = Color(1, 1, 0)
-		elif i < current_wave:
-			tracker_btns[i].modulate = Color(0.4, 0.4, 0.4)
+	## 매 웨이브마다 HBox를 완전히 재구성하는 압축 스트립
+	for child in wave_tracker.get_children():
+		child.queue_free()
+
+	var waves: Array = WaveData.CHAPTERS[current_chapter]["stages"][current_stage]["waves"]
+	if waves.is_empty():
+		return
+
+	var boss_idx: int = waves.size() - 1
+
+	# 윈도우: [current_wave, current_wave+2] 최대 3개, 배열 끝으로 클립
+	var win_end: int = mini(current_wave + 3, waves.size())
+
+	# 최종보스가 윈도우 밖에 있을 때만 오른쪽 고정
+	var boss_pinned: bool = boss_idx >= win_end
+	# 윈도우 마지막과 보스 사이에 표시 안 된 노드가 있을 때 "…" 생략 표시
+	var show_ellipsis: bool = boss_pinned and boss_idx > win_end
+
+	# 윈도우 항목 생성
+	for w_idx in range(current_wave, win_end):
+		var lbl: Label = Label.new()
+		lbl.text = _wave_glyph(waves[w_idx])
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		if w_idx == current_wave:
+			lbl.modulate = Color(1, 1, 0)
+			lbl.scale = Vector2(1.2, 1.2)
 		else:
-			tracker_btns[i].modulate = Color(1, 1, 1)
+			lbl.modulate = Color(1, 1, 1)
+		wave_tracker.add_child(lbl)
+
+	# 생략 부호
+	if show_ellipsis:
+		var ellipsis: Label = Label.new()
+		ellipsis.text = "…"
+		ellipsis.modulate = Color(0.6, 0.6, 0.6)
+		ellipsis.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ellipsis.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		wave_tracker.add_child(ellipsis)
+
+	# spacer + 최종보스 고정 (윈도우 밖일 때만)
+	if boss_pinned:
+		var spacer: Control = Control.new()
+		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		wave_tracker.add_child(spacer)
+
+		var boss_lbl: Label = Label.new()
+		boss_lbl.text = TRACKER_GLYPH_BOSS
+		boss_lbl.modulate = Color(1, 1, 1)
+		boss_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		boss_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		wave_tracker.add_child(boss_lbl)
 
 func _build_shop_buttons() -> void:
 	for i in SHOP_ITEMS.size():

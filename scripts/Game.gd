@@ -182,7 +182,6 @@ const SHOP_ITEMS = [
 ]
 var shop_btns: Array = []
 
-@onready var wave_label = $UI/WaveLabel
 @onready var castle_bar = $UI/CastleBar
 @onready var castle_vis: Node2D = $Castle/CastleSprite
 @onready var card_panel = $UI/CardPanel
@@ -272,7 +271,6 @@ func _ready() -> void:
 
 func start_wave() -> void:
 	card_panel.visible = false
-	wave_label.text = Loc.t("stage_label") % [current_chapter + 1, current_stage + 1]
 	if current_wave == 0:
 		_build_wave_tracker()
 	update_wave_tracker()
@@ -961,8 +959,38 @@ func update_wave_tracker() -> void:
 			display_indices = [s, s + 1, s + 2]
 			show_ellipsis = true
 
+	# ── 래퍼 VBoxContainer (칩 탭 + 캡슐을 세로로 묶음) ──
+	var wrap := VBoxContainer.new()
+	wrap.add_theme_constant_override("separation", -7)
+	wrap.alignment = BoxContainer.ALIGNMENT_CENTER
+
+	# ── 스테이지 탭 칩 ──
+	var chip := PanelContainer.new()
+	chip.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	chip.z_index = 1
+	var chip_style := StyleBoxFlat.new()
+	chip_style.bg_color = Color(0.20, 0.17, 0.26, 0.96)
+	chip_style.corner_radius_top_left     = 10
+	chip_style.corner_radius_top_right    = 10
+	chip_style.corner_radius_bottom_left  = 3
+	chip_style.corner_radius_bottom_right = 3
+	chip_style.content_margin_left   = 12.0
+	chip_style.content_margin_right  = 12.0
+	chip_style.content_margin_top    = 3.0
+	chip_style.content_margin_bottom = 3.0
+	chip.add_theme_stylebox_override("panel", chip_style)
+	var chip_lbl := Label.new()
+	chip_lbl.text = Loc.t("stage_label") % [current_chapter + 1, current_stage + 1]
+	chip_lbl.add_theme_font_size_override("font_size", 13)
+	chip_lbl.add_theme_color_override("font_color", Color(0.92, 0.90, 0.96))
+	chip_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	chip_lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
+	chip.add_child(chip_lbl)
+	wrap.add_child(chip)
+
 	# ── 캡슐 PanelContainer ──
 	var pill := PanelContainer.new()
+	pill.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	var pill_style := StyleBoxFlat.new()
 	pill_style.bg_color = Color(0.10, 0.09, 0.12, 0.92)
 	pill_style.corner_radius_top_left     = 18
@@ -974,7 +1002,8 @@ func update_wave_tracker() -> void:
 	pill_style.content_margin_top    = 6.0
 	pill_style.content_margin_bottom = 6.0
 	pill.add_theme_stylebox_override("panel", pill_style)
-	wave_tracker.add_child(pill)
+	wrap.add_child(pill)
+	wave_tracker.add_child(wrap)
 
 	# ── HBoxContainer (노드 배지들의 가로 행) ──
 	var hbox := HBoxContainer.new()

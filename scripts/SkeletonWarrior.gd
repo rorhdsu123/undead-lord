@@ -53,6 +53,10 @@ var _died_reported: bool = false
 var has_post: bool = false
 var guard_post: Vector2 = Vector2.ZERO
 var guard_slot_index: int = -1
+var is_selected: bool = false:
+	set(v):
+		is_selected = v
+		queue_redraw()
 
 @onready var hp_bar: ProgressBar = $HPBar
 @onready var anim_sprite: AnimatedSprite2D = $AnimSprite
@@ -107,6 +111,10 @@ static func _build_sprite_frames(variant: int) -> SpriteFrames:
 	_load_anim(sf, "hurt",  base_path, prefix, "Hurt",     12, false)
 	_load_anim(sf, "die",   base_path, prefix, "Dying",    15, false)
 	return sf
+
+func _draw() -> void:
+	if is_selected:
+		draw_arc(Vector2.ZERO, 28.0, 0, TAU, 24, Color(1.0, 0.85, 0.2, 0.9), 2.5)
 
 func _play_anim(anim: String) -> void:
 	if not is_instance_valid(anim_sprite):

@@ -17,7 +17,7 @@ const BASE_DAMAGE: int = 10
 const BASE_SPRITE_SCALE: float = 0.246
 const MINION_ENGAGE_RANGE: float = 100.0
 const KNOCKBACK_DECAY: float = 700.0
-const CASTLE_HALF: float = 80.0  # CastleSprite.S 와 일치
+const CASTLE_HALF: float = 90.0  # CastleSprite.S 와 일치
 
 static var _cached_frames: Dictionary = {}
 

@@ -49,10 +49,11 @@ var special_cost: int = SPECIAL_COST
 # 언데드 하인 상태
 var active_minions: int = 0
 
-# 성벽 경비 슬롯 (N/S/W/E, _ready에서 위치 초기화)
-const CASTLE_S: float = 80.0   # CastleSprite.S 와 일치
-const SLOT_OFFSET: float = 80.0  # 성벽 외면에 포스팅
-var _minion_slots: Array = []
+# 성벽 경비 슬롯 (14개 외부 배치, _ready에서 위치 초기화)
+const CASTLE_S: float = 90.0   # CastleSprite.S 와 일치
+const SLOT_CELL: float = 55.0  # 셀 시각 크기
+var _minion_slots: Array = []  # [{"pos": Vector2, "minion": null}, ...]
+var _selected_minion = null    # 현재 선택된 하인
 
 # 키스톤 (런 빌드 곱 레이어)
 var lord_card_count: int = 0
@@ -1933,12 +1934,23 @@ func _on_summon_pressed(index: int) -> void:
 
 func _init_slots() -> void:
 	var c: Vector2 = $Castle.global_position
-	_minion_slots = [
-		{"dir": "N", "pos": Vector2(c.x, c.y - SLOT_OFFSET), "minion": null},
-		{"dir": "S", "pos": Vector2(c.x, c.y + SLOT_OFFSET), "minion": null},
-		{"dir": "W", "pos": Vector2(c.x - SLOT_OFFSET, c.y), "minion": null},
-		{"dir": "E", "pos": Vector2(c.x + SLOT_OFFSET, c.y), "minion": null},
-	]
+	# 14슬롯: N행4 + S행4 + W열3 + E열3
+	# 성벽 외면(±90)에서 30px 이격, 셀 중심 기준
+	var ox: float = 120.0  # 중심에서 W/E 슬롯까지 거리
+	var oy: float = 120.0  # 중심에서 N/S 슬롯까지 거리
+	_minion_slots = []
+	# N행 (y = c.y - 120)
+	for i in 4:
+		_minion_slots.append({"pos": Vector2(c.x - 120 + i * 80, c.y - oy), "minion": null})
+	# S행 (y = c.y + 120)
+	for i in 4:
+		_minion_slots.append({"pos": Vector2(c.x - 120 + i * 80, c.y + oy), "minion": null})
+	# W열 중간 3개 (x = c.x - 120)
+	for i in 3:
+		_minion_slots.append({"pos": Vector2(c.x - ox, c.y - 60 + i * 60), "minion": null})
+	# E열 중간 3개 (x = c.x + 120)
+	for i in 3:
+		_minion_slots.append({"pos": Vector2(c.x + ox, c.y - 60 + i * 60), "minion": null})
 
 func _get_empty_slot() -> int:
 	for i in _minion_slots.size():
@@ -1946,6 +1958,77 @@ func _get_empty_slot() -> int:
 		if s["minion"] == null or not is_instance_valid(s["minion"]):
 			return i
 	return -1
+
+## 하인 탭 선택 → 슬롯 탭 배정 입력
+func _input(event: InputEvent) -> void:
+	if not wave_active:
+		return
+	var pressed: bool = false
+	var touch_pos: Vector2 = Vector2.ZERO
+	if event is InputEventScreenTouch and event.pressed:
+		pressed = true
+		touch_pos = event.position
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		pressed = true
+		touch_pos = event.position
+	if not pressed:
+		return
+
+	if is_instance_valid(_selected_minion):
+		# 슬롯 탭 여부 확인
+		var slot_idx: int = _get_slot_at_pos(touch_pos)
+		if slot_idx >= 0:
+			_assign_minion_to_slot(_selected_minion, slot_idx)
+		_selected_minion.is_selected = false
+		_selected_minion = null
+		queue_redraw()
+		return
+
+	# 하인 탭 선택 (반경 40px)
+	for m in get_tree().get_nodes_in_group("minions"):
+		if not is_instance_valid(m):
+			continue
+		if m.global_position.distance_to(touch_pos) < 40.0:
+			_selected_minion = m
+			m.is_selected = true
+			queue_redraw()
+			return
+
+func _get_slot_at_pos(pos: Vector2) -> int:
+	var half: float = SLOT_CELL * 0.5
+	for i in _minion_slots.size():
+		var sp: Vector2 = _minion_slots[i]["pos"]
+		if abs(pos.x - sp.x) <= half and abs(pos.y - sp.y) <= half:
+			return i
+	return -1
+
+func _assign_minion_to_slot(minion, slot_idx: int) -> void:
+	# 기존 점유 하인은 자유 교전으로 복귀
+	var prev = _minion_slots[slot_idx]["minion"]
+	if is_instance_valid(prev) and prev != minion:
+		prev.has_post = false
+		prev.guard_slot_index = -1
+	# 하인의 이전 슬롯 해제
+	if minion.guard_slot_index >= 0 and minion.guard_slot_index < _minion_slots.size():
+		_minion_slots[minion.guard_slot_index]["minion"] = null
+	# 새 슬롯 배정
+	minion.guard_slot_index = slot_idx
+	minion.has_post = true
+	minion.guard_post = _minion_slots[slot_idx]["pos"]
+	_minion_slots[slot_idx]["minion"] = minion
+
+## 그리드 오버레이 — 하인 선택 중일 때만 표시
+func _draw() -> void:
+	if not is_instance_valid(_selected_minion):
+		return
+	var cell: float = SLOT_CELL
+	var half: float = cell * 0.5
+	for i in _minion_slots.size():
+		var sp: Vector2 = _minion_slots[i]["pos"]
+		var occupied: bool = is_instance_valid(_minion_slots[i]["minion"])
+		var col: Color = Color(0.6, 0.3, 1.0, 0.35) if not occupied else Color(0.9, 0.5, 0.2, 0.35)
+		draw_rect(Rect2(sp - Vector2(half, half), Vector2(cell, cell)), col)
+		draw_rect(Rect2(sp - Vector2(half, half), Vector2(cell, cell)), Color(0.8, 0.5, 1.0, 0.7), false, 1.5)
 
 func _random_spawn_pos(sides: Array) -> Vector2:
 	var vp: Vector2 = get_viewport_rect().size
@@ -1959,16 +2042,12 @@ func _random_spawn_pos(sides: Array) -> Vector2:
 
 func _spawn_minion(type_id: String) -> void:
 	var m = SkeletonWarriorScene.instantiate()
-	m.position = $Castle.position
+	# 소환: 성 근처 랜덤 위치, 자유 교전 상태 (유저가 수동 슬롯 배정)
+	var vp: Vector2 = get_viewport_rect().size
+	m.position = Vector2(randf_range(vp.x * 0.2, vp.x * 0.8), randf_range(vp.y * 0.3, vp.y * 0.7))
 	m.game = self
 	m.minion_type = type_id
 	minions_node.add_child(m)
-	var slot_idx: int = _get_empty_slot()
-	if slot_idx >= 0:
-		m.guard_slot_index = slot_idx
-		m.has_post = true
-		m.guard_post = _minion_slots[slot_idx]["pos"]
-		_minion_slots[slot_idx]["minion"] = m
 	# 카드 보너스 반영 (프리셋 적용 후)
 	m.base_damage *= minion_attack_bonus * keystone_minion_atk_mult
 	m.attack_damage = m.base_damage

@@ -1,13 +1,13 @@
 extends Node2D
 
-# 탑다운 정사각형 성벽. S=80 기준 외벽 160×160, 코너타워 포함 188×188.
+# 탑다운 정사각형 성벽. S=90 기준 외벽 180×180, 코너타워 포함 208×208.
 const C_SHADOW: Color = Color(0.0,  0.0,  0.0,  0.30)
 const C_FLOOR:  Color = Color(0.18, 0.07, 0.30, 1.0)
 const C_WALL:   Color = Color(0.38, 0.17, 0.58, 1.0)
 const C_TOWER:  Color = Color(0.26, 0.10, 0.44, 1.0)
 const C_LIT:    Color = Color(0.56, 0.30, 0.76, 1.0)
 
-const S: float = 80.0  # 외벽 절반 크기 (Enemy.gd CASTLE_HALF와 맞춤)
+const S: float = 90.0  # 외벽 절반 크기 (Enemy.gd CASTLE_HALF와 맞춤)
 const W: float = 20.0  # 벽 두께
 const T: float = 14.0  # 코너 타워 돌출량
 

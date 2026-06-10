@@ -1,53 +1,50 @@
 extends Node2D
 
-const C_STONE_DARK: Color = Color(0.18, 0.10, 0.30, 1)
-const C_STONE_MID: Color  = Color(0.24, 0.14, 0.40, 1)
-const C_SPIRE: Color      = Color(0.12, 0.06, 0.20, 1)
-const C_WINDOW: Color     = Color(0.60, 0.28, 1.00, 0.80)
-const C_FLAG: Color       = Color(0.60, 0.08, 0.80, 1)
-const C_GATE: Color       = Color(0.05, 0.02, 0.10, 1)
+# 탑다운 정사각형 성벽. S=80 기준 외벽 160×160, 코너타워 포함 188×188.
+const C_SHADOW: Color = Color(0.0,  0.0,  0.0,  0.30)
+const C_FLOOR:  Color = Color(0.18, 0.07, 0.30, 1.0)
+const C_WALL:   Color = Color(0.38, 0.17, 0.58, 1.0)
+const C_TOWER:  Color = Color(0.26, 0.10, 0.44, 1.0)
+const C_LIT:    Color = Color(0.56, 0.30, 0.76, 1.0)
+
+const S: float = 80.0  # 외벽 절반 크기 (Enemy.gd CASTLE_HALF와 맞춤)
+const W: float = 20.0  # 벽 두께
+const T: float = 14.0  # 코너 타워 돌출량
 
 func _draw() -> void:
-	# 지면 그림자
-	draw_rect(Rect2(Vector2(-88, 20), Vector2(176, 7)), Color(0, 0, 0, 0.40))
+	var tsz := W + T * 2.0  # 타워 한 변 길이 = 48
 
-	# 기본 성벽
-	draw_rect(Rect2(Vector2(-85, -20), Vector2(170, 45)), C_STONE_DARK)
+	# 드롭 섀도우
+	draw_rect(Rect2(Vector2(-S + 5.0, 5.0), Vector2(S * 2.0, S * 2.0)), C_SHADOW)
 
-	# 왼쪽 타워
-	draw_rect(Rect2(Vector2(-82, -100), Vector2(45, 125)), C_STONE_MID)
-	draw_rect(Rect2(Vector2(-79, -118), Vector2(13, 18)), C_STONE_MID)
-	draw_rect(Rect2(Vector2(-63, -118), Vector2(13, 18)), C_STONE_MID)
-	draw_circle(Vector2(-60, -68), 6, C_WINDOW)
+	# 내부 마당
+	draw_rect(Rect2(Vector2(-S + W, -S + W), Vector2((S - W) * 2.0, (S - W) * 2.0)), C_FLOOR)
 
-	# 오른쪽 타워
-	draw_rect(Rect2(Vector2(37, -100), Vector2(45, 125)), C_STONE_MID)
-	draw_rect(Rect2(Vector2(50, -118), Vector2(13, 18)), C_STONE_MID)
-	draw_rect(Rect2(Vector2(66, -118), Vector2(13, 18)), C_STONE_MID)
-	draw_circle(Vector2(60, -68), 6, C_WINDOW)
+	# 4면 성벽
+	draw_rect(Rect2(Vector2(-S,      -S),      Vector2(S * 2.0, W)),             C_WALL)  # 북
+	draw_rect(Rect2(Vector2(-S,      S - W),   Vector2(S * 2.0, W)),             C_WALL)  # 남
+	draw_rect(Rect2(Vector2(-S,      -S + W),  Vector2(W,       (S - W) * 2.0)), C_WALL)  # 서
+	draw_rect(Rect2(Vector2(S - W,   -S + W),  Vector2(W,       (S - W) * 2.0)), C_WALL)  # 동
 
-	# 중앙 메인 타워
-	draw_rect(Rect2(Vector2(-27, -160), Vector2(54, 185)), C_STONE_DARK)
-	# 흉벽 (3개)
-	draw_rect(Rect2(Vector2(-24, -178), Vector2(13, 18)), C_STONE_DARK)
-	draw_rect(Rect2(Vector2(-7,  -178), Vector2(13, 18)), C_STONE_DARK)
-	draw_rect(Rect2(Vector2(10,  -178), Vector2(13, 18)), C_STONE_DARK)
-	# 창문
-	draw_circle(Vector2(0, -110), 9, C_WINDOW)
-	# 성문
-	draw_rect(Rect2(Vector2(-12, -10), Vector2(24, 35)), C_GATE)
+	# 벽 하이라이트 (NW 광원)
+	draw_rect(Rect2(Vector2(-S, -S), Vector2(S * 2.0, 3.0)), C_LIT)
+	draw_rect(Rect2(Vector2(-S, -S), Vector2(3.0, S * 2.0)), C_LIT)
 
-	# 첨탑
-	var spire: PackedVector2Array = PackedVector2Array([
-		Vector2(-27, -160), Vector2(27, -160), Vector2(0, -185)
-	])
-	draw_colored_polygon(spire, C_SPIRE)
+	# 코너 타워 (4개)
+	draw_rect(Rect2(Vector2(-S - T,     -S - T),     Vector2(tsz, tsz)), C_TOWER)  # NW
+	draw_rect(Rect2(Vector2(S - W - T,  -S - T),     Vector2(tsz, tsz)), C_TOWER)  # NE
+	draw_rect(Rect2(Vector2(-S - T,     S - W - T),  Vector2(tsz, tsz)), C_TOWER)  # SW
+	draw_rect(Rect2(Vector2(S - W - T,  S - W - T),  Vector2(tsz, tsz)), C_TOWER)  # SE
 
-	# 깃발 (첨탑 꼭대기)
-	var flag: PackedVector2Array = PackedVector2Array([
-		Vector2(0, -205), Vector2(0, -185), Vector2(22, -195)
-	])
-	draw_colored_polygon(flag, C_FLAG)
+	# 타워 하이라이트 (북쪽·서쪽 면)
+	draw_rect(Rect2(Vector2(-S - T,    -S - T), Vector2(tsz, 3.0)),  C_LIT)
+	draw_rect(Rect2(Vector2(-S - T,    -S - T), Vector2(3.0, tsz)),  C_LIT)
+	draw_rect(Rect2(Vector2(S - W - T, -S - T), Vector2(tsz, 3.0)),  C_LIT)
+
+	# 북벽 흉벽(crenels) 4개 — 적이 북쪽에서 접근
+	for i in 4:
+		draw_rect(Rect2(Vector2(-29.0 + i * 17.0, -S), Vector2(7.0, 9.0)), C_FLOOR)
+
 
 func set_hp_ratio(ratio: float) -> void:
 	if ratio > 0.5:

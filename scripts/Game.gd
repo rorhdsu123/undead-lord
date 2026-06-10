@@ -188,9 +188,6 @@ var shop_btns: Array = []
 @onready var card_title: Label = $UI/CardPanel/Title
 @onready var card_subtitle: Label = $UI/CardPanel/Subtitle
 @onready var result_panel = $UI/ResultPanel
-@onready var result_label = $UI/ResultPanel/ResultLabel
-@onready var sub_label = $UI/ResultPanel/SubLabel
-@onready var time_label: Label = $UI/ResultPanel/TimeLabel
 @onready var result_btn1: Button = $UI/ResultPanel/Btn1
 @onready var result_btn2: Button = $UI/ResultPanel/Btn2
 @onready var enemies_node = $Enemies
@@ -205,7 +202,6 @@ var sacrifice_button: Button = null
 @onready var souls_label = $UI/SoulsLabel
 var souls_icon: Label = null
 var slot_icon: Label = null
-@onready var crown_label = $UI/ResultPanel/CrownLabel
 @onready var shop_panel = $UI/ShopPanel
 @onready var shop_title: Label = $UI/ShopPanel/ShopTitle
 @onready var shop_subtitle: Label = $UI/ShopPanel/ShopSubtitle
@@ -1266,22 +1262,28 @@ func game_over() -> void:
 	tween.tween_interval(0.3)
 	tween.tween_callback(func() -> void:
 		overlay.queue_free()
-		result_label.text = "성이 함락됐다..."
-		sub_label.text = "스테이지 %d-%d  웨이브 %d" % [current_chapter + 1, current_stage + 1, current_wave + 1]
-		time_label.text = "%s" % _format_time(elapsed)
 		# 위엄 EXP 부여 (실패 완충 — 소량, 런당 1회)
-		var majesty_line: String = ""
+		var majesty_gain: int = 0
 		if not _majesty_exp_granted:
 			_majesty_exp_granted = true
 			const GAME_OVER_MAJESTY: int = 5
 			GameSave.add_majesty_exp(GAME_OVER_MAJESTY)
-			majesty_line = "\n" + Loc.t("majesty_exp_gain") % GAME_OVER_MAJESTY
-		crown_label.text = ("왕관 조각 +%d (총 %d개)" % [crowns_this_run, GameSave.crown_shards] if crowns_this_run > 0 else "") + majesty_line
-		result_btn1.text = "↩  다시 시작"
-		result_btn1.disabled = false
-		result_btn1.set_meta("action", "retry")
-		modal_dim.visible = true
-		result_panel.visible = true
+			majesty_gain = GAME_OVER_MAJESTY
+		var rewards: Array = []
+		if crowns_this_run > 0:
+			rewards.append({"icon": "👑", "qty": "+%d" % crowns_this_run})
+		if majesty_gain > 0:
+			rewards.append({"icon": "✦", "qty": "+%d" % majesty_gain})
+		_show_result(
+			false,
+			"성이 함락됐다...",
+			"스테이지 %d-%d  웨이브 %d" % [current_chapter + 1, current_stage + 1, current_wave + 1],
+			_format_time(elapsed),
+			rewards,
+			"↩  다시 시작",
+			"retry",
+			true
+		)
 	)
 
 func game_clear() -> void:
@@ -1313,31 +1315,349 @@ func game_clear() -> void:
 	tween.tween_interval(0.3)
 	tween.tween_callback(func() -> void:
 		overlay.queue_free()
-		result_label.text = "스테이지 클리어!"
-		sub_label.text = "%d-%d 완료" % [current_chapter + 1, current_stage + 1]
-		time_label.text = "%s" % _format_time(elapsed)
 		# 위엄 EXP 부여 (런당 1회): 일반 클리어 +20, 보스 스테이지 +40
 		var majesty_gain: int = 0
 		if not _majesty_exp_granted:
 			_majesty_exp_granted = true
 			majesty_gain = 40 if _stage_has_final_boss() else 20
 			GameSave.add_majesty_exp(majesty_gain)
-		var majesty_line: String = ("\n" + Loc.t("majesty_exp_gain") % majesty_gain) if majesty_gain > 0 else ""
-		crown_label.text = "왕관 조각 +%d (총 %d개)" % [crowns_this_run, GameSave.crown_shards] + majesty_line
 		if has_next:
 			if current_chapter == 0 and current_stage == 0:
 				GameSave.tutorial_completed = true
 			GameSave.current_chapter = next_ch
 			GameSave.current_stage = next_st
 			GameSave.save_data()
-			result_btn1.disabled = false
-		else:
-			result_btn1.disabled = true
-		result_btn1.text = "다음 스테이지"
-		result_btn1.set_meta("action", "next_stage")
-		modal_dim.visible = true
-		result_panel.visible = true
+		var rewards: Array = []
+		if crowns_this_run > 0:
+			rewards.append({"icon": "👑", "qty": "+%d" % crowns_this_run})
+		if majesty_gain > 0:
+			rewards.append({"icon": "✦", "qty": "+%d" % majesty_gain})
+		_show_result(
+			true,
+			"스테이지 클리어!",
+			"%d-%d 완료" % [current_chapter + 1, current_stage + 1],
+			_format_time(elapsed),
+			rewards,
+			"다음 스테이지",
+			"next_stage",
+			has_next
+		)
 	)
+
+## ─────────────────────────────────────────────────────────────────────────────
+## E 결과 시퀀스 헬퍼
+## ─────────────────────────────────────────────────────────────────────────────
+
+## 결과 패널 콘텐츠를 동적으로 빌드하고 등장 애니를 재생한다.
+## rewards: [{"icon": "👑", "qty": "+5"}, ...] — 빈 배열이면 보상 행 생략(정사각 박스: 아이콘 상단 + 수량 하단).
+## btn1_enabled=false이면 Btn1 비활성(마지막 스테이지 클리어).
+func _show_result(
+		is_clear: bool,
+		title: String,
+		subtitle: String,
+		time_text: String,
+		rewards: Array,
+		btn1_text: String,
+		btn1_action: String,
+		btn1_enabled: bool
+) -> void:
+	# ── 팔레트 ──────────────────────────────────────────────────────────────
+	var panel_bg:      Color
+	var panel_border:  Color
+	var banner_bg:     Color
+	var banner_text:   Color
+	var title_color:   Color
+	if is_clear:
+		panel_bg     = Color(0.20, 0.17, 0.26, 0.96)
+		panel_border = Color(0.85, 0.7,  0.3,  1.0)
+		banner_bg    = Color(0.78, 0.62, 0.22, 1.0)
+		banner_text  = Color(0.12, 0.09, 0.04, 1.0)
+		title_color  = Color(0.12, 0.09, 0.04, 1.0)
+	else:
+		panel_bg     = Color(0.13, 0.13, 0.17, 0.96)
+		panel_border = Color(0.55, 0.2,  0.2,  1.0)
+		banner_bg    = Color(0.45, 0.15, 0.15, 1.0)
+		banner_text  = Color(0.95, 0.88, 0.88, 1.0)
+		title_color  = Color(0.95, 0.88, 0.88, 1.0)
+
+	# ── 이모지 폰트 (null 가드) ──────────────────────────────────────────────
+	var emoji_font: Font = load("res://assets/fonts/NotoEmoji-Regular.ttf") as Font
+
+	# ── ResultPanel 패널 스타일 갱신 ─────────────────────────────────────────
+	var rp_style := StyleBoxFlat.new()
+	rp_style.bg_color = panel_bg
+	rp_style.border_width_left   = 2
+	rp_style.border_width_top    = 2
+	rp_style.border_width_right  = 2
+	rp_style.border_width_bottom = 2
+	rp_style.border_color = panel_border
+	rp_style.corner_radius_top_left     = 12
+	rp_style.corner_radius_top_right    = 12
+	rp_style.corner_radius_bottom_left  = 12
+	rp_style.corner_radius_bottom_right = 12
+	rp_style.content_margin_left   = 0.0
+	rp_style.content_margin_right  = 0.0
+	rp_style.content_margin_top    = 0.0
+	rp_style.content_margin_bottom = 0.0
+	result_panel.add_theme_stylebox_override("panel", rp_style)
+
+	# ── 이전 동적 자식 제거 (Btn1/Btn2는 .tscn 정적 노드 — 건드리지 않음) ───
+	for child in result_panel.get_children():
+		if child != result_btn1 and child != result_btn2:
+			child.queue_free()
+
+	# ── 콘텐츠 VBox ─────────────────────────────────────────────────────────
+	var vbox := VBoxContainer.new()
+	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vbox.add_theme_constant_override("separation", 0)
+	# 콘텐츠 컨테이너는 패널 전체를 덮으므로 입력 통과(IGNORE) — 안 그러면 하단 버튼 클릭을 가로챔
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	result_panel.add_child(vbox)
+
+	# ── 리본 배너 타이틀 ─────────────────────────────────────────────────────
+	var banner_pc := PanelContainer.new()
+	banner_pc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var banner_style := StyleBoxFlat.new()
+	banner_style.bg_color = banner_bg
+	banner_style.corner_radius_top_left     = 10
+	banner_style.corner_radius_top_right    = 10
+	banner_style.corner_radius_bottom_left  = 0
+	banner_style.corner_radius_bottom_right = 0
+	banner_style.content_margin_left   = 12.0
+	banner_style.content_margin_right  = 12.0
+	banner_style.content_margin_top    = 14.0
+	banner_style.content_margin_bottom = 14.0
+	banner_pc.add_theme_stylebox_override("panel", banner_style)
+	var title_lbl := Label.new()
+	title_lbl.text = title
+	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title_lbl.add_theme_font_size_override("font_size", 30)
+	title_lbl.add_theme_color_override("font_color", title_color)
+	banner_pc.add_child(title_lbl)
+	vbox.add_child(banner_pc)
+
+	# ── 본문 패딩 컨테이너 ───────────────────────────────────────────────────
+	var body_margin := MarginContainer.new()
+	body_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 하단 버튼 영역까지 차지하므로 입력 통과
+	body_margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body_margin.add_theme_constant_override("margin_left",   20)
+	body_margin.add_theme_constant_override("margin_right",  20)
+	body_margin.add_theme_constant_override("margin_top",    16)
+	# 하단 여백: 버튼 2개(약 116px) 영역 확보
+	body_margin.add_theme_constant_override("margin_bottom", 120)
+	vbox.add_child(body_margin)
+
+	var body_vbox := VBoxContainer.new()
+	body_vbox.add_theme_constant_override("separation", 6)
+	body_margin.add_child(body_vbox)
+
+	# 부제
+	var sub_lbl := Label.new()
+	sub_lbl.text = subtitle
+	sub_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub_lbl.add_theme_font_size_override("font_size", 16)
+	sub_lbl.add_theme_color_override("font_color", Color(0.82, 0.80, 0.90, 1.0))
+	body_vbox.add_child(sub_lbl)
+
+	# 기록 시간
+	var time_lbl := Label.new()
+	time_lbl.text = time_text
+	time_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	time_lbl.add_theme_font_size_override("font_size", 14)
+	time_lbl.add_theme_color_override("font_color", Color(0.70, 0.75, 0.88, 1.0))
+	body_vbox.add_child(time_lbl)
+
+	# ── 보상 구분선 + 슬롯 (rewards 배열이 비어있으면 생략) ──────────────────
+	if rewards.size() > 0:
+		# 구분선: [─────] 보상 [─────]
+		var divider_hbox := HBoxContainer.new()
+		divider_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		divider_hbox.add_theme_constant_override("separation", 8)
+		divider_hbox.custom_minimum_size = Vector2(0, 20)
+		var div_left := ColorRect.new()
+		div_left.color = Color(0.55, 0.50, 0.68, 0.55)
+		div_left.custom_minimum_size = Vector2(50, 1)
+		div_left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		div_left.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		divider_hbox.add_child(div_left)
+		var div_lbl := Label.new()
+		div_lbl.text = "보상"
+		div_lbl.add_theme_font_size_override("font_size", 12)
+		div_lbl.add_theme_color_override("font_color", Color(0.70, 0.67, 0.80, 0.85))
+		divider_hbox.add_child(div_lbl)
+		var div_right := ColorRect.new()
+		div_right.color = Color(0.55, 0.50, 0.68, 0.55)
+		div_right.custom_minimum_size = Vector2(50, 1)
+		div_right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		div_right.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		divider_hbox.add_child(div_right)
+		body_vbox.add_child(divider_hbox)
+
+		# 보상 슬롯 HBox — 정사각 박스에 아이콘(상단) + 수량(하단)
+		var reward_hbox := HBoxContainer.new()
+		reward_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		reward_hbox.add_theme_constant_override("separation", 12)
+		for r: Dictionary in rewards:
+			var slot_pc := PanelContainer.new()
+			var slot_style := StyleBoxFlat.new()
+			slot_style.bg_color = Color(0.94, 0.91, 0.84, 0.97)  # 전리품 프레임 — 밝게(아이콘 부각)
+			slot_style.border_width_left   = 2
+			slot_style.border_width_top    = 2
+			slot_style.border_width_right  = 2
+			slot_style.border_width_bottom = 2
+			slot_style.border_color = Color(0.85, 0.70, 0.30, 1.0)  # 골드 테두리
+			slot_style.corner_radius_top_left     = 8
+			slot_style.corner_radius_top_right    = 8
+			slot_style.corner_radius_bottom_left  = 8
+			slot_style.corner_radius_bottom_right = 8
+			slot_style.content_margin_left   = 6.0
+			slot_style.content_margin_right  = 6.0
+			slot_style.content_margin_top    = 6.0
+			slot_style.content_margin_bottom = 5.0
+			slot_pc.add_theme_stylebox_override("panel", slot_style)
+			# 세로 스택: 아이콘(EXPAND으로 상단 채움) → 수량(하단)
+			var slot_vbox := VBoxContainer.new()
+			slot_vbox.custom_minimum_size = Vector2(58, 58)
+			slot_vbox.add_theme_constant_override("separation", 1)
+			var icon_lbl := Label.new()
+			icon_lbl.text = r["icon"]
+			icon_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			icon_lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
+			icon_lbl.size_flags_vertical  = Control.SIZE_EXPAND_FILL
+			icon_lbl.add_theme_font_size_override("font_size", 28)
+			if emoji_font != null:
+				icon_lbl.add_theme_font_override("font", emoji_font)
+			slot_vbox.add_child(icon_lbl)
+			var qty_lbl := Label.new()
+			qty_lbl.text = r["qty"]
+			qty_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			qty_lbl.add_theme_font_size_override("font_size", 15)
+			qty_lbl.add_theme_color_override("font_color", Color(0.25, 0.17, 0.04, 1.0))
+			slot_vbox.add_child(qty_lbl)
+			slot_pc.add_child(slot_vbox)
+			reward_hbox.add_child(slot_pc)
+		body_vbox.add_child(reward_hbox)
+
+	# ── 버튼 위계 ────────────────────────────────────────────────────────────
+	# Btn1 (주행동) — 골드 강조 스타일
+	result_btn1.text = btn1_text
+	result_btn1.disabled = not btn1_enabled
+	result_btn1.set_meta("action", btn1_action)
+	result_btn1.add_theme_font_size_override("font_size", 17)
+	# Btn1 normal
+	var b1n := StyleBoxFlat.new()
+	b1n.bg_color = Color(0.60, 0.45, 0.10, 0.95) if btn1_enabled else Color(0.20, 0.18, 0.14, 0.85)
+	b1n.border_width_left = 2; b1n.border_width_top = 2
+	b1n.border_width_right = 2; b1n.border_width_bottom = 2
+	b1n.border_color = Color(1.0, 0.85, 0.30, 1.0) if btn1_enabled else Color(0.40, 0.36, 0.25, 0.70)
+	b1n.corner_radius_top_left = 8; b1n.corner_radius_top_right = 8
+	b1n.corner_radius_bottom_left = 8; b1n.corner_radius_bottom_right = 8
+	b1n.content_margin_left = 12.0; b1n.content_margin_right = 12.0
+	b1n.content_margin_top = 10.0; b1n.content_margin_bottom = 10.0
+	result_btn1.add_theme_stylebox_override("normal", b1n)
+	# Btn1 hover
+	var b1h := StyleBoxFlat.new()
+	b1h.bg_color = Color(0.75, 0.58, 0.18, 0.98)
+	b1h.border_width_left = 2; b1h.border_width_top = 2
+	b1h.border_width_right = 2; b1h.border_width_bottom = 2
+	b1h.border_color = Color(1.0, 0.95, 0.55, 1.0)
+	b1h.corner_radius_top_left = 8; b1h.corner_radius_top_right = 8
+	b1h.corner_radius_bottom_left = 8; b1h.corner_radius_bottom_right = 8
+	b1h.content_margin_left = 12.0; b1h.content_margin_right = 12.0
+	b1h.content_margin_top = 10.0; b1h.content_margin_bottom = 10.0
+	result_btn1.add_theme_stylebox_override("hover", b1h)
+	# Btn1 pressed
+	var b1p := StyleBoxFlat.new()
+	b1p.bg_color = Color(0.45, 0.33, 0.07, 0.98)
+	b1p.border_width_left = 2; b1p.border_width_top = 2
+	b1p.border_width_right = 2; b1p.border_width_bottom = 2
+	b1p.border_color = Color(0.85, 0.70, 0.25, 1.0)
+	b1p.corner_radius_top_left = 8; b1p.corner_radius_top_right = 8
+	b1p.corner_radius_bottom_left = 8; b1p.corner_radius_bottom_right = 8
+	b1p.content_margin_left = 12.0; b1p.content_margin_right = 12.0
+	b1p.content_margin_top = 10.0; b1p.content_margin_bottom = 10.0
+	result_btn1.add_theme_stylebox_override("pressed", b1p)
+	# Btn1 disabled
+	var b1d := StyleBoxFlat.new()
+	b1d.bg_color = Color(0.14, 0.13, 0.10, 0.80)
+	b1d.border_width_left = 1; b1d.border_width_top = 1
+	b1d.border_width_right = 1; b1d.border_width_bottom = 1
+	b1d.border_color = Color(0.35, 0.33, 0.25, 0.60)
+	b1d.corner_radius_top_left = 8; b1d.corner_radius_top_right = 8
+	b1d.corner_radius_bottom_left = 8; b1d.corner_radius_bottom_right = 8
+	b1d.content_margin_left = 12.0; b1d.content_margin_right = 12.0
+	b1d.content_margin_top = 10.0; b1d.content_margin_bottom = 10.0
+	result_btn1.add_theme_stylebox_override("disabled", b1d)
+	result_btn1.add_theme_color_override("font_color", Color(1.0, 0.92, 0.65, 1.0) if btn1_enabled else Color(0.50, 0.47, 0.38, 1.0))
+	result_btn1.add_theme_color_override("font_color_disabled", Color(0.50, 0.47, 0.38, 1.0))
+
+	# Btn2 (보조) — 차분한 보라/회색
+	result_btn2.text = "로비로 돌아가기"
+	result_btn2.disabled = false
+	result_btn2.add_theme_font_size_override("font_size", 15)
+	var b2n := StyleBoxFlat.new()
+	b2n.bg_color = Color(0.18, 0.16, 0.24, 0.88)
+	b2n.border_width_left = 1; b2n.border_width_top = 1
+	b2n.border_width_right = 1; b2n.border_width_bottom = 1
+	b2n.border_color = Color(0.55, 0.50, 0.68, 0.80)
+	b2n.corner_radius_top_left = 8; b2n.corner_radius_top_right = 8
+	b2n.corner_radius_bottom_left = 8; b2n.corner_radius_bottom_right = 8
+	b2n.content_margin_left = 12.0; b2n.content_margin_right = 12.0
+	b2n.content_margin_top = 8.0; b2n.content_margin_bottom = 8.0
+	result_btn2.add_theme_stylebox_override("normal", b2n)
+	var b2h := StyleBoxFlat.new()
+	b2h.bg_color = Color(0.24, 0.21, 0.32, 0.92)
+	b2h.border_width_left = 1; b2h.border_width_top = 1
+	b2h.border_width_right = 1; b2h.border_width_bottom = 1
+	b2h.border_color = Color(0.72, 0.68, 0.85, 0.90)
+	b2h.corner_radius_top_left = 8; b2h.corner_radius_top_right = 8
+	b2h.corner_radius_bottom_left = 8; b2h.corner_radius_bottom_right = 8
+	b2h.content_margin_left = 12.0; b2h.content_margin_right = 12.0
+	b2h.content_margin_top = 8.0; b2h.content_margin_bottom = 8.0
+	result_btn2.add_theme_stylebox_override("hover", b2h)
+	result_btn2.add_theme_color_override("font_color", Color(0.82, 0.80, 0.90, 1.0))
+
+	# ── 모달 + 패널 표시 ────────────────────────────────────────────────────
+	modal_dim.visible = true
+	result_panel.visible = true
+
+	# ── 패널 등장 애니 (scale pop + fade) ────────────────────────────────────
+	result_panel.pivot_offset = result_panel.size / 2.0
+	result_panel.modulate.a = 0.0
+	result_panel.scale = Vector2(0.9, 0.9)
+	var anim_tw: Tween = create_tween()
+	anim_tw.set_parallel(true)
+	anim_tw.tween_property(result_panel, "modulate:a", 1.0, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	anim_tw.tween_property(result_panel, "scale", Vector2(1.0, 1.0), 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+	# ── 콘페티 (클리어 전용) ─────────────────────────────────────────────────
+	# 콘페티: 임시 플레이스홀더 — 추후 아트 리소스로 교체
+	if is_clear:
+		_spawn_confetti()
+
+func _spawn_confetti() -> void:
+	# 콘페티: 임시 플레이스홀더 — 추후 아트 리소스로 교체
+	var confetti_colors: Array = [
+		Color(1.0, 0.85, 0.25), Color(0.95, 0.45, 0.45),
+		Color(0.45, 0.85, 0.95), Color(0.65, 0.95, 0.50),
+		Color(0.90, 0.55, 0.90), Color(1.0, 1.0, 1.0),
+	]
+	for _i in 22:
+		var piece := ColorRect.new()
+		piece.size = Vector2(randf_range(5.0, 10.0), randf_range(4.0, 8.0))
+		piece.color = confetti_colors[randi() % confetti_colors.size()]
+		piece.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		piece.position = Vector2(randf_range(0.0, 480.0), randf_range(-20.0, -5.0))
+		piece.rotation = randf_range(0.0, TAU)
+		$UI.add_child(piece)
+		var fall_tw: Tween = create_tween()
+		var fall_y: float = randf_range(700.0, 980.0)
+		var fall_dur: float = randf_range(1.2, 2.2)
+		fall_tw.set_parallel(true)
+		fall_tw.tween_property(piece, "position:y", fall_y, fall_dur).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		fall_tw.tween_property(piece, "rotation", piece.rotation + randf_range(4.0, 10.0), fall_dur)
+		fall_tw.tween_property(piece, "modulate:a", 0.0, fall_dur).set_delay(fall_dur * 0.6)
+		fall_tw.tween_callback(piece.queue_free).set_delay(fall_dur)
 
 func _fade_in() -> void:
 	fade_rect.color = Color(0.0, 0.0, 0.0, 1.0)

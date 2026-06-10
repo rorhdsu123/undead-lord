@@ -133,59 +133,34 @@ theme_override_font_sizes/font_size = 18
 z_index = 10
 visible = false
 offset_left = 30.0
-offset_top = 200.0
+offset_top = 180.0
 offset_right = 450.0
-offset_bottom = 700.0
-
-[node name="ResultLabel" type="Label" parent="UI/ResultPanel"]
-offset_left = 0.0
-offset_top = 22.0
-offset_right = 420.0
-offset_bottom = 88.0
-horizontal_alignment = 1
-text = ""
-theme_override_font_sizes/font_size = 32
-
-[node name="SubLabel" type="Label" parent="UI/ResultPanel"]
-offset_left = 0.0
-offset_top = 93.0
-offset_right = 420.0
-offset_bottom = 123.0
-horizontal_alignment = 1
-text = ""
-
-[node name="TimeLabel" type="Label" parent="UI/ResultPanel"]
-offset_left = 0.0
-offset_top = 126.0
-offset_right = 420.0
-offset_bottom = 151.0
-horizontal_alignment = 1
-text = ""
-theme_override_colors/font_color = Color(0.8, 0.85, 1.0, 1)
-
-[node name="CrownLabel" type="Label" parent="UI/ResultPanel"]
-offset_left = 0.0
-offset_top = 154.0
-offset_right = 420.0
-offset_bottom = 179.0
-horizontal_alignment = 1
-text = ""
-theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
+offset_bottom = 720.0
 
 [node name="Btn1" type="Button" parent="UI/ResultPanel"]
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
 offset_left = 20.0
-offset_top = 200.0
-offset_right = 400.0
-offset_bottom = 244.0
+offset_top = -106.0
+offset_right = -20.0
+offset_bottom = -60.0
 text = ""
 theme_override_font_sizes/font_size = 17
+focus_mode = 0
 
 [node name="Btn2" type="Button" parent="UI/ResultPanel"]
-offset_left = 60.0
-offset_top = 254.0
-offset_right = 360.0
-offset_bottom = 290.0
-text = "로비로 이동"
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 50.0
+offset_top = -50.0
+offset_right = -50.0
+offset_bottom = -14.0
+text = "로비로 돌아가기"
+focus_mode = 0
 
 [node name="ShopPanel" type="Panel" parent="UI"]
 z_index = 10

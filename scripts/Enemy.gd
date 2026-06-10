@@ -17,6 +17,7 @@ const BASE_DAMAGE: int = 10
 const BASE_SPRITE_SCALE: float = 0.246
 const MINION_ENGAGE_RANGE: float = 100.0
 const KNOCKBACK_DECAY: float = 700.0
+const CASTLE_HALF: float = 80.0  # CastleSprite.S 와 일치
 
 static var _cached_frames: Dictionary = {}
 
@@ -133,8 +134,18 @@ func _physics_process(delta: float) -> void:
 	else:
 		target_pos = game.get_node("Castle").global_position
 
-	var dist: float = global_position.distance_to(target_pos)
-	if dist < 50.0:
+	var dist: float
+	var attack_range: float
+	if is_instance_valid(minion_target):
+		dist = global_position.distance_to(target_pos)
+		attack_range = 50.0
+	else:
+		var rel: Vector2 = global_position - target_pos
+		var dx: float = max(0.0, absf(rel.x) - CASTLE_HALF)
+		var dy: float = max(0.0, absf(rel.y) - CASTLE_HALF)
+		dist = sqrt(dx * dx + dy * dy)
+		attack_range = 2.0
+	if dist < attack_range:
 		velocity = Vector2.ZERO
 		if _anim_state not in ["attack", "hurt"]:
 			_play_anim("idle")

@@ -12,6 +12,11 @@ static var _strings: Dictionary = {
 	"card_select_title":    "카드 선택",
 	"card_select_subtitle": "카드 1장 선택",
 
+	# 상점 오버레이
+	"shop_title":    "영혼 상점",
+	"shop_subtitle": "다음 웨이브 전, 전력을 보강하세요",
+	"shop_owned_souls": "보유 영혼  ◆ %d",
+
 	# 카드 이름/설명
 	"card_arsenal":       "무기고\n[영주] 공격력 +20%",
 	"card_wall":          "성벽 강화\n최대 HP +50",

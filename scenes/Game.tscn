@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3 uid="uid://game"]
+[gd_scene load_steps=10 format=3 uid="uid://game"]
 
 [ext_resource type="Script" path="res://scripts/Game.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="2"]
@@ -15,6 +15,42 @@ border_width_top = 4
 border_width_right = 4
 border_width_bottom = 4
 border_color = Color(0.4, 0.24, 0.1, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="NextWaveBtnNormal"]
+bg_color = Color(0.9, 0.65, 0.25, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.45, 0.28, 0.1, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="NextWaveBtnHover"]
+bg_color = Color(1.0, 0.75, 0.32, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.55, 0.35, 0.14, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="NextWaveBtnPressed"]
+bg_color = Color(0.72, 0.5, 0.18, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.35, 0.22, 0.08, 1)
 corner_radius_top_left = 10
 corner_radius_top_right = 10
 corner_radius_bottom_right = 10
@@ -53,12 +89,11 @@ offset_right = 470.0
 offset_bottom = 32.0
 text = "스테이지 1-1"
 
-[node name="WaveTracker" type="HBoxContainer" parent="UI"]
-offset_left = 10.0
+[node name="WaveTracker" type="CenterContainer" parent="UI"]
+offset_left = 0.0
 offset_top = 36.0
-offset_right = 470.0
-offset_bottom = 64.0
-theme_override_constants/separation = 2
+offset_right = 480.0
+offset_bottom = 100.0
 
 [node name="SoulsLabel" type="Label" parent="UI"]
 offset_left = 10.0
@@ -68,6 +103,7 @@ offset_bottom = 85.0
 text = "영혼: 0"
 
 [node name="CardPanel" type="Panel" parent="UI"]
+z_index = 10
 visible = false
 offset_right = 480.0
 offset_bottom = 960.0
@@ -101,6 +137,7 @@ theme_override_colors/font_color = Color(0.78, 0.74, 0.7, 1)
 theme_override_font_sizes/font_size = 18
 
 [node name="ResultPanel" type="Panel" parent="UI"]
+z_index = 10
 visible = false
 offset_left = 30.0
 offset_top = 200.0
@@ -158,35 +195,67 @@ offset_bottom = 290.0
 text = "로비로 이동"
 
 [node name="ShopPanel" type="Panel" parent="UI"]
+z_index = 10
 visible = false
 offset_left = 10.0
 offset_top = 90.0
 offset_right = 470.0
 offset_bottom = 840.0
 
+[node name="ShopTitleBanner" type="Panel" parent="UI/ShopPanel"]
+offset_left = 100.0
+offset_top = 8.0
+offset_right = 360.0
+offset_bottom = 60.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("TitleBanner")
+
 [node name="ShopTitle" type="Label" parent="UI/ShopPanel"]
-offset_left = 0.0
-offset_top = 15.0
-offset_right = 460.0
-offset_bottom = 55.0
+offset_left = 100.0
+offset_top = 8.0
+offset_right = 360.0
+offset_bottom = 60.0
 horizontal_alignment = 1
-text = "영혼 상점"
-theme_override_font_sizes/font_size = 26
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.32, 0.18, 0.06, 1)
+theme_override_font_sizes/font_size = 30
+
+[node name="ShopSubtitle" type="Label" parent="UI/ShopPanel"]
+offset_left = 0.0
+offset_top = 66.0
+offset_right = 460.0
+offset_bottom = 92.0
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.78, 0.74, 0.7, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="ShopSouls" type="Label" parent="UI/ShopPanel"]
+offset_left = 0.0
+offset_top = 96.0
+offset_right = 460.0
+offset_bottom = 124.0
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 0.86, 0.4, 1)
+theme_override_font_sizes/font_size = 20
 
 [node name="ShopItems" type="VBoxContainer" parent="UI/ShopPanel"]
 offset_left = 15.0
-offset_top = 65.0
+offset_top = 132.0
 offset_right = 445.0
 offset_bottom = 680.0
 theme_override_constants/separation = 8
 
 [node name="CloseBtn" type="Button" parent="UI/ShopPanel"]
-offset_left = 80.0
-offset_top = 695.0
-offset_right = 380.0
-offset_bottom = 735.0
+offset_left = 60.0
+offset_top = 690.0
+offset_right = 400.0
+offset_bottom = 744.0
 text = "다음 웨이브 →"
-theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(0.25, 0.15, 0.05, 1)
+theme_override_font_sizes/font_size = 22
+theme_override_styles/normal = SubResource("NextWaveBtnNormal")
+theme_override_styles/hover = SubResource("NextWaveBtnHover")
+theme_override_styles/pressed = SubResource("NextWaveBtnPressed")
 
 [node name="MinionSlotLabel" type="Label" parent="UI"]
 offset_left = 0.0
@@ -212,7 +281,18 @@ offset_bottom = 938.0
 text = "⚔ 특수기"
 focus_mode = 0
 
+[node name="ModalDim" type="ColorRect" parent="UI"]
+z_index = 9
+visible = false
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 480.0
+offset_bottom = 960.0
+color = Color(0.05, 0.04, 0.08, 0.72)
+mouse_filter = 0
+
 [node name="FadeRect" type="ColorRect" parent="UI"]
+z_index = 20
 offset_left = 0.0
 offset_top = 0.0
 offset_right = 480.0

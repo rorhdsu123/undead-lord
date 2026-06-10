@@ -208,11 +208,15 @@ var slot_icon: Label = null
 @onready var crown_label = $UI/ResultPanel/CrownLabel
 @onready var shop_panel = $UI/ShopPanel
 @onready var shop_title: Label = $UI/ShopPanel/ShopTitle
+@onready var shop_subtitle: Label = $UI/ShopPanel/ShopSubtitle
+@onready var shop_souls: Label = $UI/ShopPanel/ShopSouls
 @onready var shop_items_node = $UI/ShopPanel/ShopItems
 @onready var shop_close_btn = $UI/ShopPanel/CloseBtn
 @onready var fade_rect: ColorRect = $UI/FadeRect
+@onready var modal_dim: ColorRect = $UI/ModalDim
 
 var _shop_btn_pulse_tween: Tween = null
+var _tracker_hide_tween: Tween = null
 var _card_rows: Array = []
 
 func _ready() -> void:
@@ -243,6 +247,12 @@ func _ready() -> void:
 	slot_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	minion_slot_label.get_parent().add_child(slot_icon)
 	_layout_bottom_ui()
+	# 모달 입력 레이어링: Godot GUI 입력은 z_index가 아니라 트리 순서로 판정되므로
+	# HUD < ModalDim < 모달 패널 < FadeRect 순서가 되도록 끝으로 차례로 이동.
+	# (안 그러면 트리상 뒤에 있는 ModalDim(STOP)이 모달 버튼 클릭을 가로챔)
+	var ui_layer: CanvasLayer = $UI
+	for n in [modal_dim, card_panel, result_panel, shop_panel, fade_rect]:
+		ui_layer.move_child(n, ui_layer.get_child_count() - 1)
 	current_chapter = GameSave.start_chapter
 	current_stage = GameSave.start_stage
 	current_wave = 0
@@ -272,10 +282,12 @@ func start_wave() -> void:
 
 	if data["type"] == "shop":
 		wave_active = false
+		_reveal_wave_tracker(false)
 		_show_shop()
 		return
 
 	wave_active = true
+	_reveal_wave_tracker(true)
 
 	# composition 기반 스폰
 	var composition: Array = data["composition"]
@@ -329,6 +341,21 @@ func start_wave() -> void:
 		_on_boss_entered(b)
 	if _is_tutorial():
 		_trigger_wave_guide(current_wave)
+
+func _reveal_wave_tracker(auto_hide: bool) -> void:
+	if _tracker_hide_tween and _tracker_hide_tween.is_valid():
+		_tracker_hide_tween.kill()
+	_tracker_hide_tween = null
+	wave_tracker.visible = true
+	wave_tracker.modulate.a = 1.0
+	if auto_hide:
+		_tracker_hide_tween = create_tween()
+		_tracker_hide_tween.tween_interval(2.5)
+		_tracker_hide_tween.tween_property(wave_tracker, "modulate:a", 0.0, 0.4)
+		_tracker_hide_tween.tween_callback(_hide_wave_tracker)
+
+func _hide_wave_tracker() -> void:
+	wave_tracker.visible = false
 
 func _on_boss_entered(boss_node: Node) -> void:
 	_screen_shake(6.0, 0.35)
@@ -808,25 +835,108 @@ func _apply_card(id: String, mult: float = 1.0) -> void:
 		"minion_lifesteal":
 			minion_lifesteal += 0.20 * mult
 
-## 노드 종류별 임시 글리프 (아트 입고 전 placeholder, NotoSansKR 커버 도형으로 한정)
-const TRACKER_GLYPH_NORMAL:   String = "●"
-const TRACKER_GLYPH_SHOP:     String = "■"
-const TRACKER_GLYPH_MID_BOSS: String = "▲"
-const TRACKER_GLYPH_BOSS:     String = "★"
+## 웨이브 트래커 — 카피바라고 스타일 캡슐형 노드 스트립
+## 아이콘은 NotoEmoji placeholder (아트 입고 후 교체)
+const TRACKER_ICON_NORMAL:   String = "👾"
+const TRACKER_ICON_SHOP:     String = "💰"
+const TRACKER_ICON_MID_BOSS: String = "👹"
+const TRACKER_ICON_BOSS:     String = "💀"
 
-func _wave_glyph(wave_data: Dictionary) -> String:
+## 노드 종류별 배지 채움색
+const TRACKER_COLOR_NORMAL:   Color = Color(0.28, 0.26, 0.34)
+const TRACKER_COLOR_SHOP:     Color = Color(0.20, 0.35, 0.40)
+const TRACKER_COLOR_MID_BOSS: Color = Color(0.40, 0.22, 0.48)
+const TRACKER_COLOR_BOSS:     Color = Color(0.55, 0.15, 0.20)
+
+## 배지 크기 (고정)
+const TRACKER_BADGE_SIZE: float = 30.0
+
+func _wave_icon(wave_data: Dictionary) -> String:
 	match wave_data.get("type", "normal"):
-		"boss":     return TRACKER_GLYPH_BOSS
-		"mid_boss": return TRACKER_GLYPH_MID_BOSS
-		"shop":     return TRACKER_GLYPH_SHOP
-		_:          return TRACKER_GLYPH_NORMAL
+		"boss":     return TRACKER_ICON_BOSS
+		"mid_boss": return TRACKER_ICON_MID_BOSS
+		"shop":     return TRACKER_ICON_SHOP
+		_:          return TRACKER_ICON_NORMAL
+
+func _wave_badge_color(wave_data: Dictionary) -> Color:
+	match wave_data.get("type", "normal"):
+		"boss":     return TRACKER_COLOR_BOSS
+		"mid_boss": return TRACKER_COLOR_MID_BOSS
+		"shop":     return TRACKER_COLOR_SHOP
+		_:          return TRACKER_COLOR_NORMAL
+
+## 원형 배지 VBox(포인터슬롯+배지+번호)를 생성해 반환한다.
+## wave_data: 해당 웨이브 딕셔너리, wave_number: 1-based 표시 번호, is_current: 현재 노드 여부
+func _make_badge_column(wave_data: Dictionary, wave_number: int, is_current: bool, emoji_font) -> VBoxContainer:
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+
+	# ── 포인터 슬롯 (현재 노드에만 ▼, 나머지는 빈 라벨로 높이 유지) ──
+	var pointer_lbl := Label.new()
+	pointer_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pointer_lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
+	pointer_lbl.add_theme_font_size_override("font_size", 10)
+	if is_current:
+		pointer_lbl.text = "▼"
+		pointer_lbl.add_theme_color_override("font_color", Color(0.9, 0.2, 0.2))
+	else:
+		pointer_lbl.text = " "   # 빈 슬롯 — 높이 확보
+	col.add_child(pointer_lbl)
+
+	# ── 원형 배지 (Panel + 아이콘 Label) ──
+	var badge_panel := Panel.new()
+	badge_panel.custom_minimum_size = Vector2(TRACKER_BADGE_SIZE, TRACKER_BADGE_SIZE)
+
+	var badge_style := StyleBoxFlat.new()
+	badge_style.bg_color = _wave_badge_color(wave_data)
+	badge_style.corner_radius_top_left     = int(TRACKER_BADGE_SIZE / 2)
+	badge_style.corner_radius_top_right    = int(TRACKER_BADGE_SIZE / 2)
+	badge_style.corner_radius_bottom_left  = int(TRACKER_BADGE_SIZE / 2)
+	badge_style.corner_radius_bottom_right = int(TRACKER_BADGE_SIZE / 2)
+	if is_current:
+		badge_style.border_width_left   = 3
+		badge_style.border_width_top    = 3
+		badge_style.border_width_right  = 3
+		badge_style.border_width_bottom = 3
+		badge_style.border_color = Color(1.0, 0.85, 0.3)  # 금색 링
+	badge_panel.add_theme_stylebox_override("panel", badge_style)
+
+	# 아이콘 Label — Panel 자식, anchors full rect + 중앙 정렬
+	var icon_lbl := Label.new()
+	icon_lbl.text = _wave_icon(wave_data)
+	icon_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon_lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
+	icon_lbl.add_theme_font_size_override("font_size", 14)
+	icon_lbl.add_theme_color_override("font_color", Color(0.95, 0.95, 0.95))
+	if emoji_font != null:
+		icon_lbl.add_theme_font_override("font", emoji_font)
+	# anchors preset: FULL_RECT (15) — Panel은 Container가 아니므로 수동 anchor
+	icon_lbl.set_anchor_and_offset(SIDE_LEFT,   0.0,  0.0)
+	icon_lbl.set_anchor_and_offset(SIDE_TOP,    0.0,  0.0)
+	icon_lbl.set_anchor_and_offset(SIDE_RIGHT,  1.0,  0.0)
+	icon_lbl.set_anchor_and_offset(SIDE_BOTTOM, 1.0,  0.0)
+	badge_panel.add_child(icon_lbl)
+
+	col.add_child(badge_panel)
+
+	# ── 웨이브 번호 라벨 (배지 아래) ──
+	var num_lbl := Label.new()
+	num_lbl.text = str(wave_number)
+	num_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	num_lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
+	num_lbl.add_theme_font_size_override("font_size", 9)
+	num_lbl.add_theme_color_override("font_color", Color(0.75, 0.72, 0.78))
+	col.add_child(num_lbl)
+
+	return col
 
 func _build_wave_tracker() -> void:
 	## 초기 1회 호출 — 실제 구성은 update_wave_tracker()에 위임
 	update_wave_tracker()
 
 func update_wave_tracker() -> void:
-	## 매 웨이브마다 HBox를 완전히 재구성하는 압축 스트립
+	## 매 웨이브마다 CenterContainer 자식을 완전히 재구성하는 캡슐형 노드 스트립
 	for child in wave_tracker.get_children():
 		child.queue_free()
 
@@ -834,65 +944,166 @@ func update_wave_tracker() -> void:
 	if waves.is_empty():
 		return
 
+	# NotoEmoji 폰트 로드 (실패 시 null 가드)
+	var emoji_font: Font = load("res://assets/fonts/NotoEmoji-Regular.ttf") as Font
+
 	var boss_idx: int = waves.size() - 1
 
-	# 윈도우: [current_wave, current_wave+2] 최대 3개, 배열 끝으로 클립
-	var win_end: int = mini(current_wave + 3, waves.size())
+	# ── 항상 4칸 윈도우 계산 ──
+	# 슬라이딩 3 + 보스 고정 = 항상 4칸. 짝수 앵커(2웨이브 페이징), 끝 근처 클램프.
+	var total: int = waves.size()
+	var display_indices: Array = []
+	var show_ellipsis: bool = false
 
-	# 최종보스가 윈도우 밖에 있을 때만 오른쪽 고정
-	var boss_pinned: bool = boss_idx >= win_end
-	# 윈도우 마지막과 보스 사이에 표시 안 된 노드가 있을 때 "…" 생략 표시
-	var show_ellipsis: bool = boss_pinned and boss_idx > win_end
+	if total <= 4:
+		# 전체 4칸 이하 → 전부 표시, 생략/보스핀 없음
+		for i in range(0, total):
+			display_indices.append(i)
+	else:
+		# s: 짝수 앵커, boss_idx-3까지 클램프
+		var s: int = clampi(current_wave - (current_wave % 2), 0, boss_idx - 3)
+		if boss_idx == s + 3:
+			# 보스가 윈도우 바로 다음 → 4칸 연속, 생략 없음(보스도 일반 노드로 표시)
+			display_indices = [s, s + 1, s + 2, boss_idx]
+			show_ellipsis = false
+		else:
+			# boss_idx >= s+4 → 윈도우 3칸 + "…" + 보스 핀
+			display_indices = [s, s + 1, s + 2]
+			show_ellipsis = true
+
+	# ── 캡슐 PanelContainer ──
+	var pill := PanelContainer.new()
+	var pill_style := StyleBoxFlat.new()
+	pill_style.bg_color = Color(0.10, 0.09, 0.12, 0.92)
+	pill_style.corner_radius_top_left     = 18
+	pill_style.corner_radius_top_right    = 18
+	pill_style.corner_radius_bottom_left  = 18
+	pill_style.corner_radius_bottom_right = 18
+	pill_style.content_margin_left   = 10.0
+	pill_style.content_margin_right  = 10.0
+	pill_style.content_margin_top    = 6.0
+	pill_style.content_margin_bottom = 6.0
+	pill.add_theme_stylebox_override("panel", pill_style)
+	wave_tracker.add_child(pill)
+
+	# ── HBoxContainer (노드 배지들의 가로 행) ──
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 6)
+	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	pill.add_child(hbox)
 
 	# 윈도우 항목 생성
-	for w_idx in range(current_wave, win_end):
-		var lbl: Label = Label.new()
-		lbl.text = _wave_glyph(waves[w_idx])
-		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		if w_idx == current_wave:
-			lbl.modulate = Color(1, 1, 0)
-			lbl.scale = Vector2(1.2, 1.2)
-		else:
-			lbl.modulate = Color(1, 1, 1)
-		wave_tracker.add_child(lbl)
+	for w_idx in display_indices:
+		var col := _make_badge_column(waves[w_idx], w_idx + 1, w_idx == current_wave, emoji_font)
+		# 지난 노드(현재보다 앞) → 회색 흐림
+		if w_idx < current_wave:
+			col.modulate = Color(0.5, 0.5, 0.5)
+		hbox.add_child(col)
 
-	# 생략 부호
+	# 생략 부호 ("…")
 	if show_ellipsis:
-		var ellipsis: Label = Label.new()
-		ellipsis.text = "…"
-		ellipsis.modulate = Color(0.6, 0.6, 0.6)
-		ellipsis.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		ellipsis.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		wave_tracker.add_child(ellipsis)
+		var ellipsis_lbl := Label.new()
+		ellipsis_lbl.text = "…"
+		ellipsis_lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
+		ellipsis_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ellipsis_lbl.add_theme_font_size_override("font_size", 14)
+		ellipsis_lbl.add_theme_color_override("font_color", Color(0.55, 0.53, 0.60))
+		hbox.add_child(ellipsis_lbl)
 
-	# spacer + 최종보스 고정 (윈도우 밖일 때만)
-	if boss_pinned:
-		var spacer: Control = Control.new()
-		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		wave_tracker.add_child(spacer)
-
-		var boss_lbl: Label = Label.new()
-		boss_lbl.text = TRACKER_GLYPH_BOSS
-		boss_lbl.modulate = Color(1, 1, 1)
-		boss_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		boss_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		wave_tracker.add_child(boss_lbl)
+	# 최종보스 고정 (생략이 있을 때만 — 연속 포함된 경우는 display_indices에 이미 포함)
+	if show_ellipsis:
+		var boss_col := _make_badge_column(waves[boss_idx], boss_idx + 1, boss_idx == current_wave, emoji_font)
+		if boss_idx < current_wave:
+			boss_col.modulate = Color(0.5, 0.5, 0.5)
+		hbox.add_child(boss_col)
 
 func _build_shop_buttons() -> void:
 	for i in SHOP_ITEMS.size():
 		var btn: Button = Button.new()
 		btn.custom_minimum_size = Vector2(0, 58)
+		btn.add_theme_font_size_override("font_size", 16)
+		# normal 상태: 어두운 보라 배경 + 테두리
+		var sn: StyleBoxFlat = StyleBoxFlat.new()
+		sn.bg_color = Color(0.18, 0.16, 0.24, 0.92)
+		sn.border_width_left = 2
+		sn.border_width_top = 2
+		sn.border_width_right = 2
+		sn.border_width_bottom = 2
+		sn.border_color = Color(0.55, 0.5, 0.68)
+		sn.corner_radius_top_left = 8
+		sn.corner_radius_top_right = 8
+		sn.corner_radius_bottom_right = 8
+		sn.corner_radius_bottom_left = 8
+		sn.content_margin_left = 12.0
+		sn.content_margin_right = 12.0
+		sn.content_margin_top = 8.0
+		sn.content_margin_bottom = 8.0
+		btn.add_theme_stylebox_override("normal", sn)
+		# hover 상태: 약간 밝게 + 골드 테두리
+		var sh: StyleBoxFlat = StyleBoxFlat.new()
+		sh.bg_color = Color(0.24, 0.21, 0.32, 0.95)
+		sh.border_width_left = 2
+		sh.border_width_top = 2
+		sh.border_width_right = 2
+		sh.border_width_bottom = 2
+		sh.border_color = Color(0.8, 0.72, 0.5)
+		sh.corner_radius_top_left = 8
+		sh.corner_radius_top_right = 8
+		sh.corner_radius_bottom_right = 8
+		sh.corner_radius_bottom_left = 8
+		sh.content_margin_left = 12.0
+		sh.content_margin_right = 12.0
+		sh.content_margin_top = 8.0
+		sh.content_margin_bottom = 8.0
+		btn.add_theme_stylebox_override("hover", sh)
+		# pressed 상태: 더 어둡게
+		var sp: StyleBoxFlat = StyleBoxFlat.new()
+		sp.bg_color = Color(0.14, 0.12, 0.18, 0.95)
+		sp.border_width_left = 2
+		sp.border_width_top = 2
+		sp.border_width_right = 2
+		sp.border_width_bottom = 2
+		sp.border_color = Color(0.55, 0.5, 0.68)
+		sp.corner_radius_top_left = 8
+		sp.corner_radius_top_right = 8
+		sp.corner_radius_bottom_right = 8
+		sp.corner_radius_bottom_left = 8
+		sp.content_margin_left = 12.0
+		sp.content_margin_right = 12.0
+		sp.content_margin_top = 8.0
+		sp.content_margin_bottom = 8.0
+		btn.add_theme_stylebox_override("pressed", sp)
+		# disabled 상태: 채도 낮은 배경 + 흐린 테두리
+		var sd: StyleBoxFlat = StyleBoxFlat.new()
+		sd.bg_color = Color(0.12, 0.11, 0.15, 0.85)
+		sd.border_width_left = 2
+		sd.border_width_top = 2
+		sd.border_width_right = 2
+		sd.border_width_bottom = 2
+		sd.border_color = Color(0.32, 0.30, 0.36)
+		sd.corner_radius_top_left = 8
+		sd.corner_radius_top_right = 8
+		sd.corner_radius_bottom_right = 8
+		sd.corner_radius_bottom_left = 8
+		sd.content_margin_left = 12.0
+		sd.content_margin_right = 12.0
+		sd.content_margin_top = 8.0
+		sd.content_margin_bottom = 8.0
+		btn.add_theme_stylebox_override("disabled", sd)
+		btn.add_theme_color_override("font_color_disabled", Color(0.5, 0.48, 0.54))
 		var idx: int = i
 		btn.pressed.connect(func(): _buy_item(idx))
 		shop_items_node.add_child(btn)
 		shop_btns.append(btn)
 
 func _show_shop() -> void:
+	modal_dim.visible = true
 	_refresh_shop_buttons()
 	shop_panel.visible = true
 	summon_container.visible = false
 	minion_slot_label.visible = false
+	shop_title.text = Loc.t("shop_title")
+	shop_subtitle.text = Loc.t("shop_subtitle")
 	if _is_tutorial():
 		_show_shop_guide()
 
@@ -903,9 +1114,9 @@ func _close_shop() -> void:
 		_shop_btn_pulse_tween.kill()
 	_shop_btn_pulse_tween = null
 	shop_close_btn.modulate = Color.WHITE
-	shop_title.text = "영혼 상점"
-	shop_title.add_theme_font_size_override("font_size", 26)
+	shop_title.text = Loc.t("shop_title")
 	shop_panel.visible = false
+	modal_dim.visible = false
 	summon_container.visible = true
 	minion_slot_label.visible = true
 	current_wave += 1
@@ -947,6 +1158,7 @@ func _refresh_shop_buttons() -> void:
 		var btn: Button = shop_btns[i]
 		btn.text = "%s  [영혼 %d]\n%s" % [item["label"], item["cost"], item["desc"]]
 		btn.disabled = souls < item["cost"]
+	shop_souls.text = Loc.t("shop_owned_souls") % souls
 
 func earn_crown_shards(n: int) -> void:
 	if n <= 0:
@@ -1015,6 +1227,7 @@ func game_over() -> void:
 		result_btn1.text = "↩  다시 시작"
 		result_btn1.disabled = false
 		result_btn1.set_meta("action", "retry")
+		modal_dim.visible = true
 		result_panel.visible = true
 	)
 
@@ -1069,6 +1282,7 @@ func game_clear() -> void:
 			result_btn1.disabled = true
 		result_btn1.text = "다음 스테이지"
 		result_btn1.set_meta("action", "next_stage")
+		modal_dim.visible = true
 		result_panel.visible = true
 	)
 
@@ -1672,9 +1886,8 @@ func _show_card_guide() -> void:
 	])
 
 func _show_shop_guide() -> void:
-	# 타이틀을 튜토리얼 안내 문구로 교체
-	shop_title.text = "영혼으로 강화하고 '다음 웨이브'를 누르세요"
-	shop_title.add_theme_font_size_override("font_size", 17)
+	# 타이틀을 튜토리얼 안내 문구로 교체 (부제에 힌트 표시)
+	shop_subtitle.text = "영혼으로 강화하고 '다음 웨이브'를 누르세요"
 
 	# 닫기 버튼 노란 펄스 글로우
 	if _shop_btn_pulse_tween and _shop_btn_pulse_tween.is_valid():

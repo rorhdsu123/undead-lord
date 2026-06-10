@@ -195,6 +195,7 @@ var shop_btns: Array = []
 @onready var result_btn2: Button = $UI/ResultPanel/Btn2
 @onready var enemies_node = $Enemies
 @onready var wave_tracker = $UI/WaveTracker
+var _last_tracker_sig: String = ""  # 직전 트래커 표시 노드 집합 시그니처(디졸브 트리거 판정용)
 @onready var player = $Player
 @onready var attack_button = $UI/AttackButton
 var sacrifice_button: Button = null
@@ -920,29 +921,46 @@ func _make_badge_column(wave_data: Dictionary, wave_number: int, is_current: boo
 	return col
 
 func _build_wave_tracker() -> void:
-	## 초기 1회 호출 — 실제 구성은 update_wave_tracker()에 위임
+	## 초기 1회 호출 — 새 스테이지의 첫 렌더는 디졸브 없이 즉시 표시
+	_last_tracker_sig = ""
 	update_wave_tracker()
 
 func update_wave_tracker() -> void:
-	## 매 웨이브마다 CenterContainer 자식을 완전히 재구성하는 캡슐형 노드 스트립
-	for child in wave_tracker.get_children():
-		child.queue_free()
-
-	var waves: Array = WaveData.CHAPTERS[current_chapter]["stages"][current_stage]["waves"]
-	if waves.is_empty():
+	## 매 웨이브 호출. 표시 노드 집합이 바뀐 경우에만 크로스페이드 디졸브(보스 정지·가로 이동 없음),
+	## 같은 윈도우(하이라이트만 이동)·첫 렌더는 즉시 갱신.
+	var disp: Dictionary = _compute_wave_display()
+	if disp.is_empty():
+		for child in wave_tracker.get_children():
+			child.queue_free()
+		_last_tracker_sig = ""
 		return
 
-	# NotoEmoji 폰트 로드 (실패 시 null 가드)
-	var emoji_font: Font = load("res://assets/fonts/NotoEmoji-Regular.ttf") as Font
+	var sig: String = str(disp["indices"]) + "|" + str(disp["show_ellipsis"])
+	var has_old: bool = wave_tracker.get_child_count() > 0
 
+	if _last_tracker_sig == "" or sig == _last_tracker_sig or not has_old:
+		# 첫 렌더 / 같은 윈도우(하이라이트만 이동) → 즉시
+		_render_wave_tracker(disp)
+	else:
+		# 윈도우(표시 노드 집합) 변경 → 진짜 크로스페이드(겹쳐서 동시 페이드, 빈 순간 없음·가로 이동 없음)
+		var old_wrap: Control = wave_tracker.get_child(0)
+		var new_wrap: Control = _render_wave_tracker(disp, false)  # 기존(old) 유지, 새 wrap을 위에 겹침
+		new_wrap.modulate.a = 0.0
+		var tw: Tween = create_tween().set_parallel(true)
+		tw.tween_property(old_wrap, "modulate:a", 0.0, 0.12)
+		tw.tween_property(new_wrap, "modulate:a", 1.0, 0.12)
+		tw.chain().tween_callback(old_wrap.queue_free)
+	_last_tracker_sig = sig
+
+func _compute_wave_display() -> Dictionary:
+	## 현재 웨이브 기준 표시할 노드 집합(항상 4칸 윈도우)을 계산. waves가 비면 {} 반환.
+	var waves: Array = WaveData.CHAPTERS[current_chapter]["stages"][current_stage]["waves"]
+	if waves.is_empty():
+		return {}
 	var boss_idx: int = waves.size() - 1
-
-	# ── 항상 4칸 윈도우 계산 ──
-	# 슬라이딩 3 + 보스 고정 = 항상 4칸. 짝수 앵커(2웨이브 페이징), 끝 근처 클램프.
 	var total: int = waves.size()
 	var display_indices: Array = []
 	var show_ellipsis: bool = false
-
 	if total <= 4:
 		# 전체 4칸 이하 → 전부 표시, 생략/보스핀 없음
 		for i in range(0, total):
@@ -951,13 +969,27 @@ func update_wave_tracker() -> void:
 		# s: 짝수 앵커, boss_idx-3까지 클램프
 		var s: int = clampi(current_wave - (current_wave % 2), 0, boss_idx - 3)
 		if boss_idx == s + 3:
-			# 보스가 윈도우 바로 다음 → 4칸 연속, 생략 없음(보스도 일반 노드로 표시)
 			display_indices = [s, s + 1, s + 2, boss_idx]
 			show_ellipsis = false
 		else:
-			# boss_idx >= s+4 → 윈도우 3칸 + "…" + 보스 핀
 			display_indices = [s, s + 1, s + 2]
 			show_ellipsis = true
+	return {"waves": waves, "boss_idx": boss_idx, "indices": display_indices, "show_ellipsis": show_ellipsis}
+
+func _render_wave_tracker(disp: Dictionary, clear_existing: bool = true) -> Control:
+	## 캡슐형 노드 스트립(탭 칩 + 캡슐)을 재구성. clear_existing=true면 기존 자식 제거(즉시 갱신용),
+	## false면 기존 wrap을 남겨둠(크로스페이드용 — 새 wrap을 위에 겹침). 생성한 wrap을 반환.
+	if clear_existing:
+		for child in wave_tracker.get_children():
+			child.queue_free()
+
+	# NotoEmoji 폰트 로드 (실패 시 null 가드)
+	var emoji_font: Font = load("res://assets/fonts/NotoEmoji-Regular.ttf") as Font
+
+	var waves: Array = disp["waves"]
+	var boss_idx: int = disp["boss_idx"]
+	var display_indices: Array = disp["indices"]
+	var show_ellipsis: bool = disp["show_ellipsis"]
 
 	# ── 래퍼 VBoxContainer (칩 탭 + 캡슐을 세로로 묶음) ──
 	var wrap := VBoxContainer.new()
@@ -1035,6 +1067,8 @@ func update_wave_tracker() -> void:
 		if boss_idx < current_wave:
 			boss_col.modulate = Color(0.5, 0.5, 0.5)
 		hbox.add_child(boss_col)
+
+	return wrap
 
 func _build_shop_buttons() -> void:
 	for i in SHOP_ITEMS.size():

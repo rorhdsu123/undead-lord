@@ -1,9 +1,10 @@
-[gd_scene load_steps=10 format=3 uid="uid://game"]
+[gd_scene load_steps=11 format=3 uid="uid://game"]
 
 [ext_resource type="Script" path="res://scripts/Game.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/Enemy.tscn" id="3"]
 [ext_resource type="Script" path="res://scripts/CastleSprite.gd" id="4"]
+[ext_resource type="Script" path="res://scripts/CastleBar.gd" id="5"]
 
 [sub_resource type="StyleBoxFlat" id="CardDim"]
 bg_color = Color(0.05, 0.04, 0.08, 0.72)
@@ -65,14 +66,6 @@ position = Vector2(240, 760)
 [node name="CastleSprite" type="Node2D" parent="Castle"]
 script = ExtResource("4")
 
-[node name="CastleHP" type="ProgressBar" parent="Castle"]
-offset_left = -70.0
-offset_top = -228.0
-offset_right = 70.0
-offset_bottom = -213.0
-value = 100.0
-show_percentage = false
-
 [node name="Player" parent="." instance=ExtResource("2")]
 position = Vector2(240, 620)
 
@@ -94,6 +87,13 @@ offset_left = 0.0
 offset_top = 36.0
 offset_right = 480.0
 offset_bottom = 100.0
+
+[node name="CastleBar" type="Control" parent="UI"]
+offset_left = 10.0
+offset_top = 104.0
+offset_right = 470.0
+offset_bottom = 128.0
+script = ExtResource("5")
 
 [node name="SoulsLabel" type="Label" parent="UI"]
 offset_left = 10.0

@@ -183,7 +183,7 @@ const SHOP_ITEMS = [
 var shop_btns: Array = []
 
 @onready var wave_label = $UI/WaveLabel
-@onready var castle_hp_bar = $Castle/CastleHP
+@onready var castle_bar = $UI/CastleBar
 @onready var castle_vis: Node2D = $Castle/CastleSprite
 @onready var card_panel = $UI/CardPanel
 @onready var card_title: Label = $UI/CardPanel/Title
@@ -216,7 +216,6 @@ var slot_icon: Label = null
 @onready var modal_dim: ColorRect = $UI/ModalDim
 
 var _shop_btn_pulse_tween: Tween = null
-var _tracker_hide_tween: Tween = null
 var _card_rows: Array = []
 
 func _ready() -> void:
@@ -282,12 +281,12 @@ func start_wave() -> void:
 
 	if data["type"] == "shop":
 		wave_active = false
-		_reveal_wave_tracker(false)
+		_reveal_wave_tracker()
 		_show_shop()
 		return
 
 	wave_active = true
-	_reveal_wave_tracker(true)
+	_reveal_wave_tracker()
 
 	# composition 기반 스폰
 	var composition: Array = data["composition"]
@@ -299,12 +298,13 @@ func start_wave() -> void:
 	for entry: Dictionary in composition:
 		enemies_alive += entry["count"]
 
-	# 특수기 튜토리얼 웨이브는 화면 상단 근처에 스폰 (브루트가 너무 느려 화면 밖에서 동결되는 문제 방지)
-	var spawn_y_min: float = -200.0
-	var spawn_y_max: float = -50.0
+	# HUD 하단(~y142) 바로 아래에서 스폰 — 상시 바가 적을 가리지 않도록 (카피바라고 방식)
+	var spawn_y_min: float = 150.0
+	var spawn_y_max: float = 240.0
 	if _is_tutorial() and current_wave == 4:
-		spawn_y_min = -40.0
-		spawn_y_max = 60.0
+		spawn_y_min = 220.0
+		spawn_y_max = 300.0
+		# 느린 브루트 → 플레이어 사거리 안쪽에서 등장하도록 살짝 아래 스폰
 
 	var vp_w: float = get_viewport_rect().size.x
 	for entry: Dictionary in composition:
@@ -327,7 +327,8 @@ func start_wave() -> void:
 	if data["type"] == "mid_boss" or data["type"] == "boss":
 		enemies_alive += 1
 		var b = BossScene.instantiate()
-		b.position = Vector2(240, -250)
+		# 보스도 HUD 밴드 아래에서 등장 (이름표가 position.y-95까지 뻗으므로 바 하단 y142 클리어)
+		b.position = Vector2(240, 250)
 		b.hp = data["boss_hp"]
 		b.max_hp = data["boss_hp"]
 		b.speed = data["boss_speed"]
@@ -342,20 +343,9 @@ func start_wave() -> void:
 	if _is_tutorial():
 		_trigger_wave_guide(current_wave)
 
-func _reveal_wave_tracker(auto_hide: bool) -> void:
-	if _tracker_hide_tween and _tracker_hide_tween.is_valid():
-		_tracker_hide_tween.kill()
-	_tracker_hide_tween = null
+func _reveal_wave_tracker() -> void:
 	wave_tracker.visible = true
 	wave_tracker.modulate.a = 1.0
-	if auto_hide:
-		_tracker_hide_tween = create_tween()
-		_tracker_hide_tween.tween_interval(2.5)
-		_tracker_hide_tween.tween_property(wave_tracker, "modulate:a", 0.0, 0.4)
-		_tracker_hide_tween.tween_callback(_hide_wave_tracker)
-
-func _hide_wave_tracker() -> void:
-	wave_tracker.visible = false
 
 func _on_boss_entered(boss_node: Node) -> void:
 	_screen_shake(6.0, 0.35)
@@ -437,7 +427,7 @@ func boss_summon(enemy_type: String, count: int) -> void:
 	var vp_w: float = get_viewport_rect().size.x
 	for i in count:
 		var e = EnemyScene.instantiate()
-		e.position = Vector2(randf_range(30, vp_w - 30), randf_range(-150, -50))
+		e.position = Vector2(randf_range(30, vp_w - 30), randf_range(150, 240))
 		e.enemy_type = enemy_type
 		e.hp = e_hp
 		e.max_hp = e_hp
@@ -464,11 +454,11 @@ func castle_take_damage(dmg: int) -> void:
 	if castle_hp <= 0:
 		return
 	castle_hp -= dmg
-	castle_hp_bar.value = float(castle_hp) / float(castle_max_hp) * 100.0
+	castle_bar.set_hp(castle_hp, castle_max_hp)
 	castle_vis.set_hp_ratio(float(castle_hp) / float(castle_max_hp))
 	if castle_hp <= 0:
 		castle_hp = 0
-		castle_hp_bar.value = 0.0
+		castle_bar.set_hp(castle_hp, castle_max_hp)
 		game_over()
 
 func end_wave() -> void:
@@ -479,7 +469,7 @@ func end_wave() -> void:
 
 	if graveyard_heal > 0:
 		castle_hp = min(castle_hp + graveyard_heal, castle_max_hp)
-		castle_hp_bar.value = float(castle_hp) / float(castle_max_hp) * 100.0
+		castle_bar.set_hp(castle_hp, castle_max_hp)
 
 	if current_wave >= WaveData.stage_wave_count(current_chapter, current_stage) - 1:
 		game_clear()
@@ -799,7 +789,7 @@ func _apply_card(id: String, mult: float = 1.0) -> void:
 			var hp_gain: int = int(50 * mult)
 			castle_max_hp += hp_gain
 			castle_hp += hp_gain
-			castle_hp_bar.value = float(castle_hp) / float(castle_max_hp) * 100.0
+			castle_bar.set_hp(castle_hp, castle_max_hp)
 		"graveyard":
 			graveyard_heal += int(20 * mult)
 		"atk_speed":
@@ -1135,7 +1125,7 @@ func _apply_shop_item(id: String) -> void:
 	match id:
 		"repair":
 			castle_hp = min(castle_hp + 60, castle_max_hp)
-			castle_hp_bar.value = float(castle_hp) / float(castle_max_hp) * 100.0
+			castle_bar.set_hp(castle_hp, castle_max_hp)
 		"atk_boost":
 			attack_bonus *= 1.15
 		"heal_minion":
@@ -1431,7 +1421,7 @@ func _apply_facility_bonuses() -> void:
 	var wall_hp: int = [0, 50, 100, 150][fl.get("wall", 0)]
 	castle_max_hp += wall_hp
 	castle_hp += wall_hp
-	castle_hp_bar.value = float(castle_hp) / float(castle_max_hp) * 100.0
+	castle_bar.set_hp(castle_hp, castle_max_hp)
 
 	var graveyard_bonus: int = [0, 15, 30, 50][fl.get("graveyard", 0)]
 	graveyard_heal += graveyard_bonus
@@ -1849,7 +1839,7 @@ func _is_tutorial() -> bool:
 func _trigger_wave_guide(wave_idx: int) -> void:
 	match wave_idx:
 		0:
-			show_tutorial_tip("또 몰려오는군.\n성이 무너지면 끝이다.", castle_hp_bar, 4.5)
+			show_tutorial_tip("또 몰려오는군.\n성이 무너지면 끝이다.", castle_bar, 4.5)
 		1:
 			if summon_btns.size() > 0:
 				show_tutorial_tip("전사를 소환해 방어를 강화하세요!", summon_btns[0], 12.0)

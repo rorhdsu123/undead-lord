@@ -25,7 +25,7 @@ const EVOLUTION_THRESHOLDS: Array = [5, 10]
 const EVOLUTION_MULTS: Array = [1.0, 1.25, 1.6]
 const BOMB_RADIUS: float = 80.0
 const BASE_SPRITE_SCALE: float = 0.246
-const BOUNDS: Rect2 = Rect2(0, -230, 1024, 930)
+const GUARD_ENGAGE_RANGE: float = 150.0  # 포스트에서 이 거리 안 적만 교전
 
 static var _cached_frames: Dictionary = {}
 
@@ -50,6 +50,9 @@ var game = null
 var _anim_state: String = ""
 var lifesteal: float = 0.0
 var _died_reported: bool = false
+var has_post: bool = false
+var guard_post: Vector2 = Vector2.ZERO
+var guard_slot_index: int = -1
 
 @onready var hp_bar: ProgressBar = $HPBar
 @onready var anim_sprite: AnimatedSprite2D = $AnimSprite
@@ -124,14 +127,33 @@ func _physics_process(delta: float) -> void:
 	if _anim_state == "die":
 		return
 
+	# 포스트 범위 벗어난 적 추적 해제
+	if has_post and is_instance_valid(current_target):
+		if guard_post.distance_to(current_target.position) > GUARD_ENGAGE_RANGE + 30.0:
+			current_target = null
+
 	if not is_instance_valid(current_target):
 		current_target = _find_nearest_enemy()
+
 	if not current_target:
-		velocity = Vector2.ZERO
-		if _anim_state not in ["slash", "hurt"]:
-			_play_anim("idle")
-		position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
-		position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
+		if has_post:
+			var dp: float = position.distance_to(guard_post)
+			if dp > 8.0:
+				var dir: Vector2 = (guard_post - position).normalized()
+				velocity = dir * move_speed
+				move_and_slide()
+				anim_sprite.flip_h = dir.x < 0
+				if _anim_state not in ["hurt"]:
+					_play_anim("walk")
+			else:
+				velocity = Vector2.ZERO
+				position = guard_post
+				if _anim_state not in ["slash", "hurt"]:
+					_play_anim("idle")
+		else:
+			velocity = Vector2.ZERO
+			if _anim_state not in ["slash", "hurt"]:
+				_play_anim("idle")
 		return
 
 	var dist: float = position.distance_to(current_target.position)
@@ -151,8 +173,6 @@ func _physics_process(delta: float) -> void:
 		if attack_timer >= attack_interval:
 			attack_timer = 0.0
 			_do_attack()
-	position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
-	position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
 
 func _do_attack() -> void:
 	if not is_instance_valid(current_target):
@@ -228,6 +248,8 @@ func _find_nearest_enemy():
 	for e in enemies:
 		if not is_instance_valid(e):
 			continue
+		if has_post and guard_post.distance_to(e.position) > GUARD_ENGAGE_RANGE:
+			continue
 		var d: float = position.distance_to(e.position)
 		if d < nearest_dist:
 			nearest_dist = d
@@ -261,7 +283,7 @@ func _report_died() -> void:
 		return
 	_died_reported = true
 	if game and game.has_method("minion_died"):
-		game.minion_died(position, minion_type)
+		game.minion_died(position, minion_type, guard_slot_index)
 
 func sacrifice() -> void:
 	_report_died()

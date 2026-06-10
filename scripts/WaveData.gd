@@ -20,14 +20,17 @@ const CHAPTERS = [
 				"waves": [
 					# W1: 자동 공격 학습
 					{"type": "normal", "base_hp": 30, "base_speed": 50, "base_damage": 5,
+					 "spawn_sides": ["N"],
 					 "composition": [{"enemy": "normal", "count": 3}]},
 
 					# W2: 카드 선택 학습
 					{"type": "normal", "base_hp": 35, "base_speed": 55, "base_damage": 6,
+					 "spawn_sides": ["N"],
 					 "composition": [{"enemy": "normal", "count": 5}]},
 
 					# W3: 새 적 scout 등장
 					{"type": "normal", "base_hp": 40, "base_speed": 58, "base_damage": 6,
+					 "spawn_sides": ["N"],
 					 "composition": [
 						{"enemy": "normal", "count": 4},
 						{"enemy": "scout",  "count": 2},
@@ -35,13 +38,15 @@ const CHAPTERS = [
 
 					# W4: 하인 소환 학습 (적 강도 약함)
 					{"type": "normal", "base_hp": 45, "base_speed": 60, "base_damage": 6,
+					 "spawn_sides": ["N"],
 					 "composition": [
 						{"enemy": "normal", "count": 3},
 						{"enemy": "scout",  "count": 2},
 					 ]},
 
-					# W5: 새 적 brute 등장
+					# W5: 새 적 brute 등장 + 동쪽 추가
 					{"type": "normal", "base_hp": 50, "base_speed": 60, "base_damage": 7,
+					 "spawn_sides": ["N", "E"],
 					 "composition": [
 						{"enemy": "normal", "count": 3},
 						{"enemy": "brute",  "count": 1},
@@ -52,6 +57,7 @@ const CHAPTERS = [
 
 					# W7: 약한 미니 보스 (튜토리얼 마무리)
 					{"type": "mid_boss", "base_hp": 50, "base_speed": 60, "base_damage": 7,
+					 "spawn_sides": ["N", "E"],
 					 "composition": [
 						{"enemy": "normal", "count": 2},
 					 ],
@@ -62,27 +68,32 @@ const CHAPTERS = [
 			{   # 스테이지 1-2 (적 타입 하나씩 소개)
 				"waves": [
 					{"type": "normal", "base_hp": 50, "base_speed": 60, "base_damage": 8,
+					 "spawn_sides": ["N", "W"],
 					 "composition": [{"enemy": "normal", "count": 5}]},
 
 					{"type": "normal", "base_hp": 60, "base_speed": 62, "base_damage": 8,
+					 "spawn_sides": ["N", "W"],
 					 "composition": [
 						{"enemy": "normal", "count": 4},
 						{"enemy": "scout",  "count": 3},
 					 ]},
 
 					{"type": "normal", "base_hp": 70, "base_speed": 65, "base_damage": 10,
+					 "spawn_sides": ["N", "E", "W"],
 					 "composition": [
 						{"enemy": "normal", "count": 5},
 						{"enemy": "brute",  "count": 1},
 					 ]},
 
 					{"type": "normal", "base_hp": 80, "base_speed": 65, "base_damage": 10,
+					 "spawn_sides": ["N", "E", "W"],
 					 "composition": [
 						{"enemy": "swarm",  "count": 12},
 						{"enemy": "normal", "count": 2},
 					 ]},
 
 					{"type": "mid_boss", "base_hp": 70, "base_speed": 63, "base_damage": 8,
+					 "spawn_sides": ["N", "E", "W"],
 					 "composition": [
 						{"enemy": "normal", "count": 3},
 						{"enemy": "scout",  "count": 2},
@@ -92,18 +103,21 @@ const CHAPTERS = [
 					{"type": "shop"},
 
 					{"type": "normal", "base_hp": 90, "base_speed": 68, "base_damage": 12,
+					 "spawn_sides": ["N", "S", "E", "W"],
 					 "composition": [
 						{"enemy": "brute",  "count": 3},
 						{"enemy": "normal", "count": 3},
 					 ]},
 
 					{"type": "normal", "base_hp": 100, "base_speed": 70, "base_damage": 12,
+					 "spawn_sides": ["N", "S", "E", "W"],
 					 "composition": [
 						{"enemy": "scout",  "count": 6},
 						{"enemy": "normal", "count": 3},
 					 ]},
 
 					{"type": "normal", "base_hp": 110, "base_speed": 72, "base_damage": 14,
+					 "spawn_sides": ["N", "S", "E", "W"],
 					 "composition": [
 						{"enemy": "normal", "count": 4},
 						{"enemy": "scout",  "count": 3},
@@ -112,6 +126,7 @@ const CHAPTERS = [
 					 ]},
 
 					{"type": "boss", "base_hp": 100, "base_speed": 70, "base_damage": 12,
+					 "spawn_sides": ["N", "S", "E", "W"],
 					 "composition": [
 						{"enemy": "normal", "count": 3},
 						{"enemy": "brute",  "count": 2},
@@ -122,12 +137,14 @@ const CHAPTERS = [
 			{   # 스테이지 1-3 (특화 웨이브 비중 ↑)
 				"waves": [
 					{"type": "normal", "base_hp": 130, "base_speed": 70, "base_damage": 14,
+					 "spawn_sides": ["N", "S", "E", "W"],
 					 "composition": [
 						{"enemy": "normal", "count": 4},
 						{"enemy": "scout",  "count": 4},
 					 ]},
 
 					{"type": "normal", "base_hp": 150, "base_speed": 72, "base_damage": 15,
+					 "spawn_sides": ["N", "S", "E", "W"],
 					 "composition": [
 						{"enemy": "normal", "count": 5},
 						{"enemy": "brute",  "count": 2},
@@ -135,17 +152,20 @@ const CHAPTERS = [
 					 ]},
 
 					{"type": "normal", "base_hp": 170, "base_speed": 75, "base_damage": 17,
+					 "spawn_sides": ["N", "S", "E", "W"],
 					 "composition": [
 						{"enemy": "swarm", "count": 18},
-					 ]},  # 무리 폭주
+					 ]},
 
 					{"type": "normal", "base_hp": 190, "base_speed": 76, "base_damage": 18,
+					 "spawn_sides": ["N", "S", "E", "W"],
 					 "composition": [
 						{"enemy": "brute", "count": 4},
 						{"enemy": "scout", "count": 4},
-					 ]},  # 양극 (느린 거인 + 빠른 척후병)
+					 ]},
 
 					{"type": "mid_boss", "base_hp": 170, "base_speed": 74, "base_damage": 15,
+					 "spawn_sides": ["N", "S", "E", "W"],
 					 "composition": [
 						{"enemy": "scout", "count": 5},
 					 ],
@@ -154,6 +174,7 @@ const CHAPTERS = [
 					{"type": "shop"},
 
 					{"type": "normal", "base_hp": 210, "base_speed": 78, "base_damage": 20,
+					 "spawn_sides": ["N", "S", "E", "W"],
 					 "composition": [
 						{"enemy": "normal", "count": 5},
 						{"enemy": "brute",  "count": 3},
@@ -161,12 +182,14 @@ const CHAPTERS = [
 					 ]},
 
 					{"type": "normal", "base_hp": 225, "base_speed": 80, "base_damage": 22,
+					 "spawn_sides": ["N", "S", "E", "W"],
 					 "composition": [
 						{"enemy": "swarm", "count": 14},
 						{"enemy": "brute", "count": 2},
 					 ]},
 
 					{"type": "normal", "base_hp": 240, "base_speed": 82, "base_damage": 24,
+					 "spawn_sides": ["N", "S", "E", "W"],
 					 "composition": [
 						{"enemy": "normal", "count": 5},
 						{"enemy": "scout",  "count": 5},
@@ -175,6 +198,7 @@ const CHAPTERS = [
 					 ]},
 
 					{"type": "boss", "base_hp": 220, "base_speed": 78, "base_damage": 20,
+					 "spawn_sides": ["N", "S", "E", "W"],
 					 "composition": [
 						{"enemy": "brute", "count": 4},
 						{"enemy": "swarm", "count": 6},

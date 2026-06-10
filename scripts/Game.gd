@@ -49,6 +49,11 @@ var special_cost: int = SPECIAL_COST
 # 언데드 하인 상태
 var active_minions: int = 0
 
+# 성벽 경비 슬롯 (N/S/W/E, _ready에서 위치 초기화)
+const CASTLE_S: float = 80.0   # CastleSprite.S 와 일치
+const SLOT_OFFSET: float = 80.0  # 성벽 외면에 포스팅
+var _minion_slots: Array = []
+
 # 키스톤 (런 빌드 곱 레이어)
 var lord_card_count: int = 0
 var summoner_card_count: int = 0
@@ -254,6 +259,7 @@ func _ready() -> void:
 	GameSave.start_chapter = 0
 	GameSave.start_stage = 0
 	run_start_time = Time.get_ticks_msec() / 1000.0
+	_init_slots()
 	_fade_in()
 	_apply_facility_bonuses()
 	if _is_tutorial():
@@ -293,15 +299,7 @@ func start_wave() -> void:
 	for entry: Dictionary in composition:
 		enemies_alive += entry["count"]
 
-	# HUD 하단(~y142) 바로 아래에서 스폰 — 상시 바가 적을 가리지 않도록 (카피바라고 방식)
-	var spawn_y_min: float = 150.0
-	var spawn_y_max: float = 240.0
-	if _is_tutorial() and current_wave == 4:
-		spawn_y_min = 220.0
-		spawn_y_max = 300.0
-		# 느린 브루트 → 플레이어 사거리 안쪽에서 등장하도록 살짝 아래 스폰
-
-	var vp_w: float = get_viewport_rect().size.x
+	var spawn_sides: Array = data.get("spawn_sides", ["N", "S", "E", "W"])
 	for entry: Dictionary in composition:
 		var preset: Dictionary = Enemy.TYPE_PRESETS[entry["enemy"]]
 		var e_hp: float = base_hp * preset["hp_mult"]
@@ -309,7 +307,7 @@ func start_wave() -> void:
 		var e_dmg: int = int(base_damage * preset["damage_mult"])
 		for i in entry["count"]:
 			var e = EnemyScene.instantiate()
-			e.position = Vector2(randf_range(30, vp_w - 30), randf_range(spawn_y_min, spawn_y_max))
+			e.position = _random_spawn_pos(spawn_sides)
 			e.enemy_type = entry["enemy"]
 			e.hp = e_hp
 			e.max_hp = e_hp
@@ -322,8 +320,7 @@ func start_wave() -> void:
 	if data["type"] == "mid_boss" or data["type"] == "boss":
 		enemies_alive += 1
 		var b = BossScene.instantiate()
-		# 보스도 HUD 밴드 아래에서 등장 (이름표가 position.y-95까지 뻗으므로 바 하단 y142 클리어)
-		b.position = Vector2(240, 250)
+		b.position = _random_spawn_pos(data.get("spawn_sides", ["N"]))
 		b.hp = data["boss_hp"]
 		b.max_hp = data["boss_hp"]
 		b.speed = data["boss_speed"]
@@ -415,14 +412,14 @@ func boss_summon(enemy_type: String, count: int) -> void:
 	if not wave_active:
 		return
 	var data: Dictionary = WaveData.get_wave(current_chapter, current_stage, current_wave)
+	var spawn_sides: Array = data.get("spawn_sides", ["N"])
 	var preset: Dictionary = Enemy.TYPE_PRESETS[enemy_type]
 	var e_hp: float = data["base_hp"] * preset["hp_mult"]
 	var e_spd: float = data["base_speed"] * preset["speed_mult"]
 	var e_dmg: int = int(data["base_damage"] * preset["damage_mult"])
-	var vp_w: float = get_viewport_rect().size.x
 	for i in count:
 		var e = EnemyScene.instantiate()
-		e.position = Vector2(randf_range(30, vp_w - 30), randf_range(150, 240))
+		e.position = _random_spawn_pos(spawn_sides)
 		e.enemy_type = enemy_type
 		e.hp = e_hp
 		e.max_hp = e_hp
@@ -1934,12 +1931,44 @@ func _on_summon_pressed(index: int) -> void:
 	_close_guide()
 	_spawn_minion(entry["id"])
 
+func _init_slots() -> void:
+	var c: Vector2 = $Castle.global_position
+	_minion_slots = [
+		{"dir": "N", "pos": Vector2(c.x, c.y - SLOT_OFFSET), "minion": null},
+		{"dir": "S", "pos": Vector2(c.x, c.y + SLOT_OFFSET), "minion": null},
+		{"dir": "W", "pos": Vector2(c.x - SLOT_OFFSET, c.y), "minion": null},
+		{"dir": "E", "pos": Vector2(c.x + SLOT_OFFSET, c.y), "minion": null},
+	]
+
+func _get_empty_slot() -> int:
+	for i in _minion_slots.size():
+		var s: Dictionary = _minion_slots[i]
+		if s["minion"] == null or not is_instance_valid(s["minion"]):
+			return i
+	return -1
+
+func _random_spawn_pos(sides: Array) -> Vector2:
+	var vp: Vector2 = get_viewport_rect().size
+	var side: String = sides[randi() % sides.size()]
+	match side:
+		"N": return Vector2(randf_range(40, vp.x - 40), -25)
+		"S": return Vector2(randf_range(40, vp.x - 40), vp.y + 25)
+		"E": return Vector2(vp.x + 25, randf_range(120, vp.y - 120))
+		"W": return Vector2(-25, randf_range(120, vp.y - 120))
+	return Vector2(randf_range(40, vp.x - 40), -25)
+
 func _spawn_minion(type_id: String) -> void:
 	var m = SkeletonWarriorScene.instantiate()
-	m.position = $Castle.position + Vector2(randf_range(-30, 30), -50)
+	m.position = $Castle.position
 	m.game = self
 	m.minion_type = type_id
 	minions_node.add_child(m)
+	var slot_idx: int = _get_empty_slot()
+	if slot_idx >= 0:
+		m.guard_slot_index = slot_idx
+		m.has_post = true
+		m.guard_post = _minion_slots[slot_idx]["pos"]
+		_minion_slots[slot_idx]["minion"] = m
 	# 카드 보너스 반영 (프리셋 적용 후)
 	m.base_damage *= minion_attack_bonus * keystone_minion_atk_mult
 	m.attack_damage = m.base_damage
@@ -1952,8 +1981,10 @@ func _spawn_minion(type_id: String) -> void:
 	active_minions += 1
 	spawn_summon_effect(m.position)
 
-func minion_died(pos = null, type_id: String = "") -> void:
+func minion_died(pos = null, type_id: String = "", slot_idx: int = -1) -> void:
 	active_minions = max(0, active_minions - 1)
+	if slot_idx >= 0 and slot_idx < _minion_slots.size():
+		_minion_slots[slot_idx]["minion"] = null
 	if pos == null:
 		return
 	# 죽음의 메아리: 사망 폭발

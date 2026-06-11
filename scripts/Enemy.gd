@@ -43,6 +43,8 @@ var game = null
 
 func _ready() -> void:
 	add_to_group("enemies")
+	collision_layer = 1
+	collision_mask = 2  # 하인(layer 2)에 물리 충돌 — 슬롯 배치된 하인이 통과 차단
 	var preset: Dictionary = TYPE_PRESETS.get(enemy_type, TYPE_PRESETS["normal"])
 	var base_scale: float = preset["scale"]
 	hp = BASE_HP * preset["hp_mult"]
@@ -157,6 +159,9 @@ func _physics_process(delta: float) -> void:
 		var dir: Vector2 = (target_pos - global_position).normalized()
 		velocity = dir * speed
 		move_and_slide()
+		# 하인 충돌 슬라이드 차단: 이동 후 하인과 접촉 중이면 속도 소거
+		if get_slide_collision_count() > 0:
+			velocity = Vector2.ZERO
 		attack_timer = 0.0
 		anim_sprite.flip_h = dir.x < 0
 		if _anim_state not in ["hurt"]:

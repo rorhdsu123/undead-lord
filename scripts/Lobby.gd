@@ -134,8 +134,11 @@ func _ready() -> void:
 	_build_castle()
 	_build_throne_room()
 	_build_facility_buttons()
+	# 충신 획득 탭 연출 보류 — 탭이 동작하지 않아 신규 충신을 일반 거주자로 즉시 배치 (나중에 재작업)
+	if GameSave.pending_recruit_name != "":
+		GameSave.pending_recruit_name = ""
 	_build_skeleton_garden()
-	_setup_pending_recruit()
+	# _setup_pending_recruit()  # 보류: 탭 미동작으로 스킵, 코드는 재작업 위해 보존
 	_build_bottom_panel()
 
 	if not GameSave.intro_seen:

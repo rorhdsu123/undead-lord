@@ -82,7 +82,8 @@ const SkeletonResidentScript = preload("res://scripts/SkeletonResident.gd")
 var _fac_icon_containers: Array = []
 var _skeleton_residents: Array = []
 var _pending_resident: Node2D = null
-var _recruit_dot: Control = null
+var _recruit_exclaim: Label = null
+var _recruit_circle: Node2D = null
 var _bottom_panel: Control = null
 var _panel_tween: Tween = null
 var _panel_open: bool = false
@@ -349,28 +350,36 @@ func _setup_pending_recruit() -> void:
 	if count == 0:
 		return
 
-	# 출정 버튼 위 대기 위치
-	var wait_pos: Vector2 = Vector2(240, 810)
+	var wait_pos: Vector2 = Vector2(240, 790)
 	var resident: Node2D = SkeletonResidentScript.new()
 	resident.home_pos = wait_pos
 	resident.color_tint = Color(1.05, 1.0, 0.75, 1.0)
 	resident.job = SKELETON_PLACEMENT[count - 1]["job"]
+	resident.z_index = 10
 	add_child(resident)
 	move_child(resident, get_child_count() - 1)
 	_pending_resident = resident
 	resident.call_deferred("play_arrival")
 	resident.tapped.connect(_on_pending_recruit_tapped)
 
-	# 출정 버튼 레드닷
-	_recruit_dot = Panel.new()
-	var dot_style: StyleBoxFlat = StyleBoxFlat.new()
-	dot_style.bg_color = Color(0.95, 0.2, 0.2, 1.0)
-	dot_style.set_corner_radius_all(7)
-	_recruit_dot.add_theme_stylebox_override("panel", dot_style)
-	_recruit_dot.size = Vector2(14, 14)
-	_recruit_dot.position = Vector2(424, 855)
-	_recruit_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_ui.add_child(_recruit_dot)
+	# "!" 말풍선 (캐릭터 머리 위 bobbing)
+	_recruit_exclaim = Label.new()
+	_recruit_exclaim.text = "!"
+	_recruit_exclaim.add_theme_font_size_override("font_size", 28)
+	_recruit_exclaim.add_theme_color_override("font_color", Color(1.0, 0.9, 0.25, 1.0))
+	_recruit_exclaim.position = Vector2(-8, -72)
+	_recruit_exclaim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	resident.add_child(_recruit_exclaim)
+	var bob: Tween = resident.create_tween().set_loops()
+	bob.tween_property(_recruit_exclaim, "position:y", -82.0, 0.55).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	bob.tween_property(_recruit_exclaim, "position:y", -72.0, 0.55).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+	# 마법진 (캐릭터 발 아래)
+	_recruit_circle = Node2D.new()
+	_recruit_circle.set_script(preload("res://scripts/MagicCircle.gd"))
+	_recruit_circle.position = Vector2(0, 12)
+	_recruit_circle.z_index = -1
+	resident.add_child(_recruit_circle)
 
 func _on_pending_recruit_tapped() -> void:
 	if not is_instance_valid(_pending_resident):
@@ -380,6 +389,14 @@ func _on_pending_recruit_tapped() -> void:
 	var facility_id: String = entry["facility"]
 	var real_home: Vector2 = FAC_SCREEN_POS.get(facility_id, Vector2(240, 400)) + entry["offset"]
 
+	# "!"와 마법진 즉시 제거
+	if is_instance_valid(_recruit_exclaim):
+		_recruit_exclaim.queue_free()
+		_recruit_exclaim = null
+	if is_instance_valid(_recruit_circle):
+		_recruit_circle.queue_free()
+		_recruit_circle = null
+
 	var dialogue: String = FIRST_DAY_DIALOGUES[randi() % FIRST_DAY_DIALOGUES.size()]
 	_show_lobby_bubble(_pending_resident, dialogue)
 
@@ -387,10 +404,6 @@ func _on_pending_recruit_tapped() -> void:
 	_pending_resident.move_to_home(real_home)
 	_skeleton_residents.append(_pending_resident)
 	_pending_resident = null
-
-	if is_instance_valid(_recruit_dot):
-		_recruit_dot.queue_free()
-		_recruit_dot = null
 
 	GameSave.pending_recruit_name = ""
 	GameSave.skeleton_count_seen = count

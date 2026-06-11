@@ -510,4 +510,7 @@ func _die() -> void:
 		var shards: int = WaveData.get_wave(game.current_chapter, game.current_stage, game.current_wave).get("crown_shards", 0)
 		game.earn_crown_shards(shards)
 		game.on_boss_killed(global_position, shards, boss_type == "boss", boss_name)
-		game.enemy_died(true)
+		get_tree().create_timer(2.5).timeout.connect(func() -> void:
+			if is_instance_valid(game):
+				game.enemy_died(true)
+		)

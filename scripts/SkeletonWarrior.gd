@@ -53,6 +53,7 @@ var _died_reported: bool = false
 var has_post: bool = false
 var guard_post: Vector2 = Vector2.ZERO
 var guard_slot_index: int = -1
+var is_dragging: bool = false
 var is_selected: bool = false:
 	set(v):
 		is_selected = v
@@ -132,36 +133,44 @@ func _on_animation_finished() -> void:
 			queue_free()
 
 func _physics_process(delta: float) -> void:
-	if _anim_state == "die":
+	if _anim_state == "die" or is_dragging:
 		return
 
-	# 포스트 범위 벗어난 적 추적 해제
-	if has_post and is_instance_valid(current_target):
-		if guard_post.distance_to(current_target.position) > GUARD_ENGAGE_RANGE + 30.0:
-			current_target = null
+	if has_post:
+		# 포스트 고정 모드: 포스트로 귀환 후 제자리에서 사거리 안 적만 공격
+		var dp: float = position.distance_to(guard_post)
+		if dp > 8.0:
+			var dir: Vector2 = (guard_post - position).normalized()
+			velocity = dir * move_speed
+			move_and_slide()
+			anim_sprite.flip_h = dir.x < 0
+			if _anim_state not in ["hurt"]:
+				_play_anim("walk")
+			return
+		velocity = Vector2.ZERO
+		position = guard_post
+		if not is_instance_valid(current_target) or position.distance_to(current_target.position) > attack_range:
+			current_target = _find_nearest_enemy()
+		if is_instance_valid(current_target) and position.distance_to(current_target.position) <= attack_range:
+			anim_sprite.flip_h = current_target.position.x < position.x
+			attack_timer += delta
+			if attack_timer >= attack_interval:
+				attack_timer = 0.0
+				_do_attack()
+		else:
+			attack_timer = 0.0
+			if _anim_state not in ["slash", "hurt"]:
+				_play_anim("idle")
+		return
 
+	# 포스트 없는 자유 이동 모드
 	if not is_instance_valid(current_target):
 		current_target = _find_nearest_enemy()
 
 	if not current_target:
-		if has_post:
-			var dp: float = position.distance_to(guard_post)
-			if dp > 8.0:
-				var dir: Vector2 = (guard_post - position).normalized()
-				velocity = dir * move_speed
-				move_and_slide()
-				anim_sprite.flip_h = dir.x < 0
-				if _anim_state not in ["hurt"]:
-					_play_anim("walk")
-			else:
-				velocity = Vector2.ZERO
-				position = guard_post
-				if _anim_state not in ["slash", "hurt"]:
-					_play_anim("idle")
-		else:
-			velocity = Vector2.ZERO
-			if _anim_state not in ["slash", "hurt"]:
-				_play_anim("idle")
+		velocity = Vector2.ZERO
+		if _anim_state not in ["slash", "hurt"]:
+			_play_anim("idle")
 		return
 
 	var dist: float = position.distance_to(current_target.position)

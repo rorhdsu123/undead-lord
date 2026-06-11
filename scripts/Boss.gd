@@ -29,6 +29,8 @@ const RAGE_DIALOGUES: Dictionary = {
 
 const BOUNDS: Rect2 = Rect2(0, -280, 1024, 900)
 const DASH_SPEED: float = 400.0
+const CASTLE_HALF: float = 90.0
+const BOSS_ATTACK_RANGE: float = 8.0
 
 static var _cached_frames: Dictionary = {}
 
@@ -162,9 +164,14 @@ func _physics_process(delta: float) -> void:
 	else:
 		_pattern_albaeng(delta)
 
+	_push_out_of_castle()
+
 	var castle_pos: Vector2 = game.get_node("Castle").global_position
-	var dist: float = global_position.distance_to(castle_pos)
-	if dist < 60.0 and not is_dashing and not is_charging_rage:
+	var rel: Vector2 = global_position - castle_pos
+	var dx: float = max(0.0, absf(rel.x) - CASTLE_HALF)
+	var dy: float = max(0.0, absf(rel.y) - CASTLE_HALF)
+	var surf_dist: float = sqrt(dx * dx + dy * dy)
+	if surf_dist <= BOSS_ATTACK_RANGE and not is_dashing and not is_charging_rage:
 		attack_timer += delta
 		if attack_timer >= attack_cooldown:
 			attack_timer = 0.0
@@ -201,13 +208,19 @@ func _pattern_intern(delta: float) -> void:
 			anim_sprite.modulate = COLOR_NORMAL
 		return
 
-	var dir: Vector2 = (castle_pos - global_position).normalized()
-	velocity = dir * speed
-	move_and_slide()
-	_clamp_to_bounds()
-	anim_sprite.flip_h = dir.x < 0
-	if _anim_state not in ["slash", "hurt", "die"]:
-		_play_anim("walk")
+	var rel2: Vector2 = global_position - castle_pos
+	var dx2: float = max(0.0, absf(rel2.x) - CASTLE_HALF)
+	var dy2: float = max(0.0, absf(rel2.y) - CASTLE_HALF)
+	if sqrt(dx2 * dx2 + dy2 * dy2) > BOSS_ATTACK_RANGE:
+		var dir: Vector2 = (castle_pos - global_position).normalized()
+		velocity = dir * speed
+		move_and_slide()
+		_clamp_to_bounds()
+		anim_sprite.flip_h = dir.x < 0
+		if _anim_state not in ["slash", "hurt", "die"]:
+			_play_anim("walk")
+	else:
+		velocity = Vector2.ZERO
 
 	rage_timer += delta
 	if rage_timer >= rage_interval:
@@ -239,13 +252,19 @@ func _pattern_albaeng(delta: float) -> void:
 		return
 
 	var castle_pos: Vector2 = game.get_node("Castle").global_position
-	var dir: Vector2 = (castle_pos - global_position).normalized()
-	velocity = dir * speed
-	move_and_slide()
-	_clamp_to_bounds()
-	anim_sprite.flip_h = dir.x < 0
-	if _anim_state not in ["slash", "hurt", "die"]:
-		_play_anim("walk")
+	var rel2: Vector2 = global_position - castle_pos
+	var dx2: float = max(0.0, absf(rel2.x) - CASTLE_HALF)
+	var dy2: float = max(0.0, absf(rel2.y) - CASTLE_HALF)
+	if sqrt(dx2 * dx2 + dy2 * dy2) > BOSS_ATTACK_RANGE:
+		var dir: Vector2 = (castle_pos - global_position).normalized()
+		velocity = dir * speed
+		move_and_slide()
+		_clamp_to_bounds()
+		anim_sprite.flip_h = dir.x < 0
+		if _anim_state not in ["slash", "hurt", "die"]:
+			_play_anim("walk")
+	else:
+		velocity = Vector2.ZERO
 
 	summon_timer += delta
 	if summon_timer >= summon_interval:
@@ -427,6 +446,19 @@ func _hit_flash() -> void:
 func _clamp_to_bounds() -> void:
 	position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
 	position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
+
+func _push_out_of_castle() -> void:
+	if not game:
+		return
+	var castle_pos: Vector2 = game.get_node("Castle").global_position
+	var rel: Vector2 = position - castle_pos
+	if absf(rel.x) < CASTLE_HALF and absf(rel.y) < CASTLE_HALF:
+		var ox: float = CASTLE_HALF - absf(rel.x)
+		var oy: float = CASTLE_HALF - absf(rel.y)
+		if ox < oy:
+			position.x = castle_pos.x + sign(rel.x) * CASTLE_HALF
+		else:
+			position.y = castle_pos.y + sign(rel.y) * CASTLE_HALF
 
 func apply_knockback(_from_pos: Vector2, _force: float) -> void:
 	pass  # 보스는 넉백 면역

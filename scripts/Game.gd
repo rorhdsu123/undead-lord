@@ -53,7 +53,9 @@ var active_minions: int = 0
 const CASTLE_S: float = 90.0   # CastleSprite.S 와 일치
 const SLOT_CELL: float = 55.0  # 셀 시각 크기
 var _minion_slots: Array = []  # [{"pos": Vector2, "minion": null}, ...]
-var _selected_minion = null    # 현재 선택된 하인
+var _dragging_minion = null    # 드래그 중인 하인
+var _drag_offset: Vector2 = Vector2.ZERO
+var _south_spawn_y: float = 0.0  # 하단 UI 바로 위 Y (S 스폰용)
 
 # 키스톤 (런 빌드 곱 레이어)
 var lord_card_count: int = 0
@@ -1876,6 +1878,7 @@ func _layout_bottom_ui() -> void:
 
 	minion_slot_label.position = Vector2(0, summon_container.position.y - 4 - lbl_h)
 	minion_slot_label.size = Vector2(vp.x - mx, lbl_h)
+	_south_spawn_y = minion_slot_label.position.y - 10.0
 	minion_slot_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 	var icon_w: float = 18.0
@@ -1959,40 +1962,46 @@ func _get_empty_slot() -> int:
 			return i
 	return -1
 
-## 하인 탭 선택 → 슬롯 탭 배정 입력
+## 드래그 앤 드랍으로 하인 슬롯 재배정
 func _input(event: InputEvent) -> void:
 	if not wave_active:
 		return
-	var pressed: bool = false
-	var touch_pos: Vector2 = Vector2.ZERO
-	if event is InputEventScreenTouch and event.pressed:
-		pressed = true
-		touch_pos = event.position
-	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		pressed = true
-		touch_pos = event.position
-	if not pressed:
-		return
 
-	if is_instance_valid(_selected_minion):
-		# 슬롯 탭 여부 확인
-		var slot_idx: int = _get_slot_at_pos(touch_pos)
-		if slot_idx >= 0:
-			_assign_minion_to_slot(_selected_minion, slot_idx)
-		_selected_minion.is_selected = false
-		_selected_minion = null
+	# 드래그 시작
+	var is_down: bool = (event is InputEventScreenTouch and event.pressed) or \
+		(event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT)
+	if is_down:
+		var pos: Vector2 = event.position
+		for m in get_tree().get_nodes_in_group("minions"):
+			if not is_instance_valid(m):
+				continue
+			if m.global_position.distance_to(pos) < 40.0:
+				_dragging_minion = m
+				_drag_offset = m.global_position - pos
+				m.is_dragging = true
+				m.is_selected = true
+				queue_redraw()
+				return
+
+	# 드래그 이동
+	var is_move: bool = (event is InputEventScreenDrag) or \
+		(event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
+	if is_move and is_instance_valid(_dragging_minion):
+		_dragging_minion.global_position = event.position + _drag_offset
 		queue_redraw()
 		return
 
-	# 하인 탭 선택 (반경 40px)
-	for m in get_tree().get_nodes_in_group("minions"):
-		if not is_instance_valid(m):
-			continue
-		if m.global_position.distance_to(touch_pos) < 40.0:
-			_selected_minion = m
-			m.is_selected = true
-			queue_redraw()
-			return
+	# 드래그 종료
+	var is_up: bool = (event is InputEventScreenTouch and not event.pressed) or \
+		(event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT)
+	if is_up and is_instance_valid(_dragging_minion):
+		var slot_idx: int = _get_slot_at_pos(event.position)
+		if slot_idx >= 0:
+			_assign_minion_to_slot(_dragging_minion, slot_idx)
+		_dragging_minion.is_dragging = false
+		_dragging_minion.is_selected = false
+		_dragging_minion = null
+		queue_redraw()
 
 func _get_slot_at_pos(pos: Vector2) -> int:
 	var half: float = SLOT_CELL * 0.5
@@ -2017,9 +2026,9 @@ func _assign_minion_to_slot(minion, slot_idx: int) -> void:
 	minion.guard_post = _minion_slots[slot_idx]["pos"]
 	_minion_slots[slot_idx]["minion"] = minion
 
-## 그리드 오버레이 — 하인 선택 중일 때만 표시
+## 그리드 오버레이 — 드래그 중일 때만 표시
 func _draw() -> void:
-	if not is_instance_valid(_selected_minion):
+	if not is_instance_valid(_dragging_minion):
 		return
 	var cell: float = SLOT_CELL
 	var half: float = cell * 0.5
@@ -2035,7 +2044,7 @@ func _random_spawn_pos(sides: Array) -> Vector2:
 	var side: String = sides[randi() % sides.size()]
 	match side:
 		"N": return Vector2(randf_range(40, vp.x - 40), -25)
-		"S": return Vector2(randf_range(40, vp.x - 40), vp.y + 25)
+		"S": return Vector2(randf_range(40, vp.x - 40), _south_spawn_y)
 		"E": return Vector2(vp.x + 25, randf_range(120, vp.y - 120))
 		"W": return Vector2(-25, randf_range(120, vp.y - 120))
 	return Vector2(randf_range(40, vp.x - 40), -25)
@@ -2058,6 +2067,10 @@ func _spawn_minion(type_id: String) -> void:
 	m.attack_range += minion_range_bonus
 	m.lifesteal = minion_lifesteal
 	active_minions += 1
+	var slot_idx: int = _get_empty_slot()
+	if slot_idx >= 0:
+		_assign_minion_to_slot(m, slot_idx)
+		m.position = _minion_slots[slot_idx]["pos"]
 	spawn_summon_effect(m.position)
 
 func minion_died(pos = null, type_id: String = "", slot_idx: int = -1) -> void:

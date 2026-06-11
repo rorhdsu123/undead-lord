@@ -138,7 +138,7 @@ func _physics_process(delta: float) -> void:
 	var attack_range: float
 	if is_instance_valid(minion_target):
 		dist = global_position.distance_to(target_pos)
-		attack_range = 50.0
+		attack_range = 25.0
 	else:
 		var rel: Vector2 = global_position - target_pos
 		var dx: float = max(0.0, absf(rel.x) - CASTLE_HALF)

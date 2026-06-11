@@ -14,9 +14,6 @@ const T: float = 14.0  # 코너 타워 돌출량
 func _draw() -> void:
 	var tsz := W + T * 2.0  # 타워 한 변 길이 = 48
 
-	# 드롭 섀도우
-	draw_rect(Rect2(Vector2(-S + 5.0, 5.0), Vector2(S * 2.0, S * 2.0)), C_SHADOW)
-
 	# 내부 마당
 	draw_rect(Rect2(Vector2(-S + W, -S + W), Vector2((S - W) * 2.0, (S - W) * 2.0)), C_FLOOR)
 

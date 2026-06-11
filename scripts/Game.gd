@@ -364,7 +364,7 @@ func _on_boss_entered(boss_node: Node) -> void:
 		show_dialogue(line, Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 	)
 
-func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool, boss_name: String = "") -> void:
+func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool, boss_name: String = "") -> bool:
 	_screen_flash(Color(1.0, 0.85, 0.2, 0.55), 0.5)
 	if shards > 0:
 		_show_crown_shard_gain(kill_pos, shards)
@@ -389,6 +389,7 @@ func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool, boss_name: S
 	get_tree().create_timer(0.4).timeout.connect(func() -> void:
 		show_dialogue(line, Color(0.85, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 	)
+	return gained
 
 func _show_contract_toast(recruit_name: String) -> void:
 	var panel: PanelContainer = PanelContainer.new()

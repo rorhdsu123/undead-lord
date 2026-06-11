@@ -509,8 +509,11 @@ func _die() -> void:
 		game.add_souls(randi_range(100, 200))
 		var shards: int = WaveData.get_wave(game.current_chapter, game.current_stage, game.current_wave).get("crown_shards", 0)
 		game.earn_crown_shards(shards)
-		game.on_boss_killed(global_position, shards, boss_type == "boss", boss_name)
-		get_tree().create_timer(2.5).timeout.connect(func() -> void:
-			if is_instance_valid(game):
-				game.enemy_died(true)
-		)
+		var recruit_gained: bool = game.on_boss_killed(global_position, shards, boss_type == "boss", boss_name)
+		if recruit_gained:
+			get_tree().create_timer(2.5).timeout.connect(func() -> void:
+				if is_instance_valid(game):
+					game.enemy_died(true)
+			)
+		else:
+			game.enemy_died(true)

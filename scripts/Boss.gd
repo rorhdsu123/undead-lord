@@ -509,11 +509,6 @@ func _die() -> void:
 		game.add_souls(randi_range(100, 200))
 		var shards: int = WaveData.get_wave(game.current_chapter, game.current_stage, game.current_wave).get("crown_shards", 0)
 		game.earn_crown_shards(shards)
-		var recruit_gained: bool = game.on_boss_killed(global_position, shards, boss_type == "boss", boss_name)
-		if recruit_gained:
-			get_tree().create_timer(2.5).timeout.connect(func() -> void:
-				if is_instance_valid(game):
-					game.enemy_died(true)
-			)
-		else:
-			game.enemy_died(true)
+		# enemy_died 호출(웨이브 종료 판정)은 Game이 소유 — 보스가 die 애니 후
+		# queue_free되어도 딜레이 타이머가 끊기지 않도록 함
+		game.on_boss_killed(global_position, shards, boss_type == "boss", boss_name)

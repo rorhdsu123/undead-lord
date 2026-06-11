@@ -359,7 +359,7 @@ func _on_boss_entered(boss_node: Node) -> void:
 		show_dialogue(line, Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 	)
 
-func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool, boss_name: String = "") -> bool:
+func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool, boss_name: String = "") -> void:
 	_screen_flash(Color(1.0, 0.85, 0.2, 0.55), 0.5)
 	if shards > 0:
 		_show_crown_shard_gain(kill_pos, shards)
@@ -384,7 +384,15 @@ func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool, boss_name: S
 	get_tree().create_timer(0.4).timeout.connect(func() -> void:
 		show_dialogue(line, Color(0.85, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 	)
-	return gained
+
+	# 웨이브 종료 판정. 충신 획득 시에만 계약 토스트를 읽을 시간(2.5초) 확보.
+	# 타이머는 Game이 소유하므로 보스가 die 애니 후 사라져도 끊기지 않음.
+	if gained:
+		get_tree().create_timer(2.5).timeout.connect(func() -> void:
+			enemy_died(true)
+		)
+	else:
+		enemy_died(true)
 
 func _show_contract_toast(recruit_name: String) -> void:
 	var panel: PanelContainer = PanelContainer.new()

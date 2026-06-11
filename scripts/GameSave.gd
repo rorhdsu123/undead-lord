@@ -13,6 +13,7 @@ const COURT_PER_SKELETON: int = 10 # 충신 1명당 추가 EXP (placeholder)
 var crown_shards: int = 0
 var skeleton_count: int = 0
 var skeleton_count_seen: int = 0  # 로비에서 등장 연출을 본 해골 수
+var pending_recruit_name: String = ""  # 첫 출근 대기 중인 신규 충신 이름 (로비 인터랙션 전)
 var facility_levels: Dictionary = {
 	"throne": 0, "wall": 0, "graveyard": 0, "arsenal": 0, "banquet": 0
 }
@@ -120,6 +121,7 @@ func save_data():
 	config.set_value("meta", "crown_shards", crown_shards)
 	config.set_value("meta", "skeleton_count", skeleton_count)
 	config.set_value("meta", "skeleton_count_seen", skeleton_count_seen)
+	config.set_value("meta", "pending_recruit_name", pending_recruit_name)
 	config.set_value("meta", "current_chapter", current_chapter)
 	config.set_value("meta", "current_stage", current_stage)
 	config.set_value("meta", "intro_seen", intro_seen)
@@ -142,6 +144,7 @@ func load_data():
 		crown_shards = config.get_value("meta", "crown_shards", 0)
 		skeleton_count = config.get_value("meta", "skeleton_count", 0)
 		skeleton_count_seen = config.get_value("meta", "skeleton_count_seen", 0)
+		pending_recruit_name = config.get_value("meta", "pending_recruit_name", "")
 		current_chapter = config.get_value("meta", "current_chapter", 0)
 		current_stage = config.get_value("meta", "current_stage", 0)
 		intro_seen = config.get_value("meta", "intro_seen", false)

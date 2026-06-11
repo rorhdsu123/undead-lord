@@ -509,5 +509,5 @@ func _die() -> void:
 		game.add_souls(randi_range(100, 200))
 		var shards: int = WaveData.get_wave(game.current_chapter, game.current_stage, game.current_wave).get("crown_shards", 0)
 		game.earn_crown_shards(shards)
-		game.on_boss_killed(global_position, shards, boss_type == "boss")
+		game.on_boss_killed(global_position, shards, boss_type == "boss", boss_name)
 		game.enemy_died(true)

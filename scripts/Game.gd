@@ -176,6 +176,12 @@ const BOSS_INTRO_DIALOGUES = {
 const BOSS_ENTRANCE_PLAYER_LINES = ["또 왔군.", "이번엔 좀 강하려나.", "...지루하다.", "어디 해봐라."]
 const BOSS_KILLED_MID_LINES      = ["다음은 누구냐.", "약하군.", "...그 정도냐."]
 const BOSS_KILLED_FINAL_LINES    = ["조각이 돌아왔다.", "하나씩, 되찾겠다.", "...잘했다."]
+const RECRUIT_DIALOGUES = [
+	"%s: 이게... 노예계약이라고?",
+	"%s: 정의 구현을 위해 싸웠건만...",
+	"%s: 조건을 다시 읽어봐도 불리하군.",
+	"%s: 급여는... 있는 거 맞지?",
+]
 const GAME_OVER_PLAYER_LINES     = ["...물러선다.", "오늘은 여기까지.", "다음엔 다르다."]
 const GAME_CLEAR_PLAYER_LINES    = ["...잘 막았다.", "이 정도는 식은 죽.", "다음을 준비하라."]
 
@@ -358,7 +364,7 @@ func _on_boss_entered(boss_node: Node) -> void:
 		show_dialogue(line, Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 	)
 
-func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool) -> void:
+func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool, boss_name: String = "") -> void:
 	_screen_flash(Color(1.0, 0.85, 0.2, 0.55), 0.5)
 	if shards > 0:
 		_show_crown_shard_gain(kill_pos, shards)
@@ -367,10 +373,13 @@ func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool) -> void:
 	var gained: bool = GameSave.gain_skeleton()
 	if gained:
 		_show_skeleton_gain(kill_pos)
-		if GameSave.skeleton_count == 1:
-			get_tree().create_timer(1.2).timeout.connect(func() -> void:
-				show_dialogue("해골 1마리가 당신을 따른다...", Color(0.7, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
-			)
+		GameSave.pending_recruit_name = boss_name if boss_name != "" else "신원 불명"
+		GameSave.save_data()
+		_show_contract_toast(GameSave.pending_recruit_name)
+		var recruit_line: String = RECRUIT_DIALOGUES[randi() % RECRUIT_DIALOGUES.size()] % GameSave.pending_recruit_name
+		get_tree().create_timer(1.4).timeout.connect(func() -> void:
+			show_dialogue(recruit_line, Color(0.9, 0.85, 0.6, 1), kill_pos + Vector2(0, -80))
+		)
 	else:
 		add_souls(50)
 		_show_souls_overflow(kill_pos)
@@ -380,6 +389,31 @@ func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool) -> void:
 	get_tree().create_timer(0.4).timeout.connect(func() -> void:
 		show_dialogue(line, Color(0.85, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 	)
+
+func _show_contract_toast(recruit_name: String) -> void:
+	var panel: PanelContainer = PanelContainer.new()
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.06, 0.12, 0.92)
+	style.border_color = Color(0.9, 0.78, 0.3, 1.0)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(8)
+	panel.add_theme_stylebox_override("panel", style)
+	panel.size = Vector2(280, 56)
+	panel.position = Vector2(100, 170)
+	var label: Label = Label.new()
+	label.text = "⚔ 노예계약 체결\n[%s] 이제 마왕성 소속" % recruit_name
+	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_color_override("font_color", Color(0.98, 0.92, 0.6, 1))
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	panel.add_child(label)
+	add_child(panel)
+	panel.modulate.a = 0.0
+	var tween: Tween = create_tween()
+	tween.tween_property(panel, "modulate:a", 1.0, 0.3)
+	tween.tween_interval(2.2)
+	tween.tween_property(panel, "modulate:a", 0.0, 0.4)
+	tween.tween_callback(panel.queue_free)
 
 func _show_skeleton_gain(pos: Vector2) -> void:
 	var label: Label = Label.new()

@@ -15,6 +15,13 @@ var _majesty_lv_label: Label = null  # HUD 내 "위엄 Lv N" 텍스트
 var _throne_btn: Button = null          # 탭 가능 거점 버튼
 var _throne_badge: Panel = null         # 레드닷 알림 뱃지
 
+const FIRST_DAY_DIALOGUES: Array[String] = [
+	"...출근은 처음이라 긴장되는군.",
+	"여기서 일하게 될 줄은 몰랐다.",
+	"조건이 불리해도 계약은 계약이지.",
+	"...월급은 제때 나오는 거 맞지?",
+]
+
 const INTRO_LINES: Array[String] = [
 	"왕관이 있었다. 빼앗겼다.",
 	"그 후로 한 200년쯤.\n\n...아직도 죽지 못했다.",
@@ -74,6 +81,8 @@ const SkeletonResidentScript = preload("res://scripts/SkeletonResident.gd")
 
 var _fac_icon_containers: Array = []
 var _skeleton_residents: Array = []
+var _pending_resident: Node2D = null
+var _recruit_dot: Control = null
 var _bottom_panel: Control = null
 var _panel_tween: Tween = null
 var _panel_open: bool = false
@@ -125,6 +134,7 @@ func _ready() -> void:
 	_build_throne_room()
 	_build_facility_buttons()
 	_build_skeleton_garden()
+	_setup_pending_recruit()
 	_build_bottom_panel()
 
 	if not GameSave.intro_seen:
@@ -304,9 +314,11 @@ func _build_skeleton_garden() -> void:
 	_skeleton_residents.clear()
 
 	var count: int = min(GameSave.skeleton_count, SKELETON_PLACEMENT.size())
-	var newly_arrived: int = max(0, count - GameSave.skeleton_count_seen)
+	# 미확인 신규 충신이 있으면 마지막 슬롯은 _setup_pending_recruit()에서 배치
+	var place_count: int = count - 1 if GameSave.pending_recruit_name != "" else count
+	var newly_arrived: int = max(0, place_count - GameSave.skeleton_count_seen)
 
-	for i: int in count:
+	for i: int in place_count:
 		var entry: Dictionary = SKELETON_PLACEMENT[i]
 		var facility_id: String = entry["facility"]
 		var base_pos: Vector2 = FAC_SCREEN_POS.get(facility_id, Vector2(240, 400))
@@ -321,13 +333,82 @@ func _build_skeleton_garden() -> void:
 		move_child(resident, get_child_count() - 1)
 		_skeleton_residents.append(resident)
 
-		# 새로 도착한 해골은 등장 연출
 		if i >= GameSave.skeleton_count_seen:
 			resident.call_deferred("play_arrival")
 
-	if newly_arrived > 0:
+	if newly_arrived > 0 and GameSave.pending_recruit_name == "":
 		GameSave.skeleton_count_seen = count
 		GameSave.save_data()
+
+# ── 신규 충신 대기 연출 ─────────────────────────────────────
+
+func _setup_pending_recruit() -> void:
+	if GameSave.pending_recruit_name == "":
+		return
+	var count: int = min(GameSave.skeleton_count, SKELETON_PLACEMENT.size())
+	if count == 0:
+		return
+
+	# 출정 버튼 위 대기 위치
+	var wait_pos: Vector2 = Vector2(240, 810)
+	var resident: Node2D = SkeletonResidentScript.new()
+	resident.home_pos = wait_pos
+	resident.color_tint = Color(1.05, 1.0, 0.75, 1.0)
+	resident.job = SKELETON_PLACEMENT[count - 1]["job"]
+	add_child(resident)
+	move_child(resident, get_child_count() - 1)
+	_pending_resident = resident
+	resident.call_deferred("play_arrival")
+	resident.tapped.connect(_on_pending_recruit_tapped)
+
+	# 출정 버튼 레드닷
+	_recruit_dot = Panel.new()
+	var dot_style: StyleBoxFlat = StyleBoxFlat.new()
+	dot_style.bg_color = Color(0.95, 0.2, 0.2, 1.0)
+	dot_style.set_corner_radius_all(7)
+	_recruit_dot.add_theme_stylebox_override("panel", dot_style)
+	_recruit_dot.size = Vector2(14, 14)
+	_recruit_dot.position = Vector2(424, 855)
+	_recruit_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ui.add_child(_recruit_dot)
+
+func _on_pending_recruit_tapped() -> void:
+	if not is_instance_valid(_pending_resident):
+		return
+	var count: int = min(GameSave.skeleton_count, SKELETON_PLACEMENT.size())
+	var entry: Dictionary = SKELETON_PLACEMENT[count - 1]
+	var facility_id: String = entry["facility"]
+	var real_home: Vector2 = FAC_SCREEN_POS.get(facility_id, Vector2(240, 400)) + entry["offset"]
+
+	var dialogue: String = FIRST_DAY_DIALOGUES[randi() % FIRST_DAY_DIALOGUES.size()]
+	_show_lobby_bubble(_pending_resident, dialogue)
+
+	await get_tree().create_timer(0.8).timeout
+	_pending_resident.move_to_home(real_home)
+	_skeleton_residents.append(_pending_resident)
+	_pending_resident = null
+
+	if is_instance_valid(_recruit_dot):
+		_recruit_dot.queue_free()
+		_recruit_dot = null
+
+	GameSave.pending_recruit_name = ""
+	GameSave.skeleton_count_seen = count
+	GameSave.save_data()
+
+func _show_lobby_bubble(target: Node2D, text: String) -> void:
+	var label: Label = Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_color_override("font_color", Color(0.95, 0.92, 0.75, 1.0))
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.size = Vector2(200, 40)
+	label.position = target.position + Vector2(-100, -60)
+	add_child(label)
+	var tween: Tween = create_tween()
+	tween.tween_property(label, "position:y", label.position.y - 30, 1.8)
+	tween.parallel().tween_property(label, "modulate:a", 0.0, 1.8)
+	tween.tween_callback(label.queue_free)
 
 # ── 하단 슬라이드 패널 ──────────────────────────────────────
 

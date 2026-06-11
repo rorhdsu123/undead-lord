@@ -9,6 +9,8 @@ const IDLE_MAX: float = 5.0
 const WORK_CYCLE_MIN: float = 12.0
 const WORK_CYCLE_MAX: float = 20.0
 
+signal tapped
+
 enum State { ARRIVING, IDLE, WALKING, RETURNING, WORKING }
 
 static var _cached_frames: SpriteFrames = null
@@ -130,6 +132,16 @@ func _bounce_tap() -> void:
 	var tween: Tween = create_tween()
 	tween.tween_property(anim_sprite, "scale", Vector2.ONE * BASE_SCALE * 1.25, 0.08).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.tween_property(anim_sprite, "scale", Vector2.ONE * BASE_SCALE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN_OUT)
+	tapped.emit()
+
+func move_to_home(new_pos: Vector2) -> void:
+	home_pos = new_pos
+	target_pos = new_pos
+	state = State.WALKING
+	anim_sprite.play("walk")
+	var tween: Tween = create_tween()
+	tween.tween_property(self, "position", new_pos, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+	tween.tween_callback(_enter_idle)
 
 func play_arrival() -> void:
 	state = State.ARRIVING

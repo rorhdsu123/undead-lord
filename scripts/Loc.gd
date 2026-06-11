@@ -22,7 +22,6 @@ static var _strings: Dictionary = {
 	"card_wall":          "성벽 강화\n최대 HP +50",
 	"card_graveyard":     "묘지\n웨이브 클리어 시 HP +20 회복",
 	"card_atk_speed":     "공격속도 강화\n[영주] 공격속도 +20%",
-	"card_minion_speed":  "언데드 가속\n[군단] 하인 이동 속도 +15%",
 	"card_range_basic":   "저주의 손길\n[영주] 공격 범위 +30",
 	"card_range_all":     "어둠의 확장\n[영주] 전 범위 +25%",
 	"card_minion_attack": "언데드 강화\n[군단] 하인 공격력 +20%",
@@ -43,8 +42,9 @@ static var _strings: Dictionary = {
 	"card_echo":          "죽음의 메아리\n하인이 죽으면 폭발. [군단] 카드를 모을수록 폭발이 강해진다",
 	"card_ritual":        "제물의 의식\n하인을 희생하면 같은 하인을 즉시 무료로 다시 소환한다. [군단] 카드를 모을수록 희생 폭발이 강해진다",
 
-	# MD10 희생 버튼 텍스트 (1탭 자동)
+	# 희생 버튼 텍스트
 	"sacrifice_btn_idle":     "희생",
+	"sacrifice_btn_armed":    "취소",
 	"sacrifice_btn_locked":   "희생 (잠금)",
 	"sacrifice_btn_cooldown": "희생 (%ds)",
 

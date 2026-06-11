@@ -169,6 +169,9 @@ func _handle_attacks(delta):
 
 func use_special_attack() -> void:
 	# 특수기: 적 종류·상태별 데미지 분기 (영혼 50 소모는 Game.gd에서 체크)
+	var nearest_special = _get_nearest_enemy(INF)
+	if nearest_special:
+		anim_sprite.flip_h = nearest_special.position.x < position.x
 	_play_anim("throw")
 	var enemies: Array = get_tree().get_nodes_in_group("enemies")
 	var crit_landed: bool = false
@@ -215,6 +218,9 @@ func _flash_special_burst() -> void:
 func _basic_attack():
 	var enemies = get_tree().get_nodes_in_group("enemies")
 	var hit: bool = false
+	var nearest_in_range = _get_nearest_enemy(basic_range)
+	if nearest_in_range:
+		anim_sprite.flip_h = nearest_in_range.position.x < position.x
 	for e in enemies:
 		if position.distance_to(e.position) <= basic_range:
 			e.take_damage(attack_damage * game.attack_bonus * game.keystone_lord_atk_mult)
@@ -234,6 +240,7 @@ func _skull_throw():
 	var nearest = _get_nearest_enemy(600.0)
 	if not nearest:
 		return
+	anim_sprite.flip_h = nearest.position.x < position.x
 	var skull = SkullScene.instantiate()
 	skull.position = position
 	skull.direction = (nearest.position - position).normalized()

@@ -9,7 +9,6 @@ const SkeletonWarriorScene = preload("res://scenes/SkeletonWarrior.tscn")
 # 언데드 하인
 var max_minions: int = 3
 var minion_attack_bonus: float = 1.0
-var minion_move_speed_bonus: float = 1.0
 var minion_cost_reduction: int = 0
 var minion_hp_bonus: float = 1.0
 var minion_range_bonus: float = 0.0
@@ -73,11 +72,12 @@ var keystone_sacrifice_dmg_mult: float = 1.0
 var keystone_sacrifice_radius_mult: float = 1.0
 var keystone_sacrifice_refill: bool = false
 
-# MD10 희생 시스템 (1탭 자동)
+# 희생 시스템
 const SACRIFICE_RADIUS: float = 70.0      # 가제: 폭발 반경 (폭탄병 BOMB_RADIUS=80보다 작게)
 const SACRIFICE_DMG: float = 40.0         # 가제: 폭발 피해 (폭탄병 60보다 약하게, MD8 위계)
 const SACRIFICE_COOLDOWN: float = 8.0     # 가제: 발동당 쿨다운
 var sacrifice_cooldown: float = 0.0       # 남은 쿨다운(초)
+var _sacrifice_mode: bool = false         # 희생 대상 선택 모드
 
 # 이번 판 왕관 조각 획득량
 var crowns_this_run: int = 0
@@ -108,7 +108,6 @@ const STAT_CARDS = [
 	{"id": "wall"},
 	{"id": "graveyard"},
 	{"id": "atk_speed"},
-	{"id": "minion_speed"},
 	{"id": "range_basic"},
 	{"id": "range_all"},
 	{"id": "minion_attack"},
@@ -123,7 +122,7 @@ var available_skill_cards: Array = []
 var current_cards: Array = []
 const RARE_CHANCE: float = 0.3
 const ALWAYS_RARE: Array[String] = ["minion_count", "range_all"]
-const NEVER_RARE: Array[String] = ["minion_speed", "graveyard", "range_basic"]
+const NEVER_RARE: Array[String] = ["graveyard", "range_basic"]
 
 # 카드 픽업 시각 효과: ID → 카테고리
 const CARD_CATEGORY_MAP = {
@@ -133,7 +132,6 @@ const CARD_CATEGORY_MAP = {
 	"graveyard":     "castle",
 	"range_basic":   "range",
 	"range_all":     "range",
-	"minion_speed":    "minion",
 	"minion_attack":   "minion",
 	"minion_count":    "minion",
 	"summon_speed":    "minion",
@@ -149,7 +147,7 @@ const CARD_CATEGORY_MAP = {
 const CARD_AXIS = {
 	"arsenal": "lord", "atk_speed": "lord", "range_basic": "lord", "range_all": "lord",
 	"death_aura": "lord", "skull_throw": "lord", "decay_curse": "lord",
-	"minion_speed": "summoner", "minion_attack": "summoner", "minion_count": "summoner", "summon_speed": "summoner",
+	"minion_attack": "summoner", "minion_count": "summoner", "summon_speed": "summoner",
 	"minion_hp": "summoner", "minion_range": "summoner", "minion_lifesteal": "summoner",
 	"wall": "neutral", "graveyard": "neutral",
 }
@@ -789,11 +787,6 @@ func _apply_card(id: String, mult: float = 1.0) -> void:
 			graveyard_heal += int(20 * mult)
 		"atk_speed":
 			player.attack_speed *= (1.0 + 0.2 * mult)
-		"minion_speed":
-			var spd_mult: float = 1.0 + 0.15 * mult
-			minion_move_speed_bonus *= spd_mult
-			for m in minions_node.get_children():
-				m.move_speed *= spd_mult
 		"minion_attack":
 			var atk_mult: float = 1.0 + 0.2 * mult
 			minion_attack_bonus *= atk_mult
@@ -1721,24 +1714,33 @@ func _update_attack_button() -> void:
 		attack_button.disabled = true
 		attack_button.text = "특수기 (%d/%d)" % [souls, special_cost]
 
+func _has_sacrificeable_minion() -> bool:
+	for m in minions_node.get_children():
+		if is_instance_valid(m) and m.get("minion_type") != null and m.minion_type != "bomber":
+			return true
+	return false
+
 func _update_sacrifice_button() -> void:
 	if not is_instance_valid(sacrifice_button):
 		return
 	if not wave_active:
+		_exit_sacrifice_mode()
 		sacrifice_button.disabled = true
 		sacrifice_button.text = Loc.t("sacrifice_btn_idle")
 		return
-	# 1-1 튜토리얼 전체에서 희생 잠금 (열리는 웨이브는 추후 튜토리얼 기획 때 보강)
 	if _is_tutorial():
 		sacrifice_button.disabled = true
 		sacrifice_button.text = Loc.t("sacrifice_btn_locked")
+		return
+	if _sacrifice_mode:
+		sacrifice_button.disabled = false
+		sacrifice_button.text = Loc.t("sacrifice_btn_armed")
 		return
 	if sacrifice_cooldown > 0.0:
 		sacrifice_button.disabled = true
 		sacrifice_button.text = Loc.t("sacrifice_btn_cooldown") % ceili(sacrifice_cooldown)
 		return
-	# 희생할 상주 하인이 없으면 비활성
-	if _find_frontline_minion() == null:
+	if not _has_sacrificeable_minion():
 		sacrifice_button.disabled = true
 		sacrifice_button.text = Loc.t("sacrifice_btn_idle")
 		return
@@ -1746,39 +1748,29 @@ func _update_sacrifice_button() -> void:
 	sacrifice_button.text = Loc.t("sacrifice_btn_idle")
 
 func _on_sacrifice_pressed() -> void:
-	if not wave_active:
+	if not wave_active or _is_tutorial() or sacrifice_cooldown > 0.0:
 		return
-	if _is_tutorial():
-		return
-	if sacrifice_cooldown > 0.0:
-		return
-	var target: Node = _find_frontline_minion()
-	if target == null:
-		return
-	_close_guide()
-	_sacrifice_minion(target)
-	sacrifice_cooldown = SACRIFICE_COOLDOWN
+	if _sacrifice_mode:
+		_exit_sacrifice_mode()
+	else:
+		if _has_sacrificeable_minion():
+			_enter_sacrifice_mode()
 
-func _find_frontline_minion() -> Node:
-	var enemies: Array = get_tree().get_nodes_in_group("enemies")
-	var best: Node = null
-	var best_dist: float = INF
-	var fallback: Node = null   # 적이 없을 때용 (첫 상주 하인)
+func _enter_sacrifice_mode() -> void:
+	_sacrifice_mode = true
 	for m in minions_node.get_children():
-		if not is_instance_valid(m):
-			continue
-		if m.get("minion_type") == null or m.minion_type == "bomber":
-			continue
-		if fallback == null:
-			fallback = m
-		for e in enemies:
-			if not is_instance_valid(e):
-				continue
-			var d: float = m.position.distance_to(e.position)
-			if d < best_dist:
-				best_dist = d
-				best = m
-	return best if best != null else fallback
+		if is_instance_valid(m) and m.get("minion_type") != null and m.minion_type != "bomber":
+			m.sacrifice_highlight = true
+	_update_sacrifice_button()
+
+func _exit_sacrifice_mode() -> void:
+	if not _sacrifice_mode:
+		return
+	_sacrifice_mode = false
+	for m in minions_node.get_children():
+		if is_instance_valid(m) and m.get("sacrifice_highlight") != null:
+			m.sacrifice_highlight = false
+	_update_sacrifice_button()
 
 func _sacrifice_minion(m: Node) -> void:
 	var t: String = m.minion_type
@@ -1962,26 +1954,57 @@ func _get_empty_slot() -> int:
 			return i
 	return -1
 
-## 드래그 앤 드랍으로 하인 슬롯 재배정
+## 드래그 앤 드랍으로 하인 슬롯 재배정 / 희생 모드 탭 처리
 func _input(event: InputEvent) -> void:
 	if not wave_active:
 		return
 
-	# 드래그 시작
 	var is_down: bool = (event is InputEventScreenTouch and event.pressed) or \
 		(event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT)
+
+	# 희생 모드: 탭한 하인 희생, 빈 곳 탭 시 취소
+	if _sacrifice_mode and is_down:
+		var spos: Vector2 = event.position
+		var nearest_m: Node = null
+		var nearest_d: float = INF
+		for m in minions_node.get_children():
+			if not is_instance_valid(m) or m.get("minion_type") == null or m.minion_type == "bomber":
+				continue
+			var d: float = m.global_position.distance_to(spos)
+			if d < 40.0 and d < nearest_d:
+				nearest_d = d
+				nearest_m = m
+		if nearest_m != null:
+			_exit_sacrifice_mode()
+			_close_guide()
+			_sacrifice_minion(nearest_m)
+			sacrifice_cooldown = SACRIFICE_COOLDOWN
+			return
+		# 버튼 위 탭은 pressed 시그널로 처리 — 여기서 취소하면 이중 발동
+		if is_instance_valid(sacrifice_button) and sacrifice_button.get_global_rect().has_point(spos):
+			return
+		_exit_sacrifice_mode()
+		return
+
+	# 드래그 시작 — 가장 가까운 하인 선택
 	if is_down:
 		var pos: Vector2 = event.position
+		var nearest_drag: Node = null
+		var nearest_drag_d: float = INF
 		for m in get_tree().get_nodes_in_group("minions"):
 			if not is_instance_valid(m):
 				continue
-			if m.global_position.distance_to(pos) < 40.0:
-				_dragging_minion = m
-				_drag_offset = m.global_position - pos
-				m.is_dragging = true
-				m.is_selected = true
-				queue_redraw()
-				return
+			var d: float = m.global_position.distance_to(pos)
+			if d < 40.0 and d < nearest_drag_d:
+				nearest_drag_d = d
+				nearest_drag = m
+		if nearest_drag != null:
+			_dragging_minion = nearest_drag
+			_drag_offset = nearest_drag.global_position - pos
+			nearest_drag.is_dragging = true
+			nearest_drag.is_selected = true
+			queue_redraw()
+			return
 
 	# 드래그 이동
 	var is_move: bool = (event is InputEventScreenDrag) or \
@@ -2060,17 +2083,17 @@ func _spawn_minion(type_id: String) -> void:
 	# 카드 보너스 반영 (프리셋 적용 후)
 	m.base_damage *= minion_attack_bonus * keystone_minion_atk_mult
 	m.attack_damage = m.base_damage
-	m.move_speed *= minion_move_speed_bonus
 	m.max_hp *= minion_hp_bonus
 	m.base_max_hp *= minion_hp_bonus
 	m.hp = m.max_hp
 	m.attack_range += minion_range_bonus
 	m.lifesteal = minion_lifesteal
 	active_minions += 1
-	var slot_idx: int = _get_empty_slot()
-	if slot_idx >= 0:
-		_assign_minion_to_slot(m, slot_idx)
-		m.position = _minion_slots[slot_idx]["pos"]
+	if type_id != "bomber":
+		var slot_idx: int = _get_empty_slot()
+		if slot_idx >= 0:
+			_assign_minion_to_slot(m, slot_idx)
+			m.position = _minion_slots[slot_idx]["pos"]
 	spawn_summon_effect(m.position)
 
 func minion_died(pos = null, type_id: String = "", slot_idx: int = -1) -> void:
@@ -2253,18 +2276,45 @@ func spawn_death_effect(pos: Vector2, color: Color = Color(1, 0.6, 0.4, 1)) -> v
 		tween.tween_callback(dot.queue_free)
 
 func spawn_explosion_effect(pos: Vector2) -> void:
-	for i in 14:
+	# 1. 중앙 플래시 — 즉발, 빠르게 확산·페이드
+	var flash: Node2D = Node2D.new()
+	flash.position = pos
+	add_child(flash)
+	var seg: int = 24
+	var flash_fill: Polygon2D = Polygon2D.new()
+	var pts: PackedVector2Array = PackedVector2Array()
+	for i: int in seg:
+		var a: float = (TAU / seg) * i
+		pts.append(Vector2(cos(a) * 22.0, sin(a) * 22.0))
+	flash_fill.polygon = pts
+	flash_fill.color = Color(1.0, 0.95, 0.65, 0.95)
+	flash.add_child(flash_fill)
+	var tw_flash: Tween = create_tween()
+	tw_flash.parallel().tween_property(flash, "scale", Vector2.ONE * 4.0, 0.22)
+	tw_flash.parallel().tween_property(flash, "modulate:a", 0.0, 0.22)
+	tw_flash.tween_callback(flash.queue_free)
+
+	# 2. 충격파 링
+	_spawn_pulse_ring(pos, 80.0, Color(1.0, 0.5, 0.1, 0.85), 6.0)
+
+	# 3. 파편 파티클 — 크고 혼합 색상
+	var explosion_colors: Array = [
+		Color(1.0, 1.0, 0.6, 1.0),
+		Color(1.0, 0.55, 0.15, 1.0),
+		Color(1.0, 0.2, 0.1, 1.0),
+	]
+	for i: int in 18:
 		var dot: ColorRect = ColorRect.new()
-		dot.size = Vector2(10, 10)
-		dot.position = pos - Vector2(5, 5)
-		dot.color = Color(1.0, 0.55, 0.15, 1)
+		dot.size = Vector2(12, 12)
+		dot.position = pos - Vector2(6, 6)
+		dot.color = explosion_colors[i % explosion_colors.size()]
 		add_child(dot)
 		var angle: float = randf_range(0, TAU)
-		var distance: float = randf_range(45, 95)
-		var target_pos: Vector2 = pos + Vector2(cos(angle), sin(angle)) * distance - Vector2(5, 5)
+		var distance: float = randf_range(50, 105)
+		var target_pos: Vector2 = pos + Vector2(cos(angle), sin(angle)) * distance - Vector2(6, 6)
 		var tween: Tween = create_tween()
-		tween.parallel().tween_property(dot, "position", target_pos, 0.5)
-		tween.parallel().tween_property(dot, "modulate:a", 0.0, 0.5)
+		tween.parallel().tween_property(dot, "position", target_pos, 0.4)
+		tween.parallel().tween_property(dot, "modulate:a", 0.0, 0.4)
 		tween.tween_callback(dot.queue_free)
 
 func spawn_evolve_effect(pos: Vector2) -> void:

@@ -4,11 +4,11 @@ const ArrowScene = preload("res://scenes/Arrow.tscn")
 
 const TYPE_PRESETS: Dictionary = {
 	"warrior": {
-		"hp": 100, "speed": 90, "damage": 10, "range": 30, "interval": 1.0,
+		"hp": 100, "speed": 90, "damage": 10, "range": 80, "interval": 1.0,
 		"scale": 1.0, "behavior": "melee", "evolves": true, "variant": 1,
 	},
 	"archer": {
-		"hp": 60, "speed": 80, "damage": 8, "range": 260, "interval": 1.2,
+		"hp": 60, "speed": 80, "damage": 8, "range": 400, "interval": 1.2,
 		"scale": 0.85, "behavior": "ranged", "evolves": true, "variant": 2,
 	},
 	"tank": {
@@ -54,6 +54,10 @@ var has_post: bool = false
 var guard_post: Vector2 = Vector2.ZERO
 var guard_slot_index: int = -1
 var is_dragging: bool = false
+var sacrifice_highlight: bool = false:
+	set(v):
+		sacrifice_highlight = v
+		queue_redraw()
 var is_selected: bool = false:
 	set(v):
 		is_selected = v
@@ -82,6 +86,7 @@ func _ready() -> void:
 	var variant: int = preset["variant"]
 	anim_sprite.sprite_frames = _get_sprite_frames(variant)
 	anim_sprite.scale = Vector2.ONE * BASE_SPRITE_SCALE * base_scale
+	anim_sprite.show_behind_parent = true
 	anim_sprite.animation_finished.connect(_on_animation_finished)
 	_play_anim("idle")
 
@@ -114,7 +119,9 @@ static func _build_sprite_frames(variant: int) -> SpriteFrames:
 	return sf
 
 func _draw() -> void:
-	if is_selected:
+	if sacrifice_highlight:
+		draw_arc(Vector2.ZERO, 28.0, 0, TAU, 24, Color(1.0, 0.2, 0.2, 0.9), 2.5)
+	elif is_selected:
 		draw_arc(Vector2.ZERO, 28.0, 0, TAU, 24, Color(1.0, 0.85, 0.2, 0.9), 2.5)
 
 func _play_anim(anim: String) -> void:
@@ -152,7 +159,8 @@ func _physics_process(delta: float) -> void:
 		if not is_instance_valid(current_target) or position.distance_to(current_target.position) > attack_range:
 			current_target = _find_nearest_enemy()
 		if is_instance_valid(current_target) and position.distance_to(current_target.position) <= attack_range:
-			anim_sprite.flip_h = current_target.position.x < position.x
+			if _anim_state not in ["slash", "hurt"]:
+				anim_sprite.flip_h = current_target.position.x < position.x
 			attack_timer += delta
 			if attack_timer >= attack_interval:
 				attack_timer = 0.0
@@ -185,11 +193,15 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity = Vector2.ZERO
 		if _anim_state not in ["slash", "hurt"]:
+			anim_sprite.flip_h = current_target.position.x < position.x
 			_play_anim("idle")
-		attack_timer += delta
-		if attack_timer >= attack_interval:
-			attack_timer = 0.0
+		if behavior == "bomber":
 			_do_attack()
+		else:
+			attack_timer += delta
+			if attack_timer >= attack_interval:
+				attack_timer = 0.0
+				_do_attack()
 
 func _do_attack() -> void:
 	if not is_instance_valid(current_target):

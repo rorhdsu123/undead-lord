@@ -654,11 +654,38 @@ func _format_axis_tags(s: String) -> String:
 	return s
 
 func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
+	var is_keystone: bool = card.get("keystone", false)
 	var is_rare: bool = card.get("rare", false)
-	var bg_col: Color    = Color(0.97, 0.93, 0.82, 1.0) if is_rare else Color(0.91, 0.89, 0.97, 1.0)
-	var border_col: Color = Color(0.88, 0.62, 0.08, 1.0) if is_rare else Color(0.48, 0.40, 0.75, 1.0)
-	var badge_col: Color  = Color(0.88, 0.52, 0.04, 1.0) if is_rare else Color(0.50, 0.42, 0.76, 1.0)
-	var art_col: Color    = Color(0.18, 0.11, 0.04, 1.0) if is_rare else Color(0.12, 0.08, 0.20, 1.0)
+
+	var bg_col: Color
+	var border_col: Color
+	var badge_col: Color
+	var art_col: Color
+	if is_keystone:
+		var axis: String = CARD_AXIS.get(card.get("id", ""), "neutral")
+		if axis == "lord":
+			# 영주 각성 — 레드 계열
+			bg_col     = Color(0.98, 0.90, 0.88, 1.0)
+			border_col = Color(0.75, 0.16, 0.10, 1.0)
+			badge_col  = Color(0.72, 0.12, 0.08, 1.0)
+			art_col    = Color(0.22, 0.07, 0.05, 1.0)
+		else:
+			# 소환사 각성 — 틸 계열
+			bg_col     = Color(0.86, 0.96, 0.94, 1.0)
+			border_col = Color(0.06, 0.58, 0.48, 1.0)
+			badge_col  = Color(0.04, 0.52, 0.42, 1.0)
+			art_col    = Color(0.04, 0.18, 0.15, 1.0)
+	elif is_rare:
+		bg_col     = Color(0.97, 0.93, 0.82, 1.0)
+		border_col = Color(0.88, 0.62, 0.08, 1.0)
+		badge_col  = Color(0.88, 0.52, 0.04, 1.0)
+		art_col    = Color(0.18, 0.11, 0.04, 1.0)
+	else:
+		bg_col     = Color(0.91, 0.89, 0.97, 1.0)
+		border_col = Color(0.48, 0.40, 0.75, 1.0)
+		badge_col  = Color(0.50, 0.42, 0.76, 1.0)
+		art_col    = Color(0.12, 0.08, 0.20, 1.0)
+
 	var name_col: Color   = Color(0.13, 0.08, 0.05, 1.0)
 	var desc_col: Color   = Color(0.35, 0.30, 0.28, 1.0)
 
@@ -667,7 +694,7 @@ func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
 	var art_sz: float  = 96.0
 	var art_x: float   = 10.0
 	var art_y: float   = 12.0
-	var badge_w: float = 54.0
+	var badge_w: float = 64.0 if is_keystone else 54.0
 	var badge_h: float = 22.0
 	var right_x: float = art_x + art_sz + 12.0
 	var right_w: float = card_w - right_x - 8.0
@@ -681,7 +708,7 @@ func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var bg_style: StyleBoxFlat = StyleBoxFlat.new()
 	bg_style.bg_color = bg_col
-	bg_style.set_border_width_all(2)
+	bg_style.set_border_width_all(4 if is_keystone else 2)
 	bg_style.border_color = border_col
 	bg_style.set_corner_radius_all(8)
 	bg.add_theme_stylebox_override("panel", bg_style)
@@ -714,7 +741,14 @@ func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
 	root.add_child(badge_bg)
 
 	var badge_lbl: Label = Label.new()
-	badge_lbl.text = Loc.t("rarity_legendary") if is_rare else Loc.t("rarity_common")
+	var badge_text: String
+	if is_keystone:
+		badge_text = Loc.t("rarity_keystone")
+	elif is_rare:
+		badge_text = Loc.t("rarity_legendary")
+	else:
+		badge_text = Loc.t("rarity_common")
+	badge_lbl.text = badge_text
 	badge_lbl.position = Vector2(badge_x, badge_y)
 	badge_lbl.size = Vector2(badge_w, badge_h)
 	badge_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

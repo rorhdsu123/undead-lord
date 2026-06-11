@@ -7,6 +7,7 @@ static var _strings: Dictionary = {
 	# 카드 등급
 	"rarity_common":    "일반",
 	"rarity_legendary": "전설",
+	"rarity_keystone":  "각성",
 
 	# 카드 선택 오버레이
 	"card_select_title":    "카드 선택",

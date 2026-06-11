@@ -16,6 +16,15 @@ const BOSS_SCALE_MAP: Dictionary = {
 }
 const BASE_SPRITE_SCALE: float = 0.316
 
+# ─── 보스 HP바 ────────────────────────────────────────────────────────────
+const BAR_W: float = 150.0
+const BAR_H: float = 14.0
+const BAR_DEFAULT_Y: float = -78.0   # 스프라이트 위 기본 오프셋 (로컬)
+const HUD_CLAMP_Y: float = 148.0     # 이 화면 Y 아래로만 표시 (CastleBar 하단 128 + 여백)
+const C_BAR_BG:     Color = Color(0.10, 0.05, 0.05, 0.90)
+const C_BAR_FILL:   Color = Color(0.88, 0.14, 0.12, 1.00)
+const C_BAR_BORDER: Color = Color(0.04, 0.02, 0.02, 1.00)
+
 const COLOR_NORMAL: Color  = Color.WHITE
 const COLOR_DASH: Color    = Color(1.0, 0.85, 0.3, 1.0)
 const COLOR_OVERTIME: Color = Color(1.0, 0.55, 0.3, 1.0)
@@ -76,10 +85,34 @@ var summon_count: int = 2
 @onready var name_label: Label = $NameLabel
 @onready var anim_sprite: AnimatedSprite2D = $AnimSprite
 
+func _get_bar_local_y() -> float:
+	var screen_y: float = global_position.y + BAR_DEFAULT_Y
+	if screen_y < HUD_CLAMP_Y:
+		return HUD_CLAMP_Y - global_position.y
+	return BAR_DEFAULT_Y
+
+func _draw() -> void:
+	var bar_y: float = _get_bar_local_y()
+	var ratio: float = clampf(hp / max_hp, 0.0, 1.0)
+
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = C_BAR_BG
+	bg.border_color = C_BAR_BORDER
+	bg.set_border_width_all(2)
+	bg.set_corner_radius_all(6)
+	draw_style_box(bg, Rect2(-BAR_W * 0.5, bar_y, BAR_W, BAR_H))
+
+	if ratio > 0.0:
+		var fill := StyleBoxFlat.new()
+		fill.bg_color = C_BAR_FILL
+		fill.set_corner_radius_all(4)
+		draw_style_box(fill, Rect2(-BAR_W * 0.5 + 2.0, bar_y + 2.0, (BAR_W - 4.0) * ratio, BAR_H - 4.0))
+
 func _ready() -> void:
 	add_to_group("enemies")
 	base_speed = speed
 	base_damage = damage
+	hp_bar.visible = false
 	name_label.text = boss_name
 	collision_mask = 4  # 영주(레이어 3)하고만 충돌 — 겹침 방지. 잡몹(레이어1)·하인(레이어2) 무리엔 안 낌
 	if boss_type == "mid_boss":
@@ -154,6 +187,9 @@ func _physics_process(delta: float) -> void:
 		return
 	if _anim_state == "die":
 		return
+	var bar_y: float = _get_bar_local_y()
+	name_label.position.y = bar_y - 18.0
+	queue_redraw()
 	if is_stunned:
 		velocity = Vector2.ZERO
 		move_and_slide()
@@ -423,7 +459,7 @@ func take_damage(dmg: float, tier: String = "normal") -> void:
 	if _anim_state == "die":
 		return
 	hp -= dmg
-	hp_bar.value = (hp / max_hp) * 100.0
+	queue_redraw()
 	_hit_flash()
 	if game:
 		game.spawn_damage_number(global_position, dmg, tier)

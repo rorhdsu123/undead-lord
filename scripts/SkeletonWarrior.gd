@@ -25,7 +25,6 @@ const EVOLUTION_THRESHOLDS: Array = [5, 10]
 const EVOLUTION_MULTS: Array = [1.0, 1.25, 1.6]
 const BOMB_RADIUS: float = 80.0
 const BASE_SPRITE_SCALE: float = 0.246
-const GUARD_ENGAGE_RANGE: float = 150.0  # 포스트에서 이 거리 안 적만 교전
 
 static var _cached_frames: Dictionary = {}
 
@@ -50,17 +49,9 @@ var game = null
 var _anim_state: String = ""
 var lifesteal: float = 0.0
 var _died_reported: bool = false
-var has_post: bool = false
-var guard_post: Vector2 = Vector2.ZERO
-var guard_slot_index: int = -1
-var is_dragging: bool = false
 var sacrifice_highlight: bool = false:
 	set(v):
 		sacrifice_highlight = v
-		queue_redraw()
-var is_selected: bool = false:
-	set(v):
-		is_selected = v
 		queue_redraw()
 
 @onready var hp_bar: ProgressBar = $HPBar
@@ -121,8 +112,6 @@ static func _build_sprite_frames(variant: int) -> SpriteFrames:
 func _draw() -> void:
 	if sacrifice_highlight:
 		draw_arc(Vector2.ZERO, 28.0, 0, TAU, 24, Color(1.0, 0.2, 0.2, 0.9), 2.5)
-	elif is_selected:
-		draw_arc(Vector2.ZERO, 28.0, 0, TAU, 24, Color(1.0, 0.85, 0.2, 0.9), 2.5)
 
 func _play_anim(anim: String) -> void:
 	if not is_instance_valid(anim_sprite):
@@ -140,38 +129,10 @@ func _on_animation_finished() -> void:
 			queue_free()
 
 func _physics_process(delta: float) -> void:
-	if _anim_state == "die" or is_dragging:
+	if _anim_state == "die":
 		return
 
-	if has_post:
-		# 포스트 고정 모드: 포스트로 귀환 후 제자리에서 사거리 안 적만 공격
-		var dp: float = position.distance_to(guard_post)
-		if dp > 8.0:
-			var dir: Vector2 = (guard_post - position).normalized()
-			velocity = dir * move_speed
-			move_and_slide()
-			anim_sprite.flip_h = dir.x < 0
-			if _anim_state not in ["hurt"]:
-				_play_anim("walk")
-			return
-		velocity = Vector2.ZERO
-		position = guard_post
-		if not is_instance_valid(current_target) or position.distance_to(current_target.position) > attack_range:
-			current_target = _find_nearest_enemy()
-		if is_instance_valid(current_target) and position.distance_to(current_target.position) <= attack_range:
-			if _anim_state not in ["slash", "hurt"]:
-				anim_sprite.flip_h = current_target.position.x < position.x
-			attack_timer += delta
-			if attack_timer >= attack_interval:
-				attack_timer = 0.0
-				_do_attack()
-		else:
-			attack_timer = 0.0
-			if _anim_state not in ["slash", "hurt"]:
-				_play_anim("idle")
-		return
-
-	# 포스트 없는 자유 이동 모드
+	# 자유 이동 모드: 가장 가까운 적을 향해 이동·공격
 	if not is_instance_valid(current_target):
 		current_target = _find_nearest_enemy()
 
@@ -277,8 +238,6 @@ func _find_nearest_enemy():
 	for e in enemies:
 		if not is_instance_valid(e):
 			continue
-		if has_post and guard_post.distance_to(e.position) > GUARD_ENGAGE_RANGE:
-			continue
 		var d: float = position.distance_to(e.position)
 		if d < nearest_dist:
 			nearest_dist = d
@@ -312,7 +271,7 @@ func _report_died() -> void:
 		return
 	_died_reported = true
 	if game and game.has_method("minion_died"):
-		game.minion_died(position, minion_type, guard_slot_index)
+		game.minion_died(position, minion_type)
 
 func sacrifice() -> void:
 	_report_died()

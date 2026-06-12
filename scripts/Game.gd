@@ -242,6 +242,10 @@ func _ready() -> void:
 	slot_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	minion_slot_label.get_parent().add_child(slot_icon)
 	_layout_bottom_ui()
+	# Phase A4 — 하단 UI 숨김 (특수기 버튼·소환 4버튼·희생 버튼·슬롯 라벨)
+	# 상단 HUD·트래커·성HP바(UI-폴리싱 자산)는 건드리지 않음
+	# 복원: 아래 블록을 제거하고 _process()의 Phase A 가드도 제거
+	_hide_bottom_ui_phase_a()
 	# 모달 입력 레이어링: Godot GUI 입력은 z_index가 아니라 트리 순서로 판정되므로
 	# HUD < ModalDim < 모달 패널 < FadeRect 순서가 되도록 끝으로 차례로 이동.
 	# (안 그러면 트리상 뒤에 있는 ModalDim(STOP)이 모달 버튼 클릭을 가로챔)
@@ -475,6 +479,14 @@ func end_wave() -> void:
 		show_dialogue(line, Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 
 	await get_tree().create_timer(1.2).timeout
+	# Phase A1 — 키스톤/카드 선택 비활성: 선택 UI를 건너뛰고 다음 웨이브로 직행
+	# 모달 레이어링 구조(_show_keystones/_show_cards)는 건드리지 않음 — 호출만 차단
+	# 복원: 아래 2줄을 제거하면 기존 분기가 살아남
+	# Phase C에서 고용 화면이 이 자리를 대체할 예정
+	if true:  # Phase A 가드: 키스톤·카드 선택 비활성
+		current_wave += 1
+		start_wave()
+		return
 	if not _is_tutorial():
 		var wtype: String = WaveData.get_wave(current_chapter, current_stage, current_wave).get("type", "normal")
 		if current_wave == 0 and keystone1 == "":
@@ -771,6 +783,12 @@ func _flash_card_glow(row: Control) -> void:
 	tween.tween_property(row, "modulate", Color(1.0, 1.0, 1.0, 1), 0.35)
 
 func _apply_card(id: String, mult: float = 1.0) -> void:
+	# Phase A2 — 패시브 3종(death_aura/skull_throw/decay_curse) 대입 무력화
+	# Player._physics_process가 이미 early-return으로 막혀 있으나 상태 변수도 설정 안 함
+	# 복원: 아래 Phase A 가드 블록을 제거하면 됨
+	const _PHASE_A_PASSIVE_IDS: Array = ["death_aura", "skull_throw", "decay_curse"]
+	if _PHASE_A_PASSIVE_IDS.has(id):
+		return  # Phase A: 패시브 카드 효과 비활성
 	match id:
 		"death_aura":
 			player.has_death_aura = true
@@ -1166,8 +1184,9 @@ func _close_shop() -> void:
 	shop_title.text = Loc.t("shop_title")
 	shop_panel.visible = false
 	modal_dim.visible = false
-	summon_container.visible = true
-	minion_slot_label.visible = true
+	# Phase A4 가드: 하단 UI를 다시 보이지 않도록 유지 (복원 시 아래 주석 해제)
+	# summon_container.visible = true
+	# minion_slot_label.visible = true
 	current_wave += 1
 	start_wave()
 
@@ -1687,6 +1706,11 @@ func _fade_to_scene(path: String) -> void:
 	)
 
 func _process(delta: float) -> void:
+	# Phase A4/A5 — 하단 UI 갱신 함수 및 희생 쿨다운 진행 비활성
+	# 버튼이 숨겨져 있으므로 갱신 불필요 + 죽은 노드 참조 크래시 방지
+	# 복원: 아래 early return 2줄을 제거하면 기존 갱신 루프가 살아남
+	if true:  # Phase A 가드: 하단 UI 갱신·희생 쿨 비활성
+		return
 	if sacrifice_cooldown > 0.0:
 		sacrifice_cooldown = max(0.0, sacrifice_cooldown - delta)
 	_update_attack_button()
@@ -1852,6 +1876,24 @@ func _build_summon_buttons() -> void:
 		btn.pressed.connect(func(): _on_summon_pressed(idx))
 		summon_container.add_child(btn)
 		summon_btns.append(btn)
+
+func _hide_bottom_ui_phase_a() -> void:
+	# Phase A4 — 하단 전투 UI 전체 숨김
+	# attack_button(특수기), sacrifice_button(희생), summon_container(소환 4버튼),
+	# minion_slot_label(슬롯 카운터), 아이콘 라벨들 숨김
+	# 복원: 이 함수 호출을 _ready()에서 제거하면 됨
+	if is_instance_valid(attack_button):
+		attack_button.visible = false
+	if is_instance_valid(sacrifice_button):
+		sacrifice_button.visible = false
+	if is_instance_valid(summon_container):
+		summon_container.visible = false
+	if is_instance_valid(minion_slot_label):
+		minion_slot_label.visible = false
+	if is_instance_valid(souls_icon):
+		souls_icon.visible = false
+	if is_instance_valid(slot_icon):
+		slot_icon.visible = false
 
 func _layout_bottom_ui() -> void:
 	var vp: Vector2 = get_viewport_rect().size

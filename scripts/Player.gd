@@ -46,6 +46,9 @@ func _ready():
 	_create_range_indicators()
 	basic_timer = BASIC_INTERVAL
 	_setup_sprite()
+	# Phase A — 영주 비가시화 (A3): 스프라이트 숨김 + 충돌 비활성 + 범위 표시 끄기
+	# Phase B/C/D에서 복원 가능하도록 노드 자체는 유지
+	_disable_player_presence()
 
 func _setup_sprite() -> void:
 	anim_sprite.sprite_frames = _build_necromancer_frames()
@@ -133,7 +136,25 @@ func _rebuild_circle(parent: Node2D, radius: float, base_color: Color) -> void:
 		child.queue_free()
 	_build_circle_visuals(parent, radius, base_color)
 
+func _disable_player_presence() -> void:
+	# Phase A3 — 영주 비가시화: 스프라이트 숨김 + 충돌 비활성 + 범위/오라 표시 끄기
+	# 복원: 이 함수 호출을 제거하고 아래 각 줄을 반전하면 됨
+	if is_instance_valid(anim_sprite):
+		anim_sprite.visible = false
+	if is_instance_valid(range_circle):
+		range_circle.visible = false
+	if is_instance_valid(aura_circle):
+		aura_circle.visible = false
+	# CollisionShape2D 비활성
+	for child in get_children():
+		if child is CollisionShape2D or child is CollisionPolygon2D:
+			child.disabled = true
+
 func _physics_process(delta):
+	# Phase A2 — 자동공격/패시브 타이머 정지: _handle_attacks 호출 차단
+	# 복원: 아래 early return 2줄을 제거하면 됨
+	if true:  # Phase A 가드: 자동공격/패시브 비활성
+		return
 	_handle_attacks(delta)
 	aura_circle.visible = has_death_aura
 

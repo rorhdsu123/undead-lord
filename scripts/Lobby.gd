@@ -24,7 +24,7 @@ const INTRO_LINES: Array[String] = [
 
 const FACILITIES: Array = [
 	{"id": "throne",    "label": "왕좌",
-	 "descs": ["시작 영혼 +20", "시작 영혼 +40", "시작 영혼 +60"], "costs": [5, 8, 13]},
+	 "descs": ["시작 골드 +20", "시작 골드 +40", "시작 골드 +60"], "costs": [5, 8, 13]},
 	{"id": "wall",      "label": "성벽",
 	 "descs": ["최대 HP +50", "최대 HP +100", "최대 HP +150"], "costs": [5, 8, 13]},
 	{"id": "graveyard", "label": "묘지",
@@ -32,7 +32,7 @@ const FACILITIES: Array = [
 	{"id": "arsenal",   "label": "무기고",
 	 "descs": ["공격력 +10%", "공격력 +22%", "공격력 +37%"], "costs": [6, 10, 15]},
 	{"id": "banquet",   "label": "연회장",
-	 "descs": ["영혼 획득 +20%", "영혼 획득 +40%", "영혼 획득 +60%"], "costs": [6, 10, 15]},
+	 "descs": ["골드 획득 +20%", "골드 획득 +40%", "골드 획득 +60%"], "costs": [6, 10, 15]},
 ]
 
 const CASTLE_SCALE: float = 1.0

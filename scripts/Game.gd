@@ -22,7 +22,24 @@ const MINION_TYPES = [
 	{"id": "bomber",  "label": "폭탄병", "cost": 20},
 	{"id": "tank",    "label": "탱크",  "cost": 35},
 ]
+
+# Phase C — 라이브 골드 고용 3종 (폭탄병 제외)
+# 인덱스는 MINION_TYPES 내 위치와 대응 (warrior=0, archer=1, tank=3)
+const HIRE_TYPE_INDICES: Array = [0, 1, 3]  # warrior / archer / tank
+const HIRE_START_GOLD: int = 50  # 가제 시작 골드
 var summon_btns: Array = []
+
+# RD16 — 하인 강화 시스템
+const HIRE_CAP_PER_TYPE: int = 3           # 가제: 종류별 최대 살아있는 수 (밸런싱 TBD)
+const HIRE_UPGRADE_STAT_MULT: float = 0.25 # 가제: 레벨당 HP/공격력 +25% (밸런싱 TBD)
+const HIRE_UPGRADE_COST_BASE: int = 30     # 가제: 강화 기본 비용 (Lv→Lv+1 = BASE × 현재레벨)
+# 종류별 글로벌 레벨 (런 스코프, 리셋은 씬 reload로)
+var hire_levels: Dictionary = {"warrior": 1, "archer": 1, "tank": 1}
+# 종류별 살아있는 수 추적
+var _hire_alive: Dictionary = {"warrior": 0, "archer": 0, "tank": 0}
+# 강화 팝업 노드
+var _upgrade_popup: Control = null
+var _upgrade_btn: Button = null
 
 # 게임 상태
 var current_chapter: int = 0
@@ -234,8 +251,9 @@ func _ready() -> void:
 	shop_close_btn.pressed.connect(_close_shop)
 	_build_shop_buttons()
 	_build_summon_buttons()
+	_build_upgrade_ui()
 	souls_icon = Label.new()
-	souls_icon.text = "◆"
+	souls_icon.text = "●"
 	souls_icon.add_theme_font_size_override("font_size", 16)
 	souls_icon.add_theme_color_override("font_color", Color(1.0, 0.82, 0.35))
 	souls_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -266,7 +284,21 @@ func _ready() -> void:
 	_apply_facility_bonuses()
 	if _is_tutorial():
 		souls += 30
+	# Phase C — 시작 골드 보장: 시설 보너스 반영 후 HIRE_START_GOLD 미만이면 채움
+	if souls < HIRE_START_GOLD:
+		souls = HIRE_START_GOLD
 	_update_souls_ui()
+	# Phase C — 고용 버튼 + 골드 HUD 표시
+	# summon_container: 권능 버튼(우하단)과 겹치지 않게 _layout_bottom_ui_phase_c에서 배치
+	if is_instance_valid(summon_container):
+		summon_container.visible = true
+	# minion_slot_label·slot_icon은 캡 없어졌으므로 숨김 유지
+	if is_instance_valid(souls_icon):
+		souls_icon.visible = true
+	if is_instance_valid(souls_label):
+		souls_label.visible = true
+	_layout_bottom_ui_phase_c()
+	_refresh_summon_buttons()
 	if not _is_tutorial() and randf() < 0.3:
 		get_tree().create_timer(1.5).timeout.connect(func() -> void:
 			var line: String = GAME_START_LINES[randi() % GAME_START_LINES.size()]
@@ -411,7 +443,7 @@ func _show_skeleton_gain(pos: Vector2) -> void:
 
 func _show_souls_overflow(pos: Vector2) -> void:
 	var label: Label = Label.new()
-	label.text = "영혼 +50 (해골 만랩)"
+	label.text = "골드 +50 (해골 만랩)"
 	label.add_theme_font_size_override("font_size", 22)
 	label.add_theme_color_override("font_color", Color(0.85, 0.65, 1.0, 1))
 	label.size = Vector2(260, 50)
@@ -1175,8 +1207,16 @@ func _show_shop() -> void:
 	modal_dim.visible = true
 	_refresh_shop_buttons()
 	shop_panel.visible = true
+	# Phase C: 상점(모달) 표시 중 고용 버튼 숨김 (_close_shop에서 복원)
 	summon_container.visible = false
 	minion_slot_label.visible = false
+	souls_label.visible = false
+	if is_instance_valid(souls_icon):
+		souls_icon.visible = false
+	# RD16: 상점 중 강화 버튼+팝업도 숨김
+	if is_instance_valid(_upgrade_btn):
+		_upgrade_btn.visible = false
+	_close_upgrade_popup()
 	shop_title.text = Loc.t("shop_title")
 	shop_subtitle.text = Loc.t("shop_subtitle")
 	if _is_tutorial():
@@ -1192,9 +1232,16 @@ func _close_shop() -> void:
 	shop_title.text = Loc.t("shop_title")
 	shop_panel.visible = false
 	modal_dim.visible = false
-	# Phase A4 가드: 하단 UI를 다시 보이지 않도록 유지 (복원 시 아래 주석 해제)
-	# summon_container.visible = true
-	# minion_slot_label.visible = true
+	# Phase C: 상점 닫힌 후 고용 버튼 + 골드 HUD 복원 (minion_slot_label은 캡 없어 숨김 유지)
+	if is_instance_valid(summon_container):
+		summon_container.visible = true
+	if is_instance_valid(souls_label):
+		souls_label.visible = true
+	if is_instance_valid(souls_icon):
+		souls_icon.visible = true
+	# RD16: 상점 닫힌 후 강화 버튼 복원
+	if is_instance_valid(_upgrade_btn):
+		_upgrade_btn.visible = true
 	current_wave += 1
 	start_wave()
 
@@ -1232,7 +1279,7 @@ func _refresh_shop_buttons() -> void:
 	for i in SHOP_ITEMS.size():
 		var item: Dictionary = SHOP_ITEMS[i]
 		var btn: Button = shop_btns[i]
-		btn.text = "%s  [영혼 %d]\n%s" % [item["label"], item["cost"], item["desc"]]
+		btn.text = "%s  [골드 %d]\n%s" % [item["label"], item["cost"], item["desc"]]
 		btn.disabled = souls < item["cost"]
 	shop_souls.text = Loc.t("shop_owned_souls") % souls
 
@@ -1717,26 +1764,38 @@ func _process(delta: float) -> void:
 	# Phase B — 권능 시스템 쿨다운 + UI 갱신 (Phase A 가드보다 앞에 위치)
 	if is_instance_valid(ability_system):
 		ability_system.tick(delta)
-	# Phase A4/A5 — 하단 UI 갱신 함수 및 희생 쿨다운 진행 비활성
-	# 버튼이 숨겨져 있으므로 갱신 불필요 + 죽은 노드 참조 크래시 방지
-	# 복원: 아래 early return 2줄을 제거하면 기존 갱신 루프가 살아남
-	if true:  # Phase A 가드: 하단 UI 갱신·희생 쿨 비활성
+	# Phase A4/A5 — 희생·특수기 UI 갱신 비활성 (버튼 숨김 유지)
+	# Phase C — 고용 버튼은 매 프레임 갱신 (골드·웨이브 상태 반영)
+	_refresh_summon_buttons()
+	# 아래는 Phase A 가드로 비활성 유지 (복원 시 제거)
+	if true:  # Phase A 가드: 희생 쿨·특수기 버튼 갱신 비활성
 		return
 	if sacrifice_cooldown > 0.0:
 		sacrifice_cooldown = max(0.0, sacrifice_cooldown - delta)
 	_update_attack_button()
-	_refresh_summon_buttons()
 	_update_sacrifice_button()
 
 ## Phase B — 필드 탭 감지 (2스텝 발현)
 ## GUI 버튼(권능 버튼, 취소 버튼 등) 탭은 _unhandled_input에 도달하지 않으므로 안전
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_instance_valid(ability_system):
-		return
+	var tap_pos: Vector2 = Vector2.ZERO
+	var is_tap: bool = false
 	if event is InputEventScreenTouch and event.is_pressed():
-		ability_system.on_field_tap(event.position)
+		tap_pos = event.position
+		is_tap = true
 	elif event is InputEventMouseButton and event.is_pressed() and event.button_index == MOUSE_BUTTON_LEFT:
-		ability_system.on_field_tap(event.position)
+		tap_pos = event.position
+		is_tap = true
+	if is_tap:
+		# RD16 — 팝업 밖 탭 시 팝업 닫기
+		if is_instance_valid(_upgrade_popup) and _upgrade_popup.visible:
+			var popup_rect: Rect2 = Rect2(_upgrade_popup.global_position, _upgrade_popup.size)
+			var btn_rect: Rect2 = Rect2(_upgrade_btn.global_position, _upgrade_btn.size) if is_instance_valid(_upgrade_btn) else Rect2()
+			if not popup_rect.has_point(tap_pos) and not btn_rect.has_point(tap_pos):
+				_close_upgrade_popup()
+				return
+		if is_instance_valid(ability_system):
+			ability_system.on_field_tap(tap_pos)
 
 func _on_attack_pressed() -> void:
 	if not wave_active:
@@ -1867,15 +1926,17 @@ func _update_souls_ui() -> void:
 	if _souls_roll_tween and _souls_roll_tween.is_valid():
 		_souls_roll_tween.kill()
 	if _souls_shown == souls:
-		souls_label.text = "영혼: %d" % souls
+		souls_label.text = "골드: %d" % souls
 	else:
 		_souls_roll_tween = create_tween()
 		_souls_roll_tween.tween_method(_set_souls_display, _souls_shown, souls, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	_bump_souls_label()
+	# RD16 — 골드 변동 시 팝업 버튼 활성 상태 갱신
+	_refresh_upgrade_popup()
 
 func _set_souls_display(v: float) -> void:
 	_souls_shown = int(round(v))
-	souls_label.text = "영혼: %d" % _souls_shown
+	souls_label.text = "골드: %d" % _souls_shown
 
 func _bump_souls_label() -> void:
 	if _souls_bump_tween and _souls_bump_tween.is_valid():
@@ -1887,16 +1948,173 @@ func _bump_souls_label() -> void:
 	_souls_bump_tween.tween_property(souls_label, "scale", Vector2.ONE, 0.10).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 func _build_summon_buttons() -> void:
-	for i in MINION_TYPES.size():
+	# Phase C — 3종만 생성 (HIRE_TYPE_INDICES: warrior/archer/tank, 폭탄병 제외)
+	# summon_btns[j] 는 HIRE_TYPE_INDICES[j] 번째 MINION_TYPES 항목에 대응
+	for j in HIRE_TYPE_INDICES.size():
 		var btn: Button = Button.new()
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		btn.add_theme_font_size_override("font_size", 16)
-		var idx: int = i
-		btn.pressed.connect(func(): _on_summon_pressed(idx))
+		var type_idx: int = HIRE_TYPE_INDICES[j]
+		btn.pressed.connect(func(): _on_summon_pressed(type_idx))
 		summon_container.add_child(btn)
 		summon_btns.append(btn)
+
+## RD16 — 강화 버튼 + 미니 팝업 빌드
+func _build_upgrade_ui() -> void:
+	# 강화 버튼 — summon_container의 부모(UI 레이어)에 붙임
+	var parent: Node = summon_container.get_parent()
+	_upgrade_btn = Button.new()
+	_upgrade_btn.focus_mode = Control.FOCUS_NONE
+	_upgrade_btn.text = Loc.t("upgrade_btn_label")
+	_upgrade_btn.add_theme_font_size_override("font_size", 16)
+	_upgrade_btn.pressed.connect(_toggle_upgrade_popup)
+	parent.add_child(_upgrade_btn)
+
+	# 팝업 컨테이너 — 전투 정지 없음, 작은 오버레이
+	_upgrade_popup = PanelContainer.new()
+	_upgrade_popup.visible = false
+	_upgrade_popup.mouse_filter = Control.MOUSE_FILTER_STOP
+	parent.add_child(_upgrade_popup)
+
+	var vbox: VBoxContainer = VBoxContainer.new()
+	_upgrade_popup.add_child(vbox)
+
+	# 팝업 헤더 (제목 + 닫기)
+	var hdr: HBoxContainer = HBoxContainer.new()
+	vbox.add_child(hdr)
+	var title_lbl: Label = Label.new()
+	title_lbl.text = Loc.t("upgrade_popup_title")
+	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_lbl.add_theme_font_size_override("font_size", 14)
+	hdr.add_child(title_lbl)
+	var close_btn: Button = Button.new()
+	close_btn.text = "✕"
+	close_btn.focus_mode = Control.FOCUS_NONE
+	close_btn.add_theme_font_size_override("font_size", 14)
+	close_btn.pressed.connect(_close_upgrade_popup)
+	hdr.add_child(close_btn)
+
+	# 카드 행 — 탱크/전사/궁수 가로 배치
+	var card_row: HBoxContainer = HBoxContainer.new()
+	card_row.add_theme_constant_override("separation", 6)
+	vbox.add_child(card_row)
+
+	# HIRE_TYPE_INDICES 순서: warrior(0)/archer(1)/tank(3) → Loc 키 매핑
+	var type_loc_keys: Dictionary = {
+		"warrior": "upgrade_minion_warrior",
+		"archer":  "upgrade_minion_archer",
+		"tank":    "upgrade_minion_tank",
+	}
+	# 표시 순서: tank / warrior / archer (기획서 명시 순)
+	var display_order: Array = ["tank", "warrior", "archer"]
+	for type_id in display_order:
+		var card: VBoxContainer = VBoxContainer.new()
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.add_theme_constant_override("separation", 4)
+		card_row.add_child(card)
+
+		var name_lbl: Label = Label.new()
+		name_lbl.text = Loc.t(type_loc_keys[type_id])
+		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name_lbl.add_theme_font_size_override("font_size", 13)
+		card.add_child(name_lbl)
+
+		var lv_lbl: Label = Label.new()
+		lv_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lv_lbl.add_theme_font_size_override("font_size", 13)
+		lv_lbl.name = "LvLabel_" + type_id
+		card.add_child(lv_lbl)
+
+		var upg_btn: Button = Button.new()
+		upg_btn.focus_mode = Control.FOCUS_NONE
+		upg_btn.add_theme_font_size_override("font_size", 12)
+		upg_btn.name = "UpgBtn_" + type_id
+		upg_btn.pressed.connect(func(): _on_upgrade_pressed(type_id))
+		card.add_child(upg_btn)
+
+	_refresh_upgrade_popup()
+
+func _toggle_upgrade_popup() -> void:
+	if not is_instance_valid(_upgrade_popup):
+		return
+	if _upgrade_popup.visible:
+		_close_upgrade_popup()
+	else:
+		_open_upgrade_popup()
+
+func _open_upgrade_popup() -> void:
+	if not is_instance_valid(_upgrade_popup):
+		return
+	_refresh_upgrade_popup()
+	_upgrade_popup.visible = true
+	# 팝업 위치: 강화 버튼 바로 위, 좌측 정렬
+	var vp: Vector2 = get_viewport_rect().size
+	var popup_w: float = 260.0
+	var popup_h: float = 120.0
+	_upgrade_popup.size = Vector2(popup_w, popup_h)
+	if is_instance_valid(_upgrade_btn):
+		_upgrade_popup.position = Vector2(
+			_upgrade_btn.position.x,
+			_upgrade_btn.position.y - popup_h - 6.0
+		)
+	else:
+		_upgrade_popup.position = Vector2(10.0, vp.y - 300.0)
+
+func _close_upgrade_popup() -> void:
+	if is_instance_valid(_upgrade_popup):
+		_upgrade_popup.visible = false
+
+func _refresh_upgrade_popup() -> void:
+	if not is_instance_valid(_upgrade_popup):
+		return
+	for type_id in ["tank", "warrior", "archer"]:
+		var lv: int = hire_levels.get(type_id, 1)
+		var cost: int = HIRE_UPGRADE_COST_BASE * lv
+		var lv_lbl: Label = _upgrade_popup.find_child("LvLabel_" + type_id, true, false)
+		if is_instance_valid(lv_lbl):
+			lv_lbl.text = Loc.t("upgrade_card_lv") % lv
+		var upg_btn: Button = _upgrade_popup.find_child("UpgBtn_" + type_id, true, false)
+		if is_instance_valid(upg_btn):
+			upg_btn.text = Loc.t("upgrade_card_btn") % cost
+			upg_btn.disabled = souls < cost
+
+func _on_upgrade_pressed(type_id: String) -> void:
+	if not type_id in hire_levels:
+		return
+	var lv: int = hire_levels[type_id]
+	var cost: int = HIRE_UPGRADE_COST_BASE * lv
+	if souls < cost:
+		return
+	souls -= cost
+	_update_souls_ui()
+	hire_levels[type_id] = lv + 1
+	# 현재 살아있는 그 종 유닛 전부 스탯 즉시 갱신
+	_apply_upgrade_to_alive_minions(type_id, lv + 1)
+	_refresh_upgrade_popup()
+
+func _apply_upgrade_to_alive_minions(type_id: String, new_lv: int) -> void:
+	# 강화 시 현재 살아있는 그 종 유닛 level↑ + 스탯 재계산
+	var new_scale: float = 1.0 + HIRE_UPGRADE_STAT_MULT * (new_lv - 1)
+	for m in minions_node.get_children():
+		if not is_instance_valid(m):
+			continue
+		if m.get("minion_type") != type_id:
+			continue
+		m.level = new_lv
+		# base_damage/base_max_hp는 프리셋 × 카드보너스 기준으로 재계산
+		var preset: Dictionary = m.TYPE_PRESETS.get(type_id, {})
+		if preset.is_empty():
+			continue
+		var base_dmg: float = preset["damage"] * minion_attack_bonus * keystone_minion_atk_mult
+		var base_hp: float = preset["hp"] * minion_hp_bonus
+		m.base_damage = base_dmg * new_scale
+		m.attack_damage = m.base_damage
+		m.base_max_hp = base_hp * new_scale
+		var old_ratio: float = m.hp / m.max_hp if m.max_hp > 0.0 else 1.0
+		m.max_hp = m.base_max_hp
+		m.hp = m.max_hp * old_ratio
 
 func _hide_bottom_ui_phase_a() -> void:
 	# Phase A4 — 하단 전투 UI 전체 숨김
@@ -1954,43 +2172,93 @@ func _layout_bottom_ui() -> void:
 	slot_icon.size = Vector2(icon_w, lbl_h)
 	slot_icon.position.y = minion_slot_label.position.y
 
+func _layout_bottom_ui_phase_c() -> void:
+	# Phase C — 고용 버튼(summon_container) + 골드 HUD 배치
+	# 권능 버튼은 AbilitySystem이 우하단(~x280~460, y~820~870)에 배치.
+	# 고용 버튼은 화면 좌측(x10~270)에 하단 배치 → 겹침 없음.
+	# 골드 HUD(souls_icon + souls_label)는 고용 버튼 바로 위.
+	# RD16 — 강화 버튼은 골드 HUD 바로 위(고용 버튼 위 2행), 같은 좌측 영역.
+	var vp: Vector2 = get_viewport_rect().size
+	var mx: float = 10.0
+	var sum_w: float = 260.0  # 좌측 절반 이하 — 권능 버튼(x≈280~) 와 여유 있게 분리
+	var sum_h: float = 52.0
+	var lbl_h: float = 22.0
+	var bottom_margin: float = 20.0
+	var icon_w: float = 18.0
+	var icon_gap: float = 4.0
+	var upgrade_h: float = 36.0
+
+	var sum_y: float = vp.y - bottom_margin - sum_h
+	summon_container.position = Vector2(mx, sum_y)
+	summon_container.size = Vector2(sum_w, sum_h)
+
+	var gold_y: float = sum_y - 4.0 - lbl_h
+	souls_icon.position = Vector2(mx, gold_y)
+	souls_icon.size = Vector2(icon_w, lbl_h)
+	souls_label.position = Vector2(mx + icon_w + icon_gap, gold_y)
+	souls_label.size = Vector2(sum_w - icon_w - icon_gap, lbl_h)
+	souls_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	souls_label.add_theme_font_size_override("font_size", 16)
+
+	# RD16 — 강화 버튼 위치: 골드 HUD 바로 위
+	if is_instance_valid(_upgrade_btn):
+		var upg_y: float = gold_y - 4.0 - upgrade_h
+		_upgrade_btn.position = Vector2(mx, upg_y)
+		_upgrade_btn.size = Vector2(sum_w, upgrade_h)
+
 func _refresh_summon_buttons() -> void:
-	var slot_full: bool = active_minions >= max_minions
-	minion_slot_label.text = "%d/%d" % [active_minions, max_minions]
-	var slot_col: Color = Color(1.0, 0.5, 0.5) if slot_full else Color(0.85, 1.0, 0.85)
-	minion_slot_label.add_theme_color_override("font_color", slot_col)
-	if is_instance_valid(slot_icon):
-		slot_icon.add_theme_color_override("font_color", slot_col)
-		slot_icon.visible = minion_slot_label.visible
-		var f: Font = minion_slot_label.get_theme_font("font")
-		var fs: int = minion_slot_label.get_theme_font_size("font")
-		var tw: float = f.get_string_size(minion_slot_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		var num_left: float = minion_slot_label.position.x + minion_slot_label.size.x - tw
-		slot_icon.position.x = num_left - 4.0 - slot_icon.size.x
+	# Phase C — minion_slot_label 숨김 유지 (캡 없어짐)
+	# slot_icon도 숨김 유지
+	# souls_icon은 souls_label visibility를 따름
 	if is_instance_valid(souls_icon):
 		souls_icon.visible = souls_label.visible
+
+	# C4: 특수(상점) 웨이브 판정
+	var wave_is_combat: bool = true
+	if current_wave < WaveData.stage_wave_count(current_chapter, current_stage):
+		var wdata: Dictionary = WaveData.get_wave(current_chapter, current_stage, current_wave)
+		if wdata.get("type", "normal") == "shop":
+			wave_is_combat = false
+
 	var is_tut: bool = _is_tutorial()
-	for i in MINION_TYPES.size():
-		var entry: Dictionary = MINION_TYPES[i]
+	# summon_btns[j] → HIRE_TYPE_INDICES[j]
+	for j in HIRE_TYPE_INDICES.size():
+		var type_idx: int = HIRE_TYPE_INDICES[j]
+		var entry: Dictionary = MINION_TYPES[type_idx]
 		var cost: int = max(5, entry["cost"] - minion_cost_reduction)
-		var btn: Button = summon_btns[i]
-		if is_tut and (current_wave < 1 or i > 0):
+		var btn: Button = summon_btns[j]
+		# RD16 — 종류별 캡 체크
+		var type_id: String = entry["id"]
+		var alive_count: int = _hire_alive.get(type_id, 0)
+		var at_cap: bool = alive_count >= HIRE_CAP_PER_TYPE
+		if is_tut and (current_wave < 1 or j > 0):
 			btn.text = "%s (잠금)" % [entry["label"]]
 			btn.disabled = true
+		elif at_cap:
+			btn.text = "%s\n최대(%d)" % [entry["label"], HIRE_CAP_PER_TYPE]
+			btn.disabled = true
 		else:
-			btn.text = "%s\n%d 영혼" % [entry["label"], cost]
-			btn.disabled = (not wave_active) or slot_full or souls < cost
+			btn.text = "%s\n%d 골드" % [entry["label"], cost]
+			# C2/C4: 골드 게이팅 + 비전투 웨이브 비활성. RD16: 종류별 캡 추가.
+			btn.disabled = (not wave_active) or (not wave_is_combat) or souls < cost
 
 func _on_summon_pressed(index: int) -> void:
+	# Phase C — 고용 가능 조건: wave_active + 비특수(비상점) 웨이브 + 골드만 게이팅
+	# RD16: 종류별 캡(HIRE_CAP_PER_TYPE) 추가
 	if not wave_active:
 		return
-	if _is_tutorial() and (current_wave < 1 or index > 0):
+	var wave_data: Dictionary = WaveData.get_wave(current_chapter, current_stage, current_wave)
+	if wave_data.get("type", "normal") == "shop":
 		return
-	if active_minions >= max_minions:
+	if _is_tutorial() and (current_wave < 1 or index > 0):
 		return
 	var entry: Dictionary = MINION_TYPES[index]
 	var cost: int = max(5, entry["cost"] - minion_cost_reduction)
 	if souls < cost:
+		return
+	# RD16 — 종류별 캡 초과 시 거부
+	var type_id: String = entry["id"]
+	if _hire_alive.get(type_id, 0) >= HIRE_CAP_PER_TYPE:
 		return
 	souls -= cost
 	_update_souls_ui()
@@ -2012,11 +2280,25 @@ func _spawn_minion(type_id: String) -> void:
 	m.hp = m.max_hp
 	m.attack_range += minion_range_bonus
 	m.lifesteal = minion_lifesteal
+	# RD16 — 종류별 글로벌 레벨 스탯 스케일 적용
+	if type_id in hire_levels:
+		var lv: int = hire_levels[type_id]
+		m.level = lv
+		var scale_mult: float = 1.0 + HIRE_UPGRADE_STAT_MULT * (lv - 1)
+		m.base_damage *= scale_mult
+		m.attack_damage = m.base_damage
+		m.base_max_hp *= scale_mult
+		m.max_hp = m.base_max_hp
+		m.hp = m.max_hp
+		_hire_alive[type_id] = _hire_alive.get(type_id, 0) + 1
 	active_minions += 1
 	spawn_summon_effect(m.position)
 
 func minion_died(pos = null, type_id: String = "") -> void:
 	active_minions = max(0, active_minions - 1)
+	# RD16 — 종류별 살아있는 수 감소 (hire_levels는 유지 — 레벨은 죽어도 안 날아감)
+	if type_id in _hire_alive:
+		_hire_alive[type_id] = max(0, _hire_alive.get(type_id, 0) - 1)
 	if pos == null:
 		return
 	# 죽음의 메아리: 사망 폭발
@@ -2025,10 +2307,8 @@ func minion_died(pos = null, type_id: String = "") -> void:
 			if is_instance_valid(e) and e.position.distance_to(pos) <= KEYSTONE_ECHO_RADIUS:
 				e.take_damage(keystone_echo_dmg)
 		_spawn_echo_effect(pos)
-	# 영원한 군세: 재소환
-	if keystone_revive_chance > 0.0 and type_id != "" and active_minions < max_minions:
-		if randf() < keystone_revive_chance:
-			_spawn_minion(type_id)
+	# Phase C — 영구사망: 자동 재소환/리필 분기 없음 (재고용은 유저가 버튼으로)
+	# keystone_revive_chance 분기 비활성 (키스톤 비활성 상태이므로 자연히 0.0이나 명시적으로 막음)
 
 func _spawn_echo_effect(pos: Vector2) -> void:
 	var n: Node2D = Node2D.new()
@@ -2323,7 +2603,7 @@ func _show_card_guide() -> void:
 
 func _show_shop_guide() -> void:
 	# 타이틀을 튜토리얼 안내 문구로 교체 (부제에 힌트 표시)
-	shop_subtitle.text = "영혼으로 강화하고 '다음 웨이브'를 누르세요"
+	shop_subtitle.text = "골드로 강화하고 '다음 웨이브'를 누르세요"
 
 	# 닫기 버튼 노란 펄스 글로우
 	if _shop_btn_pulse_tween and _shop_btn_pulse_tween.is_valid():

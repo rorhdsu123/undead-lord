@@ -13,9 +13,9 @@ static var _strings: Dictionary = {
 	"card_select_subtitle": "카드 1장 선택",
 
 	# 상점 오버레이
-	"shop_title":    "영혼 상점",
+	"shop_title":    "골드 상점",
 	"shop_subtitle": "다음 웨이브 전, 전력을 보강하세요",
-	"shop_owned_souls": "보유 영혼  ◆ %d",
+	"shop_owned_souls": "보유 골드  ● %d",
 
 	# 카드 이름/설명
 	"card_arsenal":       "무기고\n[영주] 공격력 +20%",
@@ -27,7 +27,7 @@ static var _strings: Dictionary = {
 	"card_range_all":     "어둠의 확장\n[영주] 전 범위 +25%",
 	"card_minion_attack": "언데드 강화\n[군단] 하인 공격력 +20%",
 	"card_minion_count":  "군세 확장\n[군단] 최대 소환 수 +1",
-	"card_summon_speed":      "어둠의 효율\n[군단] 소환 비용 -5 영혼",
+	"card_summon_speed":      "어둠의 효율\n[군단] 소환 비용 -5 골드",
 	"card_minion_hp":         "강철 골수\n[군단] 하인 최대 HP +25%",
 	"card_minion_range":      "뻗는 손아귀\n[군단] 하인 공격 사거리 +40",
 	"card_minion_lifesteal":  "피의 갈증\n[군단] 하인 공격의 20% 흡혈",
@@ -38,7 +38,7 @@ static var _strings: Dictionary = {
 	"card_legion":        "언데드 군단\n소환 슬롯 +2. [군단] 카드를 모을수록 하인이 강해진다",
 	"card_berserker":     "광전사\n공격 속도 +50%. [영주] 카드를 모을수록 공격이 강해진다",
 	"card_cataclysm":     "재앙의 권화\n모든 범위 +40%. [영주] 카드를 모을수록 위력이 커진다",
-	"card_doom":          "파멸의 일격\n특수기 영혼 비용 −30%. [영주] 카드를 모을수록 특수기가 강해진다",
+	"card_doom":          "파멸의 일격\n특수기 골드 비용 −30%. [영주] 카드를 모을수록 특수기가 강해진다",
 	"card_horde":         "영원한 군세\n하인 사망 시 재소환. [군단] 카드를 모을수록 부활이 강해진다",
 	"card_echo":          "죽음의 메아리\n하인이 죽으면 폭발. [군단] 카드를 모을수록 폭발이 강해진다",
 	"card_ritual":        "제물의 의식\n하인을 희생하면 같은 하인을 즉시 무료로 다시 소환한다. [군단] 카드를 모을수록 희생 폭발이 강해진다",
@@ -73,9 +73,19 @@ static var _strings: Dictionary = {
 	# ── 교리(Doctrine) — 카테고리 이름 ───────────────────────
 	"doctrine_category_death":  "죽음의 율법",
 	"doctrine_category_war":    "전쟁의 율법",
-	"doctrine_category_soul":   "영혼의 율법",
+	"doctrine_category_soul":   "골드의 율법",
 	"doctrine_category_minion": "부하의 율법",
 	"doctrine_category_rule":   "지배의 율법",
+
+	# ── RD16 하인 강화 시스템 ────────────────────────────────────
+	"upgrade_btn_label":      "강화",
+	"upgrade_popup_title":    "하인 강화",
+	"upgrade_card_lv":        "Lv.%d",
+	"upgrade_card_btn":       "강화 %d골드",
+	"upgrade_card_btn_broke": "강화 %d골드",
+	"upgrade_minion_warrior": "전사",
+	"upgrade_minion_archer":  "궁수",
+	"upgrade_minion_tank":    "탱크",
 
 	# ── 권능(유물) 버튼 텍스트 ─────────────────────────────────
 	"ability_lightning_name":  "낙뢰의 홀",
@@ -100,10 +110,10 @@ static var _strings: Dictionary = {
 	"doctrine_war_B_desc":    "영주 기본공격이 방향성을 가짐",
 
 	# 영혼의 율법
-	"doctrine_soul_A_name":   "영혼 비축",
-	"doctrine_soul_A_desc":   "미사용 영혼 일부 메타 이월",
-	"doctrine_soul_B_name":   "영혼 폭주",
-	"doctrine_soul_B_desc":   "특수기 후 5초 영혼 드롭 ×2",
+	"doctrine_soul_A_name":   "골드 비축",
+	"doctrine_soul_A_desc":   "미사용 골드 일부 메타 이월",
+	"doctrine_soul_B_name":   "골드 폭주",
+	"doctrine_soul_B_desc":   "특수기 후 5초 골드 드롭 ×2",
 
 	# 부하의 율법
 	"doctrine_minion_A_name": "명예",

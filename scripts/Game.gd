@@ -214,6 +214,10 @@ var slot_icon: Label = null
 var _shop_btn_pulse_tween: Tween = null
 var _card_rows: Array = []
 
+# ── Phase B — 권능 시스템 ─────────────────────────────────────
+const AbilitySystemScript = preload("res://scripts/AbilitySystem.gd")
+var ability_system: Node = null
+
 func _ready() -> void:
 	available_skill_cards = SKILL_CARDS.duplicate()
 	card_title.text = Loc.t("card_select_title")
@@ -268,6 +272,10 @@ func _ready() -> void:
 			var line: String = GAME_START_LINES[randi() % GAME_START_LINES.size()]
 			show_dialogue(line, Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
 		)
+	# Phase B — 권능 시스템 초기화
+	ability_system = AbilitySystemScript.new()
+	add_child(ability_system)
+	ability_system.setup(self)
 	start_wave()
 
 func start_wave() -> void:
@@ -1706,6 +1714,9 @@ func _fade_to_scene(path: String) -> void:
 	)
 
 func _process(delta: float) -> void:
+	# Phase B — 권능 시스템 쿨다운 + UI 갱신 (Phase A 가드보다 앞에 위치)
+	if is_instance_valid(ability_system):
+		ability_system.tick(delta)
 	# Phase A4/A5 — 하단 UI 갱신 함수 및 희생 쿨다운 진행 비활성
 	# 버튼이 숨겨져 있으므로 갱신 불필요 + 죽은 노드 참조 크래시 방지
 	# 복원: 아래 early return 2줄을 제거하면 기존 갱신 루프가 살아남
@@ -1716,6 +1727,16 @@ func _process(delta: float) -> void:
 	_update_attack_button()
 	_refresh_summon_buttons()
 	_update_sacrifice_button()
+
+## Phase B — 필드 탭 감지 (2스텝 발현)
+## GUI 버튼(권능 버튼, 취소 버튼 등) 탭은 _unhandled_input에 도달하지 않으므로 안전
+func _unhandled_input(event: InputEvent) -> void:
+	if not is_instance_valid(ability_system):
+		return
+	if event is InputEventScreenTouch and event.is_pressed():
+		ability_system.on_field_tap(event.position)
+	elif event is InputEventMouseButton and event.is_pressed() and event.button_index == MOUSE_BUTTON_LEFT:
+		ability_system.on_field_tap(event.position)
 
 func _on_attack_pressed() -> void:
 	if not wave_active:

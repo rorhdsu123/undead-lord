@@ -77,6 +77,15 @@ static var _strings: Dictionary = {
 	"doctrine_category_minion": "부하의 율법",
 	"doctrine_category_rule":   "지배의 율법",
 
+	# ── 권능(유물) 버튼 텍스트 ─────────────────────────────────
+	"ability_lightning_name":  "낙뢰의 홀",
+	"ability_lightning_cool":  "준비 중 (%ds)",
+	"ability_lightning_desc":  "탭한 곳에 벼락을 내린다.",
+	"ability_trumpet_name":    "망령의 나팔",
+	"ability_trumpet_cool":    "준비 중 (%ds)",
+	"ability_trumpet_desc":    "탭한 곳의 적을 위로 밀어낸다.",
+	"ability_cancel":          "✕",
+
 	# ── 교리 — 선택지 이름 + 설명 ────────────────────────────
 	# 죽음의 율법
 	"doctrine_death_A_name":  "처형",

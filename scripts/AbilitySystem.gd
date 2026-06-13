@@ -65,6 +65,12 @@ const BORDER_COOL_COLOR: Color    = Color(0.28, 0.26, 0.35, 0.80)  # 쿨 중 어
 ## 준비 완료 깜빡임 (플레이테스트 조정 대상)
 const FLASH_DURATION: float       = 0.28   # 1회 깜빡임 지속 시간 (초)
 
+## 준비 완료 외곽 글로우 맥동 (플레이테스트 조정 대상)
+const GLOW_BASE_ALPHA: float      = 0.25   # 맥동 기저 알파
+const GLOW_AMP: float             = 0.20   # 맥동 진폭
+const GLOW_SPEED: float           = 2.8    # 라디안/초, 약 2.2초 주기
+const GLOW_COLOR: Color           = Color(1.0, 1.0, 1.0, 1.0)  # 흰색(alpha는 런타임 계산)
+
 ## 취소 배지
 const BADGE_RADIUS: float     = 11.0   # 빨간 배지 반경
 const BADGE_COLOR: Color      = Color(0.85, 0.12, 0.10, 1.0)
@@ -142,6 +148,8 @@ class AbilityButtonDrawer extends Control:
 
 	## 준비 완료 1회 깜빡임 타이머 (>0이면 flash 진행 중)
 	var flash_timer: float = 0.0
+	## 준비 완료 상태 누산 시간 — 맥동 글로우 위상 계산에 사용
+	var ready_time: float = 0.0
 
 	## flash 시작 — AbilitySystem.tick()이 쿨 전이 감지 시 호출
 	func start_flash() -> void:
@@ -150,11 +158,20 @@ class AbilityButtonDrawer extends Control:
 		queue_redraw()
 
 	func _process(delta: float) -> void:
+		# 준비 완료 맥동: armed/cooldown 아닐 때 누산
+		var is_ready: bool = not is_armed and not on_cooldown
+		if is_ready:
+			ready_time += delta
+		else:
+			ready_time = 0.0  # 비준비 진입 시 위상 초기화
+		# flash 타이머 감소
 		if flash_timer > 0.0:
 			flash_timer = max(0.0, flash_timer - delta)
-			queue_redraw()
-			if flash_timer <= 0.0:
-				set_process(false)
+		# 준비 완료거나 flash 중이면 process 유지, 둘 다 아니면 끄기
+		if not is_ready and flash_timer <= 0.0:
+			set_process(false)
+			return
+		queue_redraw()
 
 	func _draw() -> void:
 		var r: float = AbilitySystem.BTN_RADIUS
@@ -206,7 +223,18 @@ class AbilityButtonDrawer extends Control:
 			if charge > 0.0:
 				_draw_ring(c, ring_r, ring_w, AbilitySystem.RING_CHARGE_COLOR, -PI * 0.5, TAU * charge)
 		else:
-			# 준비 완료: 흰색 링 전체
+			# 준비 완료: 외곽 맥동 글로우 (링 바깥, 링보다 먼저 그려서 링이 위에 오도록)
+			var glow_alpha: float = AbilitySystem.GLOW_BASE_ALPHA \
+				+ AbilitySystem.GLOW_AMP * sin(ready_time * AbilitySystem.GLOW_SPEED)
+			var gc: Color = AbilitySystem.GLOW_COLOR
+			gc.a = glow_alpha
+			# 안쪽 글로우 (ring_r + 1.5, 약간 진하게)
+			_draw_ring(c, ring_r + 1.5, ring_w, gc, 0.0, TAU)
+			# 바깥 글로우 (ring_r + 3, 더 옅게)
+			var gc_outer: Color = gc
+			gc_outer.a = glow_alpha * 0.5
+			_draw_ring(c, ring_r + 3.0, max(1, ring_w - 2), gc_outer, 0.0, TAU)
+			# 흰색 링 전체 (글로우 위에 올라와 선명하게)
 			_draw_ring(c, ring_r, ring_w, AbilitySystem.RING_READY_COLOR, 0.0, TAU)
 
 		# ── 4. 준비 완료 깜빡임 오버레이 (flash_timer > 0) ────
@@ -604,6 +632,9 @@ func _refresh_ui() -> void:
 		drawer.cool_ratio = (cd / total_cd) if on_cd else 0.0
 		drawer.is_armed = is_armed
 		drawer.on_cooldown = on_cd
+		# 준비 완료 상태 진입 시 process 켜기 (맥동 글로우 구동)
+		if not is_armed and not on_cd:
+			drawer.set_process(true)
 		drawer.queue_redraw()
 
 		# 무장 시 나팔의 reach 원 표시

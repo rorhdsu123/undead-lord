@@ -18,6 +18,10 @@ const BASE_SPRITE_SCALE: float = 0.246
 const MINION_ENGAGE_RANGE: float = 100.0
 const KNOCKBACK_DECAY: float = 700.0
 const CASTLE_HALF: float = 80.0  # CastleSprite.S 와 일치
+# 적 활동 범위 — 화면 480×960 세로. 상한=스폰선(HUD ~y142 아래), 하한=성 아래 여유.
+# 나팔 넉백이 적을 화면 밖으로 날려보내 "안 보이는 적이 성을 때리는" 버그 방지.
+const PLAY_BOUNDS: Rect2 = Rect2(0.0, 150.0, 480.0, 750.0)  # x:0~480, y:150~900
+const MAX_KNOCKBACK: float = 600.0  # 넉백 속도 상한 (px/s) — 나팔 연타 누적 폭주 방지
 
 static var _cached_frames: Dictionary = {}
 
@@ -35,6 +39,7 @@ var _sprite_base_scale: Vector2 = Vector2.ONE
 var enemy_type: String = "normal"
 var _attack_anim: String = "slash"
 var _anim_state: String = ""
+var _last_valid_pos: Vector2 = Vector2.ZERO  # move_and_slide NaN 복구용 (겹친 바디 충돌 해소 가드)
 
 var game = null
 
@@ -116,6 +121,9 @@ func _physics_process(delta: float) -> void:
 	if _anim_state == "die":
 		return
 
+	# 직전 유효 위치 기록 (move_and_slide NaN 복구 기준점)
+	_last_valid_pos = global_position
+
 	# 넉백: 직접 위치 이동 + 선형 감쇠 (이동 로직과 독립적으로 누적)
 	if knockback_vel.length_squared() > 1.0:
 		global_position += knockback_vel * delta
@@ -161,6 +169,15 @@ func _physics_process(delta: float) -> void:
 		anim_sprite.flip_h = dir.x < 0
 		if _anim_state not in ["hurt"]:
 			_play_anim("walk")
+	# move_and_slide/넉백이 완전히 겹친 바디의 충돌 해소 중 NaN을 낼 수 있음(0 길이 법선 나눗셈).
+	# NaN 좌표는 렌더 불가 → "안 보이는데 성 때리는 적 + 웨이브 소프트락"의 원인. 직전 유효 위치로 복구.
+	if not is_finite(global_position.x) or not is_finite(global_position.y):
+		global_position = _last_valid_pos
+		velocity = Vector2.ZERO
+		knockback_vel = Vector2.ZERO
+	# 화면 밖 이탈 방지 (넉백·밀림으로 안 보이는 곳으로 새지 않게)
+	global_position.x = clamp(global_position.x, PLAY_BOUNDS.position.x, PLAY_BOUNDS.end.x)
+	global_position.y = clamp(global_position.y, PLAY_BOUNDS.position.y, PLAY_BOUNDS.end.y)
 
 func _do_attack(minion_target) -> void:
 	_play_anim("attack")
@@ -174,6 +191,9 @@ func _find_nearby_minion():
 	var nearest_dist: float = INF
 	for m in get_tree().get_nodes_in_group("minions"):
 		if not is_instance_valid(m):
+			continue
+		# 궁수(ranged)는 어그로를 끌지 않음 — 적이 궁수에게 멈추지 않고 성으로 진행
+		if m.get("behavior") == "ranged":
 			continue
 		var d: float = global_position.distance_to(m.global_position)
 		if d < MINION_ENGAGE_RANGE and d < nearest_dist:
@@ -199,6 +219,7 @@ func apply_knockback(from_pos: Vector2, force: float) -> void:
 	if dir.length_squared() < 0.01:
 		dir = Vector2.UP
 	knockback_vel += dir.normalized() * (force / sqrt(max(knockback_resist, 0.1)))
+	knockback_vel = knockback_vel.limit_length(MAX_KNOCKBACK)
 
 func _hit_flash() -> void:
 	anim_sprite.modulate = Color(1.5, 0.4, 0.4, 1.0)

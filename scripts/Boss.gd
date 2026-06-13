@@ -392,7 +392,7 @@ func _spawn_stun_stars() -> Node2D:
 	container.add_child(star_label)
 
 	# 좌우 흔들림 루프 tween
-	var tween: Tween = create_tween().set_loops()
+	var tween: Tween = create_tween().set_loops().set_ignore_time_scale(true)
 	tween.tween_property(container, "position:x", 6.0, 0.18)
 	tween.tween_property(container, "position:x", -6.0, 0.18)
 	tween.tween_property(container, "position:x", 0.0, 0.14)

@@ -2608,7 +2608,7 @@ func _show_shop_guide() -> void:
 	# 닫기 버튼 노란 펄스 글로우
 	if _shop_btn_pulse_tween and _shop_btn_pulse_tween.is_valid():
 		_shop_btn_pulse_tween.kill()
-	_shop_btn_pulse_tween = create_tween().set_loops()
+	_shop_btn_pulse_tween = create_tween().set_loops().set_ignore_time_scale(true)
 	_shop_btn_pulse_tween.tween_property(shop_close_btn, "modulate", Color(1.6, 1.35, 0.5, 1), 0.5)
 	_shop_btn_pulse_tween.tween_property(shop_close_btn, "modulate", Color(1.0, 1.0, 1.0, 1), 0.5)
 
@@ -2656,7 +2656,7 @@ func show_tutorial_tip(message: String, target: Control, duration: float = 4.0) 
 	msg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_guide_layer.add_child(msg)
 
-	_guide_tween = create_tween().set_loops()
+	_guide_tween = create_tween().set_loops().set_ignore_time_scale(true)
 	_guide_tween.tween_property(arrow, "position:y", arrow_base_y + 8, 0.4)
 	_guide_tween.tween_property(arrow, "position:y", arrow_base_y, 0.4)
 
@@ -2742,7 +2742,7 @@ func show_guide(message: String, targets: Array) -> void:
 	msg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_guide_layer.add_child(msg)
 
-	_guide_tween = create_tween().set_loops()
+	_guide_tween = create_tween().set_loops().set_ignore_time_scale(true)
 	_guide_tween.tween_property(arrow, "position:y", arrow_base_y + 10, 0.45)
 	_guide_tween.tween_property(arrow, "position:y", arrow_base_y, 0.45)
 
@@ -2768,4 +2768,3 @@ func _close_guide() -> void:
 	if _freeze_for_special_tip:
 		_freeze_for_special_tip = false
 		_set_battle_freeze(false)
-

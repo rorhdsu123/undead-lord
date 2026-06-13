@@ -27,6 +27,25 @@ const BOMB_RADIUS: float = 80.0
 const BASE_SPRITE_SCALE: float = 0.246
 const BOUNDS: Rect2 = Rect2(0, -230, 1024, 930)
 
+# ── 수비 밴드 상수 (RD13, 가제 — 밸런싱 대기) ────────────────────────────
+# 성 위치 (240, 760). 적은 y<0에서 스폰, 아래(+y) 방향으로 하강.
+# 밴드는 성 바로 위(y감소 방향) BAND_DEPTH px 구간.
+const CASTLE_POS: Vector2 = Vector2(240.0, 760.0)
+const BAND_DEPTH: float = 300.0           # 밴드 세로 깊이 (성 위 ~300px)
+const BAND_TOP: float = CASTLE_POS.y - BAND_DEPTH   # 밴드 상한 y (= 460)
+# 역할별 대기 y 위치 (성 기준 위쪽)
+const WAIT_Y_TANK: float    = CASTLE_POS.y - 230.0  # 최전방 (= 530)
+const WAIT_Y_WARRIOR: float = CASTLE_POS.y - 150.0  # 중간    (= 610)
+const WAIT_Y_ARCHER: float  = CASTLE_POS.y - 70.0   # 후방    (= 690)
+# 역할별 대기 x (겹침 방지용 분산)
+const WAIT_X_OFFSETS: Dictionary = {
+	"tank":    [200.0, 280.0],
+	"warrior": [160.0, 240.0, 320.0],
+	"archer":  [180.0, 260.0],
+}
+# leash: 타겟이 밴드 밖으로 이 거리 이상 나가면 추격 포기
+const LEASH_MARGIN: float = 40.0   # 밴드 상한에서 위로 얼마나 나가면 포기
+
 static var _cached_frames: Dictionary = {}
 
 var minion_type: String = "warrior"
@@ -124,14 +143,62 @@ func _physics_process(delta: float) -> void:
 	if _anim_state == "die":
 		return
 
+	# ── 폭탄병은 기존 돌격 로직 유지 (자폭 미사일) ───────────────────────
+	if behavior == "bomber":
+		_physics_process_bomber(delta)
+		return
+
+	# ── 수비 밴드 AI (RD13) ───────────────────────────────────────────────
+	# 1) leash: 현재 타겟이 밴드 밖으로 나갔으면 포기
+	if is_instance_valid(current_target):
+		if current_target.position.y < BAND_TOP - LEASH_MARGIN:
+			current_target = null
+
+	# 2) 타겟 갱신: 밴드 안에 있는 적 중 가장 깊이 침투한(y가 큰) 적
+	if not is_instance_valid(current_target):
+		current_target = _find_deepest_enemy_in_band()
+
+	# 3) 타겟 없으면 대기 위치로 복귀
+	if not is_instance_valid(current_target):
+		_move_to_wait_position(delta)
+		return
+
+	# 4) 마중 이동 — 밴드 상한(BAND_TOP)을 넘어 위로는 나가지 않음
+	var clamped_target_pos: Vector2 = current_target.position
+	if clamped_target_pos.y < BAND_TOP:
+		clamped_target_pos.y = BAND_TOP
+
+	var dist: float = position.distance_to(clamped_target_pos)
+	if dist > attack_range:
+		var dir: Vector2 = (clamped_target_pos - position).normalized()
+		velocity = dir * move_speed
+		move_and_slide()
+		attack_timer = 0.0
+		anim_sprite.flip_h = dir.x < 0
+		if _anim_state not in ["hurt"]:
+			_play_anim("walk")
+	else:
+		velocity = Vector2.ZERO
+		if _anim_state not in ["slash", "hurt"]:
+			_play_anim("idle")
+		attack_timer += delta
+		if attack_timer >= attack_interval:
+			attack_timer = 0.0
+			_do_attack()
+
+	# 5) 밴드 상한 클램프 (어떤 경우에도 위로 돌진 불가)
+	position.y = max(position.y, BAND_TOP)
+	position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
+	position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
+
+# 폭탄병 전용: 기존 돌격형 그대로
+func _physics_process_bomber(delta: float) -> void:
 	if not is_instance_valid(current_target):
 		current_target = _find_nearest_enemy()
 	if not current_target:
 		velocity = Vector2.ZERO
 		if _anim_state not in ["slash", "hurt"]:
 			_play_anim("idle")
-		position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
-		position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
 		return
 
 	var dist: float = position.distance_to(current_target.position)
@@ -153,6 +220,37 @@ func _physics_process(delta: float) -> void:
 			_do_attack()
 	position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
 	position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
+
+# 대기 위치로 서서히 복귀
+func _move_to_wait_position(delta: float) -> void:
+	var wait_pos: Vector2 = _get_wait_position()
+	var dist: float = position.distance_to(wait_pos)
+	if dist > 8.0:
+		var dir: Vector2 = (wait_pos - position).normalized()
+		velocity = dir * move_speed * 0.7
+		move_and_slide()
+		anim_sprite.flip_h = dir.x < 0
+		if _anim_state not in ["hurt"]:
+			_play_anim("walk")
+	else:
+		velocity = Vector2.ZERO
+		if _anim_state not in ["slash", "hurt"]:
+			_play_anim("idle")
+	position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
+	position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
+
+# 역할별 대기 위치 (동일 종이 여러 명일 때 살짝 분산)
+func _get_wait_position() -> Vector2:
+	var wait_y: float
+	match minion_type:
+		"tank":    wait_y = WAIT_Y_TANK
+		"archer":  wait_y = WAIT_Y_ARCHER
+		_:         wait_y = WAIT_Y_WARRIOR
+
+	# 같은 종 하인끼리 x 분산 — get_instance_id()로 일관된 오프셋 배정
+	var offsets: Array = WAIT_X_OFFSETS.get(minion_type, [200.0, 240.0, 280.0])
+	var wait_x: float = offsets[get_instance_id() % offsets.size()]
+	return Vector2(wait_x, wait_y)
 
 func _do_attack() -> void:
 	if not is_instance_valid(current_target):
@@ -221,6 +319,7 @@ func _evolve() -> void:
 	if game and game.has_method("spawn_evolve_effect"):
 		game.spawn_evolve_effect(global_position)
 
+# 폭탄병 전용: 가장 가까운 적 (돌격형)
 func _find_nearest_enemy():
 	var enemies: Array = get_tree().get_nodes_in_group("enemies")
 	var nearest = null
@@ -233,6 +332,21 @@ func _find_nearest_enemy():
 			nearest_dist = d
 			nearest = e
 	return nearest
+
+# 수비 밴드 전용: 밴드 안(y >= BAND_TOP)에서 가장 깊이 침투한(y가 가장 큰) 적
+func _find_deepest_enemy_in_band():
+	var enemies: Array = get_tree().get_nodes_in_group("enemies")
+	var deepest = null
+	var deepest_y: float = -INF
+	for e in enemies:
+		if not is_instance_valid(e):
+			continue
+		if e.position.y < BAND_TOP:
+			continue   # 밴드 위(아직 안 들어온) 적 무시
+		if e.position.y > deepest_y:
+			deepest_y = e.position.y
+			deepest = e
+	return deepest
 
 func _heal(amount: float) -> void:
 	if amount <= 0.0:

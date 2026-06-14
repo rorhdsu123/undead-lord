@@ -40,7 +40,7 @@ var hire_levels: Dictionary = {"warrior": 1, "archer": 1, "tank": 1}
 # 강화 팝업 노드
 var _upgrade_popup: Control = null
 var _upgrade_btn: Button = null
-var _upg_icon: Label = null                 # 강화 버튼 ▲ 아이콘 오버레이 (아트 입고 전 플레이스홀더)
+var _upg_icon: Label = null                 # 강화 버튼 내부 ▲ 아이콘 (HBox 자식, 아트 입고 전 플레이스홀더)
 var _upgrade_popup_catcher: Control = null  # 팝업 바깥 탭 캐처
 var _gold_hud_hidden_by_popup: bool = false  # 강화 팝업이 하단 골드 HUD를 숨겼는지
 
@@ -58,6 +58,8 @@ const UI_POPUP_CORNER:    int   = 10
 const UI_POPUP_BORDER_W:  int   = 2
 # 코스트 알약 버튼
 const UI_COST_PILL_CORNER: int  = 12  # 알약(pill) 느낌을 위해 높게
+# RD19 — 자원 캡슐 알약 코너 (높이의 절반 → 양끝 완전 둥글게)
+const UI_CAPSULE_CORNER:   int  = 14
 # 골드 부족 힌트 — 비용 숫자 전용 빨강 (플테 조정 대상)
 const UI_COST_SHORT: Color = Color(0.9, 0.3, 0.3, 1.0)
 
@@ -243,7 +245,10 @@ var slot_icon: Label = null
 # MD12 — 하인 카운트 readout (active_minions / max_minions 표시)
 var _minion_icon: Label = null   # 하인 아이콘 플레이스홀더 (■, 하인 아트 입고 후 교체 예정)
 var _minion_readout: Label = null
-var _max_badge: Label = null     # 전역 소환 캡 도달 시 readout 우상단 "MAX" 배지
+var _max_badge: Label = null     # 전역 소환 캡 도달 시 캡슐 우상단 "MAX" 배지
+# RD19 — 자원 readout 캡슐 (골드/하인을 알약 영역 하나로 묶음)
+var _resource_capsule: Panel = null
+var _resource_hbox: HBoxContainer = null
 # (3) 하단 트레이 패널
 var _bottom_tray: Panel = null
 @onready var shop_panel = $UI/ShopPanel
@@ -279,30 +284,75 @@ func _ready() -> void:
 	_build_shop_buttons()
 	_build_summon_buttons()
 	_build_upgrade_ui()
+	# RD19 — 자원 readout 캡슐: 골드/하인을 알약 영역 하나로 묶음. 숫자 둘 다 흰색·아이콘만 색.
+	# souls_label을 캡슐 HBox로 reparent하므로, $UI 참조는 먼저 hud_parent로 캡처해 둠
+	# (reparent 후 souls_label.get_parent()는 HBox가 됨 → 트레이 등은 hud_parent로 add).
+	var hud_parent: Node = souls_label.get_parent()
+	_resource_capsule = Panel.new()
+	_resource_capsule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_resource_capsule.add_theme_stylebox_override("panel", _make_capsule_stylebox())
+	hud_parent.add_child(_resource_capsule)
+
+	_resource_hbox = HBoxContainer.new()
+	_resource_hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_resource_hbox.alignment = BoxContainer.ALIGNMENT_CENTER  # 캡슐 내 중앙정렬
+	_resource_hbox.add_theme_constant_override("separation", 5)
+	_resource_hbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_resource_hbox.offset_left   = 12.0   # 좌우 내부 패딩
+	_resource_hbox.offset_right  = -12.0
+	_resource_hbox.offset_top    = 0.0
+	_resource_hbox.offset_bottom = 0.0
+	_resource_capsule.add_child(_resource_hbox)
+
+	# 하인 아이콘(👤)용 NotoEmoji (모노크롬 → 색 틴트). 골드는 ● 글리프라 불필요.
+	var capsule_emoji_font: Font = load("res://assets/fonts/NotoEmoji-Regular.ttf") as Font
+	# 골드: ● (노란 동그라미) + 숫자(흰색)
 	souls_icon = Label.new()
 	souls_icon.text = "●"
 	souls_icon.add_theme_font_size_override("font_size", 16)
-	souls_icon.add_theme_color_override("font_color", Color(1.0, 0.82, 0.35))
+	souls_icon.add_theme_color_override("font_color", Color(1.0, 0.85, 0.40))
 	souls_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	souls_label.get_parent().add_child(souls_icon)
+	souls_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_resource_hbox.add_child(souls_icon)
+	# souls_label(@onready, 골드 숫자) 를 캡슐 HBox로 이동 — 숫자는 흰색·16px
+	souls_label.reparent(_resource_hbox)
+	souls_label.add_theme_color_override("font_color", Color(0.96, 0.95, 1.0, 1.0))
+	souls_label.add_theme_font_size_override("font_size", 16)
+	souls_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+
+	# 그룹 간격 스페이서 (골드 ↔ 하인)
+	var res_spacer: Control = Control.new()
+	res_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	res_spacer.custom_minimum_size = Vector2(12.0, 0.0)
+	_resource_hbox.add_child(res_spacer)
+
+	# 하인: ■ (플레이스홀더 색 아이콘) + N/M(흰색)
+	# MD12 — 하인 카운트 readout (■ 플레이스홀더, 하인 아트 입고 후 교체 예정)
+	_minion_icon = Label.new()
+	_minion_icon.text = "👤"  # 사람(하인 수) — NotoEmoji 모노크롬 글리프. 하인 아트 입고 후 교체 가능
+	if capsule_emoji_font != null:
+		_minion_icon.add_theme_font_override("font", capsule_emoji_font)
+	_minion_icon.add_theme_font_size_override("font_size", 14)
+	_minion_icon.add_theme_color_override("font_color", Color(0.72, 0.68, 0.86, 1.0))
+	_minion_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_minion_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_resource_hbox.add_child(_minion_icon)
+	_minion_readout = Label.new()
+	_minion_readout.add_theme_font_size_override("font_size", 16)   # 골드 숫자와 동일 크기
+	_minion_readout.add_theme_color_override("font_color", Color(0.96, 0.95, 1.0, 1.0))
+	_minion_readout.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_minion_readout.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_resource_hbox.add_child(_minion_readout)
+
+	# slot_icon — 구 캡 라벨 아이콘(Phase C 미사용). 호환 위해 노드만 유지·숨김.
 	slot_icon = Label.new()
 	slot_icon.text = "●"
 	slot_icon.add_theme_font_size_override("font_size", 16)
 	slot_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	slot_icon.visible = false
 	minion_slot_label.get_parent().add_child(slot_icon)
-	# MD12 — 하인 카운트 readout: [■ active/max] (■ 플레이스홀더, 하인 아트 입고 후 교체 예정)
-	_minion_icon = Label.new()
-	_minion_icon.text = "■"  # TODO: 하인 아트 입고 후 실제 아이콘으로 교체
-	_minion_icon.add_theme_font_size_override("font_size", 14)
-	_minion_icon.add_theme_color_override("font_color", Color(0.70, 0.65, 0.90, 1.0))
-	_minion_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	souls_label.get_parent().add_child(_minion_icon)
-	_minion_readout = Label.new()
-	_minion_readout.add_theme_font_size_override("font_size", 15)
-	_minion_readout.add_theme_color_override("font_color", Color(0.78, 0.75, 0.95, 1.0))
-	_minion_readout.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	souls_label.get_parent().add_child(_minion_readout)
-	# MD12 — 전역 소환 캡 MAX 배지 (readout 우상단 라운드 빨강 뱃지)
+
+	# MD12 — 전역 소환 캡 MAX 배지 (캡슐 우상단 모서리에 걸침 — 캡슐 자식이라 캡슐 숨김 시 함께 숨음)
 	_max_badge = Label.new()
 	_max_badge.text = Loc.t("minion_cap_max")
 	_max_badge.add_theme_font_size_override("font_size", 10)
@@ -321,12 +371,12 @@ func _ready() -> void:
 	badge_sb.content_margin_bottom = 1.0
 	_max_badge.add_theme_stylebox_override("normal", badge_sb)
 	_max_badge.visible = false
-	souls_label.get_parent().add_child(_max_badge)
+	_resource_capsule.add_child(_max_badge)
 	# (3) 하단 트레이 패널 — 모든 하단 컨트롤 뒤에 깔리는 다크보라 반투명 밴드
 	_bottom_tray = Panel.new()
 	_bottom_tray.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 입력 가로채지 않음
 	var tray_sb: StyleBoxFlat = StyleBoxFlat.new()
-	tray_sb.bg_color = Color(0.10, 0.08, 0.16, 0.82)  # UI_BTN_BG_PRESSED 계열 + 투명
+	tray_sb.bg_color = Color(0.10, 0.08, 0.16, 0.55)  # 흐리게 — 버튼(α0.96) 강조 (RD19)
 	tray_sb.border_color = Color(0.35, 0.28, 0.50, 0.60)
 	tray_sb.set_border_width_all(1)
 	tray_sb.corner_radius_top_left  = 10
@@ -334,7 +384,7 @@ func _ready() -> void:
 	tray_sb.corner_radius_bottom_left  = 0
 	tray_sb.corner_radius_bottom_right = 0
 	_bottom_tray.add_theme_stylebox_override("panel", tray_sb)
-	souls_label.get_parent().add_child(_bottom_tray)
+	hud_parent.add_child(_bottom_tray)
 	_bottom_tray.move_to_front()  # 임시 — _layout_bottom_ui_phase_c에서 move_child로 최하단으로 이동
 	_layout_bottom_ui()
 	# Phase A4 — 하단 UI 숨김 (특수기 버튼·소환 4버튼·희생 버튼·슬롯 라벨)
@@ -366,15 +416,7 @@ func _ready() -> void:
 	if is_instance_valid(summon_container):
 		summon_container.visible = true
 	# minion_slot_label·slot_icon은 캡 없어졌으므로 숨김 유지
-	if is_instance_valid(souls_icon):
-		souls_icon.visible = true
-	if is_instance_valid(souls_label):
-		souls_label.visible = true
-	if is_instance_valid(_minion_icon):
-		_minion_icon.visible = true
-	if is_instance_valid(_minion_readout):
-		_minion_readout.visible = true
-	_update_minion_readout()
+	_set_resource_hud_visible(true)  # 자원 캡슐(골드+하인) 표시
 	_set_upgrade_btn_visible(true)
 	_layout_bottom_ui_phase_c()
 	_refresh_summon_buttons()
@@ -1294,15 +1336,7 @@ func _show_shop() -> void:
 	# Phase C: 상점(모달) 표시 중 고용 버튼 숨김 (_close_shop에서 복원)
 	summon_container.visible = false
 	minion_slot_label.visible = false
-	souls_label.visible = false
-	if is_instance_valid(souls_icon):
-		souls_icon.visible = false
-	if is_instance_valid(_minion_icon):
-		_minion_icon.visible = false
-	if is_instance_valid(_minion_readout):
-		_minion_readout.visible = false
-	if is_instance_valid(_max_badge):
-		_max_badge.visible = false
+	_set_resource_hud_visible(false)  # 자원 캡슐 숨김
 	_set_upgrade_btn_visible(false)
 	shop_title.text = Loc.t("shop_title")
 	shop_subtitle.text = Loc.t("shop_subtitle")
@@ -1319,18 +1353,10 @@ func _close_shop() -> void:
 	shop_title.text = Loc.t("shop_title")
 	shop_panel.visible = false
 	modal_dim.visible = false
-	# Phase C: 상점 닫힌 후 고용 버튼 + 골드 HUD 복원 (minion_slot_label은 캡 없어 숨김 유지)
+	# Phase C: 상점 닫힌 후 고용 버튼 + 자원 캡슐 복원 (minion_slot_label은 캡 없어 숨김 유지)
 	if is_instance_valid(summon_container):
 		summon_container.visible = true
-	if is_instance_valid(souls_label):
-		souls_label.visible = true
-	if is_instance_valid(souls_icon):
-		souls_icon.visible = true
-	if is_instance_valid(_minion_icon):
-		_minion_icon.visible = true
-	if is_instance_valid(_minion_readout):
-		_minion_readout.visible = true
-	_update_minion_readout()  # MAX 배지 상태 동기화
+	_set_resource_hud_visible(true)  # 자원 캡슐 복원 (MAX 배지 동기화 포함)
 	# RD16: 상점 닫힌 후 강화 버튼 + 아이콘 복원
 	_set_upgrade_btn_visible(true)
 	current_wave += 1
@@ -2011,6 +2037,16 @@ func add_souls(n: int) -> void:
 	if gained > 0:
 		_spawn_gold_floater(gained)
 
+## RD19 — 자원 캡슐(골드+하인) 가시성 토글 (단일 지점 관리)
+## 캡슐 자식(souls_icon/souls_label/_minion_icon/_minion_readout/_max_badge)이 함께 표시/숨김됨.
+func _set_resource_hud_visible(v: bool) -> void:
+	if is_instance_valid(_resource_capsule):
+		_resource_capsule.visible = v
+	if v:
+		_update_minion_readout()  # MAX 배지 상태 동기화
+	elif is_instance_valid(_max_badge):
+		_max_badge.visible = false
+
 ## MD12 — 하인 카운트 readout 갱신 (고용/사망/max_minions 변동 시 호출)
 func _update_minion_readout() -> void:
 	if not is_instance_valid(_minion_readout):
@@ -2018,14 +2054,15 @@ func _update_minion_readout() -> void:
 	_minion_readout.text = Loc.t("minion_readout") % [active_minions, max_minions]
 	var at_cap: bool = active_minions >= max_minions
 	if is_instance_valid(_max_badge):
-		# readout이 보일 때만 배지를 표시 (숨겨진 상태에서는 배지도 숨김)
-		_max_badge.visible = at_cap and _minion_readout.visible
+		# 캡슐이 보일 때만 배지 표시 (캡슐 숨김 시엔 자식이라 자동 숨김이지만 .visible도 맞춰 둠)
+		var cap_vis: bool = is_instance_valid(_resource_capsule) and _resource_capsule.visible
+		_max_badge.visible = at_cap and cap_vis
 
 func _update_souls_ui() -> void:
 	if _souls_roll_tween and _souls_roll_tween.is_valid():
 		_souls_roll_tween.kill()
 	if _souls_shown == souls:
-		souls_label.text = "골드: %d" % souls
+		souls_label.text = "%d" % souls  # 캡슐에 ● 아이콘 별도 → 숫자만
 	else:
 		_souls_roll_tween = create_tween()
 		_souls_roll_tween.tween_method(_set_souls_display, _souls_shown, souls, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
@@ -2035,7 +2072,7 @@ func _update_souls_ui() -> void:
 
 func _set_souls_display(v: float) -> void:
 	_souls_shown = int(round(v))
-	souls_label.text = "골드: %d" % _souls_shown
+	souls_label.text = "%d" % _souls_shown
 
 func _bump_souls_label() -> void:
 	if _souls_bump_tween and _souls_bump_tween.is_valid():
@@ -2073,14 +2110,15 @@ func _spawn_gold_floater(amount: int) -> void:
 	lbl.add_theme_constant_override("outline_size", FLOATER_OUTLINE)
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lbl.z_index = 10  # HUD 다른 컨트롤 위에 그려지도록
-	# souls_icon과 같은 부모에 추가 (HUD CanvasLayer 공간)
-	var parent: Node = souls_icon.get_parent()
+	# RD19 — souls_icon은 이제 캡슐 HBox 자식이므로, 플로터는 캡슐의 부모($UI CanvasLayer)에 추가.
+	# (HBox에 직접 add하면 행 아이템으로 레이아웃되어 readout이 밀림)
+	var parent: Node = _resource_capsule.get_parent() if is_instance_valid(_resource_capsule) else souls_icon.get_parent()
 	parent.add_child(lbl)
 	_gold_floaters.append(lbl)
-	# 시작 위치: souls_icon 좌측 정렬, 바로 위
+	# 시작 위치: souls_icon 바로 위. CanvasLayer 직속이라 position == global_position.
 	lbl.size = Vector2(60.0, 20.0)
 	lbl.pivot_offset = lbl.size * 0.5
-	var start_pos: Vector2 = souls_icon.position + Vector2(0.0, -lbl.size.y + 6.0)
+	var start_pos: Vector2 = souls_icon.global_position + Vector2(0.0, -lbl.size.y + 6.0)
 	lbl.position = start_pos
 	lbl.scale = Vector2(0.7, 0.7)
 	lbl.modulate.a = 1.0
@@ -2095,6 +2133,26 @@ func _spawn_gold_floater(amount: int) -> void:
 		_gold_floaters.erase(lbl)
 		if is_instance_valid(lbl):
 			lbl.queue_free()
+	)
+
+## RD19 — 자원 캡슐(알약) StyleBox 생성 (HUD 캡슐·팝업 골드 캡슐 공용)
+func _make_capsule_stylebox() -> StyleBoxFlat:
+	var sb: StyleBoxFlat = StyleBoxFlat.new()
+	sb.bg_color = Color(0.07, 0.05, 0.11, 0.92)   # 트레이/패널보다 진한 반투명
+	sb.border_color = Color(0.40, 0.33, 0.55, 0.55)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(UI_CAPSULE_CORNER)
+	return sb
+
+## RD19 — 버튼 눌림 피드백: 탭 시 살짝 줄었다 커지는 스케일 바운스 (중심 기준)
+func _add_button_press_bounce(btn: Button) -> void:
+	btn.pressed.connect(func() -> void:
+		if not is_instance_valid(btn):
+			return
+		btn.pivot_offset = btn.size * 0.5  # 중심에서 스케일 (컨테이너 자식이라 탭 시점에 산정)
+		var tw: Tween = create_tween()
+		tw.tween_property(btn, "scale", Vector2(0.90, 0.90), 0.07).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.tween_property(btn, "scale", Vector2.ONE, 0.13).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	)
 
 ## 팔레트 헬퍼 — 단색 배경 + 보라 테두리 StyleBoxFlat 생성
@@ -2112,11 +2170,14 @@ func _apply_button_styleboxes(btn: Button, normal_bg: Color = UI_BTN_BG_NORMAL,
 		disabled_bg: Color = UI_BTN_BG_DISABLED,
 		border: Color = UI_BTN_BORDER,
 		corner: int = UI_BTN_CORNER, border_w: int = UI_BTN_BORDER_W) -> void:
-	btn.add_theme_stylebox_override("normal",   _make_button_stylebox(normal_bg,   border, corner, border_w))
-	btn.add_theme_stylebox_override("hover",    _make_button_stylebox(hover_bg,    border, corner, border_w))
-	btn.add_theme_stylebox_override("pressed",  _make_button_stylebox(pressed_bg,  border, corner, border_w))
+	# RD19 — hover/pressed 색 변경 제거: 모두 normal 색 사용 (눌림 피드백은 스케일 바운스가 담당).
+	# disabled만 별도 색 유지(튜토리얼 잠금 등). hover_bg/pressed_bg 인자는 호환 위해 남김(미사용).
+	var normal_box: StyleBoxFlat = _make_button_stylebox(normal_bg, border, corner, border_w)
+	btn.add_theme_stylebox_override("normal",   normal_box)
+	btn.add_theme_stylebox_override("hover",    normal_box)
+	btn.add_theme_stylebox_override("pressed",  normal_box)
 	btn.add_theme_stylebox_override("disabled", _make_button_stylebox(disabled_bg, border, corner, border_w))
-	btn.add_theme_stylebox_override("focus",    _make_button_stylebox(normal_bg,   border, corner, border_w))
+	btn.add_theme_stylebox_override("focus",    normal_box)
 
 func _build_summon_buttons() -> void:
 	# Phase C — 3종만 생성 (HIRE_TYPE_INDICES: warrior/archer/tank, 폭탄병 제외)
@@ -2130,35 +2191,46 @@ func _build_summon_buttons() -> void:
 		btn.text = ""
 		# font_color override 불필요(텍스트 없음), 기존 add_theme_color_override 제거
 		_apply_button_styleboxes(btn)
+		_add_button_press_bounce(btn)
 		var type_idx: int = HIRE_TYPE_INDICES[j]
 		btn.pressed.connect(func(): _on_summon_pressed(type_idx))
 		summon_container.add_child(btn)
 		summon_btns.append(btn)
 
-		# 이름 라벨 — 버튼 상단 절반, 위로 정렬 (비용과 벌리기)
+		# 콘텐츠 = [이름] / [● 비용] 세로 스택 (VBox 중앙정렬 → 겹침 없이 안정적 간격)
+		var content: VBoxContainer = VBoxContainer.new()
+		content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		content.alignment = BoxContainer.ALIGNMENT_CENTER
+		content.add_theme_constant_override("separation", 3)
+		content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		btn.add_child(content)
+
+		# 이름 라벨
 		var name_lbl: Label = Label.new()
 		name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 		name_lbl.add_theme_font_size_override("font_size", 15)
-		name_lbl.set_anchor_and_offset(SIDE_LEFT,   0.0,  0.0)
-		name_lbl.set_anchor_and_offset(SIDE_RIGHT,  1.0,  0.0)
-		name_lbl.set_anchor_and_offset(SIDE_TOP,    0.0,  4.0)
-		name_lbl.set_anchor_and_offset(SIDE_BOTTOM, 0.5,  0.0)
-		btn.add_child(name_lbl)
+		content.add_child(name_lbl)
 		_summon_name_lbls.append(name_lbl)
 
-		# 비용 라벨 — 버튼 하단 절반, 아래로 정렬 (이름과 벌리기)
+		# 비용 행: [● 노랑][숫자] — ●만 노란색이도록 아이콘/숫자 분리 (단일 라벨은 줄 전체 한 색)
+		var cost_box: HBoxContainer = HBoxContainer.new()
+		cost_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cost_box.alignment = BoxContainer.ALIGNMENT_CENTER
+		cost_box.add_theme_constant_override("separation", 3)
+		content.add_child(cost_box)
+		var cost_icon: Label = Label.new()
+		cost_icon.text = "●"  # 노란 동그라미 (항상 골드색)
+		cost_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cost_icon.add_theme_font_size_override("font_size", 13)
+		cost_icon.add_theme_color_override("font_color", Color(1.0, 0.85, 0.40))
+		cost_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cost_box.add_child(cost_icon)
 		var cost_lbl: Label = Label.new()
 		cost_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cost_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		cost_lbl.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 		cost_lbl.add_theme_font_size_override("font_size", 14)
-		cost_lbl.set_anchor_and_offset(SIDE_LEFT,   0.0,  0.0)
-		cost_lbl.set_anchor_and_offset(SIDE_RIGHT,  1.0,  0.0)
-		cost_lbl.set_anchor_and_offset(SIDE_TOP,    0.5,  0.0)
-		cost_lbl.set_anchor_and_offset(SIDE_BOTTOM, 1.0, -4.0)
-		btn.add_child(cost_lbl)
+		cost_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cost_box.add_child(cost_lbl)
 		_summon_cost_lbls.append(cost_lbl)
 
 ## RD16 — 강화 버튼 + 팝업(캐처 포함) 빌드 (운빨존많겜 레퍼런스 + 다크 보라 팔레트)
@@ -2166,23 +2238,40 @@ func _build_upgrade_ui() -> void:
 	var parent: Node = summon_container.get_parent()
 
 	# ── 강화 버튼 ──────────────────────────────────────────────
+	# 버튼 텍스트는 비우고, 안에 [▲ 강화] HBox를 풀-렉트 중앙정렬로 배치.
+	# (▲만 초록·텍스트는 보라흰 → 단일 라벨로 색 분리 불가하므로 자식 2개. 소환 버튼 자식라벨 패턴과 동일)
 	_upgrade_btn = Button.new()
 	_upgrade_btn.focus_mode = Control.FOCUS_NONE
-	_upgrade_btn.text = Loc.t("upgrade_btn_label")
-	_upgrade_btn.add_theme_font_size_override("font_size", 15)
-	_upgrade_btn.add_theme_color_override("font_color", Color(0.92, 0.88, 1.0, 1.0))
+	_upgrade_btn.text = ""
 	_apply_button_styleboxes(_upgrade_btn)
+	_add_button_press_bounce(_upgrade_btn)
 	_upgrade_btn.pressed.connect(_toggle_upgrade_popup)
 	parent.add_child(_upgrade_btn)
 
-	# ── 강화 버튼 ▲ 아이콘 오버레이 (_minion_icon 방식 미러링) ───────
+	var upg_hbox: HBoxContainer = HBoxContainer.new()
+	upg_hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 버튼 탭 입력 통과
+	upg_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	upg_hbox.add_theme_constant_override("separation", 5)
+	upg_hbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_upgrade_btn.add_child(upg_hbox)
+
+	# ▲ 아이콘 (초록)
 	_upg_icon = Label.new()
 	_upg_icon.text = Loc.t("upgrade_icon")
 	_upg_icon.add_theme_font_size_override("font_size", 14)
 	_upg_icon.add_theme_color_override("font_color", Color(0.4, 0.85, 0.35, 1.0))
 	_upg_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_upg_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 버튼 탭 입력 통과
-	parent.add_child(_upg_icon)
+	_upg_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	upg_hbox.add_child(_upg_icon)
+
+	# "강화" 텍스트 (보라흰)
+	var upg_text: Label = Label.new()
+	upg_text.text = Loc.t("upgrade_btn_label")
+	upg_text.add_theme_font_size_override("font_size", 15)
+	upg_text.add_theme_color_override("font_color", Color(0.92, 0.88, 1.0, 1.0))
+	upg_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	upg_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	upg_hbox.add_child(upg_text)
 
 	# ── 팝업 캐처 — 팝업보다 먼저 add_child(뒤에 깔림) ─────────
 	_upgrade_popup_catcher = Control.new()
@@ -2205,7 +2294,7 @@ func _build_upgrade_ui() -> void:
 	_upgrade_popup.mouse_filter = Control.MOUSE_FILTER_STOP
 	# 팝업 StyleBox
 	var popup_sb: StyleBoxFlat = StyleBoxFlat.new()
-	popup_sb.bg_color = Color(0.14, 0.12, 0.20, 0.96)
+	popup_sb.bg_color = Color(0.14, 0.12, 0.20, 1.0)  # 불투명 — 뒤 권능 버튼 비침(고스팅) 방지
 	popup_sb.border_color = UI_BTN_BORDER
 	popup_sb.set_border_width_all(UI_POPUP_BORDER_W)
 	popup_sb.set_corner_radius_all(UI_POPUP_CORNER)
@@ -2217,33 +2306,72 @@ func _build_upgrade_ui() -> void:
 	parent.add_child(_upgrade_popup)
 
 	var vbox: VBoxContainer = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 8)
+	vbox.add_theme_constant_override("separation", 10)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER  # 커진 팝업 안에서 콘텐츠 세로 중앙
 	_upgrade_popup.add_child(vbox)
 
-	# ── 헤더: 제목 + 현재 골드 + ✕ 버튼 ────────────────────────
-	var hdr: HBoxContainer = HBoxContainer.new()
-	hdr.add_theme_constant_override("separation", 6)
-	vbox.add_child(hdr)
+	# ── 상단: 골드 캡슐(중앙) + ✕(우) — RD19 레퍼런스 폴리싱 ─────────
+	# 제목 텍스트는 폐기(레퍼런스처럼 자원 캡슐이 헤더 역할). 캡슐은 HUD 캡슐과 동일 스타일.
+	var top_row: HBoxContainer = HBoxContainer.new()
+	top_row.add_theme_constant_override("separation", 0)
+	vbox.add_child(top_row)
 
-	var title_lbl: Label = Label.new()
-	title_lbl.name = "PopupTitle"
-	title_lbl.text = Loc.t("upgrade_popup_title")
-	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title_lbl.add_theme_font_size_override("font_size", 14)
-	title_lbl.add_theme_color_override("font_color", Color(0.90, 0.88, 1.0, 1.0))
-	hdr.add_child(title_lbl)
+	# 좌측 패드(우측 ✕ 폭과 대칭 → 캡슐이 진짜 중앙) + 좌 expand 스페이서
+	var top_pad_l: Control = Control.new()
+	top_pad_l.custom_minimum_size = Vector2(26.0, 0.0)
+	top_pad_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top_row.add_child(top_pad_l)
+	var top_sp_l: Control = Control.new()
+	top_sp_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_sp_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top_row.add_child(top_sp_l)
+
+	# 골드 캡슐 (PanelContainer — 콘텐츠에 맞춰 hug)
+	var gold_cap: PanelContainer = PanelContainer.new()
+	gold_cap.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	gold_cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	gold_cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var gold_cap_sb: StyleBoxFlat = _make_capsule_stylebox()
+	gold_cap_sb.content_margin_left   = 12.0
+	gold_cap_sb.content_margin_right  = 12.0
+	gold_cap_sb.content_margin_top    = 3.0
+	gold_cap_sb.content_margin_bottom = 3.0
+	gold_cap.add_theme_stylebox_override("panel", gold_cap_sb)
+	top_row.add_child(gold_cap)
+
+	var gold_cap_hbox: HBoxContainer = HBoxContainer.new()
+	gold_cap_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	gold_cap_hbox.add_theme_constant_override("separation", 5)
+	gold_cap_hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	gold_cap.add_child(gold_cap_hbox)
+
+	var gold_cap_icon: Label = Label.new()
+	gold_cap_icon.text = "●"
+	gold_cap_icon.add_theme_font_size_override("font_size", 16)
+	gold_cap_icon.add_theme_color_override("font_color", Color(1.0, 0.85, 0.40))
+	gold_cap_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	gold_cap_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	gold_cap_hbox.add_child(gold_cap_icon)
 
 	var gold_hdr_lbl: Label = Label.new()
 	gold_hdr_lbl.name = "PopupGoldLabel"
-	gold_hdr_lbl.add_theme_font_size_override("font_size", 13)
-	gold_hdr_lbl.add_theme_color_override("font_color", UI_BTN_GOLD)
-	gold_hdr_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	hdr.add_child(gold_hdr_lbl)
+	gold_hdr_lbl.add_theme_font_size_override("font_size", 16)
+	gold_hdr_lbl.add_theme_color_override("font_color", Color(0.96, 0.95, 1.0, 1.0))
+	gold_hdr_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	gold_hdr_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	gold_cap_hbox.add_child(gold_hdr_lbl)
+
+	# 우 expand 스페이서 + ✕
+	var top_sp_r: Control = Control.new()
+	top_sp_r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_sp_r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top_row.add_child(top_sp_r)
 
 	var close_btn: Button = Button.new()
 	close_btn.text = "✕"
 	close_btn.focus_mode = Control.FOCUS_NONE
-	close_btn.add_theme_font_size_override("font_size", 13)
+	close_btn.custom_minimum_size = Vector2(26.0, 26.0)
+	close_btn.add_theme_font_size_override("font_size", 14)
 	close_btn.add_theme_color_override("font_color", Color(0.80, 0.76, 0.90, 1.0))
 	# ✕ 버튼은 배경 투명
 	var empty_sb: StyleBoxEmpty = StyleBoxEmpty.new()
@@ -2252,7 +2380,7 @@ func _build_upgrade_ui() -> void:
 	close_btn.add_theme_stylebox_override("pressed",  empty_sb)
 	close_btn.add_theme_stylebox_override("focus",    empty_sb)
 	close_btn.pressed.connect(_close_upgrade_popup)
-	hdr.add_child(close_btn)
+	top_row.add_child(close_btn)
 
 	# ── 카드 행 — 탱크/전사/궁수 가로 배치 ───────────────────────
 	var card_row: HBoxContainer = HBoxContainer.new()
@@ -2287,7 +2415,7 @@ func _build_upgrade_ui() -> void:
 
 		# 아이콘 슬롯 (44×44 플레이스홀더 패널)
 		var icon_slot: Panel = Panel.new()
-		icon_slot.custom_minimum_size = Vector2(44.0, 44.0)
+		icon_slot.custom_minimum_size = Vector2(56.0, 56.0)  # 풀폭 팝업 — 넉넉한 아이콘 슬롯
 		icon_slot.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		var icon_sb: StyleBoxFlat = StyleBoxFlat.new()
 		icon_sb.bg_color = Color(0.10, 0.09, 0.14, 0.92)
@@ -2298,7 +2426,7 @@ func _build_upgrade_ui() -> void:
 		# 종별 구분 색점 (ColorRect, 중앙에 작게)
 		var dot: ColorRect = ColorRect.new()
 		dot.color = icon_accent[type_id]
-		dot.custom_minimum_size = Vector2(12.0, 12.0)
+		dot.custom_minimum_size = Vector2(16.0, 16.0)
 		dot.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		dot.size_flags_vertical   = Control.SIZE_SHRINK_CENTER
 		icon_slot.add_child(dot)
@@ -2312,33 +2440,51 @@ func _build_upgrade_ui() -> void:
 		lv_lbl.name = "LvLabel_" + type_id
 		card.add_child(lv_lbl)
 
-		# 코스트 알약 버튼
+		# 코스트 알약 버튼 — 다크 배경 + 골드 테두리. 내부 [● 노랑][숫자]로 골드 아이콘 색 통일.
 		var upg_btn: Button = Button.new()
 		upg_btn.focus_mode = Control.FOCUS_NONE
-		upg_btn.add_theme_font_size_override("font_size", 13)
-		upg_btn.add_theme_color_override("font_color", Color(0.12, 0.10, 0.18, 1.0))
+		upg_btn.text = ""
 		upg_btn.name = "UpgBtn_" + type_id
-		# 알약 스타일: 골드 배경, 높은 corner_radius
-		var pill_normal: StyleBoxFlat = _make_button_stylebox(UI_BTN_GOLD, Color(0.85, 0.65, 0.15, 1.0), UI_COST_PILL_CORNER, 1)
-		var pill_hover:  StyleBoxFlat = _make_button_stylebox(Color(1.0, 0.90, 0.50, 1.0), Color(0.85, 0.65, 0.15, 1.0), UI_COST_PILL_CORNER, 1)
-		var pill_press:  StyleBoxFlat = _make_button_stylebox(Color(0.80, 0.62, 0.18, 1.0), Color(0.85, 0.65, 0.15, 1.0), UI_COST_PILL_CORNER, 1)
-		var pill_dis:    StyleBoxFlat = _make_button_stylebox(Color(0.30, 0.26, 0.18, 0.80), Color(0.40, 0.35, 0.20, 0.60), UI_COST_PILL_CORNER, 1)
+		upg_btn.custom_minimum_size = Vector2(0.0, 30.0)  # 알약 형태 확보 (콘텐츠에 눌려 얇아짐 방지)
+		# RD19 — hover/pressed 색 제거(바운스가 피드백). 팝업보다 밝은 보라 + 골드 보더로 "올라온 알약".
+		var pill_normal: StyleBoxFlat = _make_button_stylebox(Color(0.24, 0.20, 0.34, 1.0), UI_BTN_GOLD, UI_COST_PILL_CORNER, 1)
+		var pill_dis:    StyleBoxFlat = _make_button_stylebox(Color(0.18, 0.15, 0.24, 1.0), Color(0.40, 0.35, 0.20, 0.60), UI_COST_PILL_CORNER, 1)
 		upg_btn.add_theme_stylebox_override("normal",   pill_normal)
-		upg_btn.add_theme_stylebox_override("hover",    pill_hover)
-		upg_btn.add_theme_stylebox_override("pressed",  pill_press)
+		upg_btn.add_theme_stylebox_override("hover",    pill_normal)
+		upg_btn.add_theme_stylebox_override("pressed",  pill_normal)
 		upg_btn.add_theme_stylebox_override("disabled", pill_dis)
 		upg_btn.add_theme_stylebox_override("focus",    pill_normal)
+		_add_button_press_bounce(upg_btn)
 		upg_btn.pressed.connect(func(): _on_upgrade_pressed(type_id))
 		card.add_child(upg_btn)
+		# 내부 [● 노랑][비용 숫자] 중앙정렬
+		var pill_hbox: HBoxContainer = HBoxContainer.new()
+		pill_hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pill_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		pill_hbox.add_theme_constant_override("separation", 3)
+		pill_hbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		upg_btn.add_child(pill_hbox)
+		var pill_icon: Label = Label.new()
+		pill_icon.text = "●"  # 노란 동그라미 (통일)
+		pill_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pill_icon.add_theme_font_size_override("font_size", 13)
+		pill_icon.add_theme_color_override("font_color", Color(1.0, 0.85, 0.40))
+		pill_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		pill_hbox.add_child(pill_icon)
+		var pill_num: Label = Label.new()
+		pill_num.name = "UpgCost_" + type_id
+		pill_num.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pill_num.add_theme_font_size_override("font_size", 14)
+		pill_num.add_theme_color_override("font_color", Color(0.92, 0.88, 1.0, 1.0))
+		pill_num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		pill_hbox.add_child(pill_num)
 
 	_refresh_upgrade_popup()
 
-## 강화 버튼 + ▲ 아이콘 가시성 동시 토글 (단일 지점 관리)
+## 강화 버튼 가시성 토글 (▲ 아이콘은 버튼 내부 자식 → 자동 연동)
 func _set_upgrade_btn_visible(v: bool) -> void:
 	if is_instance_valid(_upgrade_btn):
 		_upgrade_btn.visible = v
-	if is_instance_valid(_upg_icon):
-		_upg_icon.visible = v
 
 func _toggle_upgrade_popup() -> void:
 	if not is_instance_valid(_upgrade_popup):
@@ -2359,54 +2505,36 @@ func _open_upgrade_popup() -> void:
 		_upgrade_popup_catcher.move_to_front()
 	_upgrade_popup.visible = true
 	_upgrade_popup.move_to_front()
-	# 팝업 헤더에 골드를 표시하므로 하단 골드 HUD는 숨김 (팝업 좌측에 ● 아이콘 노출 방지)
-	if is_instance_valid(souls_label) and souls_label.visible:
+	# 팝업 헤더에 골드를 표시하므로 하단 자원 캡슐은 숨김 (팝업 좌측에 ● 아이콘 노출 방지)
+	if is_instance_valid(_resource_capsule) and _resource_capsule.visible:
 		_gold_hud_hidden_by_popup = true
-		souls_label.visible = false
-		if is_instance_valid(souls_icon):
-			souls_icon.visible = false
-		if is_instance_valid(_minion_icon):
-			_minion_icon.visible = false
-		if is_instance_valid(_minion_readout):
-			_minion_readout.visible = false
-		if is_instance_valid(_max_badge):
-			_max_badge.visible = false
-	# 팝업 위치: 강화 버튼 바로 위로 펼쳐짐 (소환 행을 덮어도 무방)
-	var popup_w: float = 300.0
-	# 팝업은 강화 버튼 top - 4를 bottom edge로 삼음
-	# 강화 버튼 위치는 _layout_bottom_ui_phase_c에서 결정됨 (y=912)
-	# 팝업 높이는 콘텐츠에 따라 auto. 먼저 크기 강제하지 않고 위치만 설정.
-	_upgrade_popup.size = Vector2(popup_w, 0.0)  # auto-height
-	await get_tree().process_frame  # 레이아웃 확정 후 크기 읽기
-	if not is_instance_valid(_upgrade_popup):
-		return
-	var popup_h: float = _upgrade_popup.size.y
-	if popup_h < 10.0:
-		popup_h = 164.0  # 폴백 (첫 프레임 미확정 시)
-	if is_instance_valid(_upgrade_btn):
-		var btn_top: float = _upgrade_btn.position.y
-		_upgrade_popup.position = Vector2(10.0, btn_top - 4.0 - popup_h)
-	else:
-		var vp: Vector2 = get_viewport_rect().size
-		_upgrade_popup.position = Vector2(10.0, vp.y - 300.0)
+		_set_resource_hud_visible(false)
+	# RD19 — 팝업이 하단 조작 도크를 덮되 강화 버튼은 아래에 노출(레퍼런스 레이아웃).
+	# 풀폭 + 최상단 z → 권능 버튼(링 y808~880) + 소환 버튼 행을 덮음. 콘텐츠는 VBox 세로 중앙정렬.
+	# 세로: 바닥을 소환 버튼 하단에 딱 맞춰(소환 행 완전히 가림) ~ 높이는 콘텐츠에 맞춰 위로 자라게.
+	var vp: Vector2 = get_viewport_rect().size
+	const POPUP_SIDE: float    = 6.0    # 좌우 마진
+	const POPUP_COVER: float   = 2.0    # 소환 버튼 하단을 확실히 덮는 여유
+	const POPUP_TOP_MIN: float = 700.0  # 상한 — 더 위로는 안 올라가 성/전투 보호
+	var content_h: float = _upgrade_popup.get_combined_minimum_size().y
+	if content_h < 120.0:
+		content_h = 178.0  # 폴백 (min 미산정 시)
+	var bottom_y: float = (vp.y - 60.0)  # 폴백 (소환 컨테이너 미배치 시)
+	if is_instance_valid(summon_container):
+		bottom_y = summon_container.position.y + summon_container.size.y + POPUP_COVER
+	var top_y: float = max(POPUP_TOP_MIN, bottom_y - content_h)
+	_upgrade_popup.position = Vector2(POPUP_SIDE, top_y)
+	_upgrade_popup.size = Vector2(vp.x - POPUP_SIDE * 2.0, bottom_y - top_y)
 
 func _close_upgrade_popup() -> void:
 	if is_instance_valid(_upgrade_popup):
 		_upgrade_popup.visible = false
 	if is_instance_valid(_upgrade_popup_catcher):
 		_upgrade_popup_catcher.visible = false
-	# 팝업이 숨겼던 하단 골드 HUD 복원 (상점 진입 등 다른 곳에서 끈 경우는 건드리지 않음)
+	# 팝업이 숨겼던 하단 자원 캡슐 복원 (상점 진입 등 다른 곳에서 끈 경우는 건드리지 않음)
 	if _gold_hud_hidden_by_popup:
 		_gold_hud_hidden_by_popup = false
-		if is_instance_valid(souls_label):
-			souls_label.visible = true
-		if is_instance_valid(souls_icon):
-			souls_icon.visible = true
-		if is_instance_valid(_minion_icon):
-			_minion_icon.visible = true
-		if is_instance_valid(_minion_readout):
-			_minion_readout.visible = true
-		_update_minion_readout()  # MAX 배지 상태 동기화
+		_set_resource_hud_visible(true)  # MAX 배지 동기화 포함
 
 func _refresh_upgrade_popup() -> void:
 	if not is_instance_valid(_upgrade_popup):
@@ -2414,7 +2542,7 @@ func _refresh_upgrade_popup() -> void:
 	# 헤더 현재 골드 표시
 	var gold_hdr: Label = _upgrade_popup.find_child("PopupGoldLabel", true, false)
 	if is_instance_valid(gold_hdr):
-		gold_hdr.text = "● %d" % souls
+		gold_hdr.text = "%d" % souls  # ● 아이콘은 캡슐 내 별도 라벨
 	# 카드별 갱신
 	for type_id in ["warrior", "archer", "tank"]:
 		var lv: int = hire_levels.get(type_id, 1)
@@ -2424,15 +2552,17 @@ func _refresh_upgrade_popup() -> void:
 			lv_lbl.text = Loc.t("upgrade_card_lv") % lv
 		var upg_btn: Button = _upgrade_popup.find_child("UpgBtn_" + type_id, true, false)
 		if is_instance_valid(upg_btn):
-			upg_btn.text = Loc.t("upgrade_card_cost") % cost
-			var can_afford: bool = souls >= cost
 			# 항상 활성 — 누름 가드는 _on_upgrade_pressed 의 "if souls < cost: return" 이 처리
 			upg_btn.disabled = false
-			# 골드 부족 시 비용 숫자(= 알약 전체 텍스트)만 빨강, 충분하면 기존 어두운 텍스트
+		# 비용 숫자 라벨 갱신 (●은 항상 노란색, 숫자만 색 변동)
+		var upg_num: Label = _upgrade_popup.find_child("UpgCost_" + type_id, true, false)
+		if is_instance_valid(upg_num):
+			upg_num.text = "%d" % cost
+			var can_afford: bool = souls >= cost
 			if can_afford:
-				upg_btn.add_theme_color_override("font_color", Color(0.12, 0.10, 0.18, 1.0))
+				upg_num.add_theme_color_override("font_color", Color(0.92, 0.88, 1.0, 1.0))
 			else:
-				upg_btn.add_theme_color_override("font_color", UI_COST_SHORT)
+				upg_num.add_theme_color_override("font_color", UI_COST_SHORT)
 
 func _on_upgrade_pressed(type_id: String) -> void:
 	if not type_id in hire_levels:
@@ -2483,17 +2613,10 @@ func _hide_bottom_ui_phase_a() -> void:
 		summon_container.visible = false
 	if is_instance_valid(minion_slot_label):
 		minion_slot_label.visible = false
-	if is_instance_valid(souls_icon):
-		souls_icon.visible = false
 	if is_instance_valid(slot_icon):
 		slot_icon.visible = false
-	# MD12 — readout 초기 숨김 (Phase C _ready 진입 시 다시 표시됨)
-	if is_instance_valid(_minion_icon):
-		_minion_icon.visible = false
-	if is_instance_valid(_minion_readout):
-		_minion_readout.visible = false
-	if is_instance_valid(_max_badge):
-		_max_badge.visible = false
+	# RD19 — 자원 캡슐 초기 숨김 (Phase C _ready 진입 시 다시 표시됨)
+	_set_resource_hud_visible(false)
 
 func _layout_bottom_ui() -> void:
 	var vp: Vector2 = get_viewport_rect().size
@@ -2550,15 +2673,13 @@ func _layout_bottom_ui_phase_c() -> void:
 	var vp: Vector2 = get_viewport_rect().size
 	const MX: float         = 14.0   # 좌측 마진 (트레이 패딩 고려해 10→14)
 	const SUM_W: float      = 262.0  # 소환/강화 버튼 폭 (좌측 절반 이하)
-	const ICON_W: float     = 18.0   # 골드 아이콘 폭
-	const ICON_GAP: float   = 4.0    # 아이콘-텍스트 간격
 	const BOTTOM_MARGIN: float = 16.0
 	const UPGRADE_H:     float = 36.0
 	const GAP_UPG_SUM:   float = 6.0
 	const SUM_H:         float = 52.0
 	const GAP_SUM_GOLD:  float = 6.0
 	const GOLD_H:        float = 22.0
-	const TRAY_TOP:      float = 795.0  # 트레이 상단 (성 y≈700 가시영역 보호)
+	const TRAY_TOP:      float = 795.0  # 트레이 상단 (성 y≈620으로 상향 후에도 하단 도크 유지)
 	const TRAY_SIDE_MG:  float = 4.0    # 트레이 좌우 마진
 
 	# ── 트레이 패널 배치 (최하단 z — move_child로 0번째로) ───────────
@@ -2575,65 +2696,33 @@ func _layout_bottom_ui_phase_c() -> void:
 	if is_instance_valid(_upgrade_btn):
 		_upgrade_btn.position = Vector2(MX, upg_y)
 		_upgrade_btn.size = Vector2(SUM_W, UPGRADE_H)
-	# ▲ 아이콘 오버레이: 버튼 중앙 기준 ~30px 왼쪽 (플테 조정 대상)
-	# [▲ 강화] 그룹 중앙 정렬: 아이콘 14px + 간격 4px + "강화" 텍스트 약 28px = 합계 ~46px → 중심 이동 ≈ 30px
-	if is_instance_valid(_upg_icon):
-		var icon_w: float = 18.0
-		var center_x: float = MX + SUM_W * 0.5
-		_upg_icon.position = Vector2(center_x - 30.0, upg_y)
-		_upg_icon.size = Vector2(icon_w, UPGRADE_H)
+	# ▲ 아이콘은 이제 버튼 내부 HBox 자식 → 별도 위치 계산 불필요 (RD18 폴리싱)
 
 	# ── 소환 컨테이너 ───────────────────────────────────────────────
 	var sum_y: float = upg_y - GAP_UPG_SUM - SUM_H          # = 850
 	summon_container.position = Vector2(MX, sum_y)
 	summon_container.size = Vector2(SUM_W, SUM_H)
 
-	# ── 골드 + 하인 readout HUD ─────────────────────────────────────
-	# 레이아웃: [● 골드 텍스트]  [■ N/M]
-	# 골드 아이콘·라벨이 좌측, 하인 아이콘·readout이 이어서 오른쪽
-	var gold_y: float = sum_y - GAP_SUM_GOLD - GOLD_H        # = 822
-	souls_icon.position = Vector2(MX, gold_y)
-	souls_icon.size = Vector2(ICON_W, GOLD_H)
-	var gold_label_w: float = 110.0  # 골드 숫자 표시 폭 (플테 조정 대상)
-	souls_label.position = Vector2(MX + ICON_W + ICON_GAP, gold_y)
-	souls_label.size = Vector2(gold_label_w, GOLD_H)
-	souls_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	souls_label.add_theme_font_size_override("font_size", 16)
-
-	# 하인 아이콘 + readout (골드 라벨 오른쪽에 연이어)
-	const MINION_ICON_W: float = 16.0
-	const MINION_ICON_GAP: float = 4.0
-	const MINION_READOUT_GAP: float = 10.0  # 골드 라벨과 하인 블록 사이 간격
-	var minion_x: float = MX + ICON_W + ICON_GAP + gold_label_w + MINION_READOUT_GAP
-	if is_instance_valid(_minion_icon):
-		_minion_icon.position = Vector2(minion_x, gold_y)
-		_minion_icon.size = Vector2(MINION_ICON_W, GOLD_H)
-	if is_instance_valid(_minion_readout):
-		_minion_readout.position = Vector2(minion_x + MINION_ICON_W + MINION_ICON_GAP, gold_y)
-		_minion_readout.size = Vector2(60.0, GOLD_H)
-	# MAX 배지: readout 우상단에 살짝 겹쳐 (폭 30, 높이 14, readout 우측 끝 기준)
+	# ── 자원 캡슐 (골드 + 하인 readout) — RD19 ──────────────────────
+	# 캡슐 폭 = 소환/강화 버튼 폭(SUM_W)에 맞춤. 내부 [● 골드 / ■ N/M]은 HBox가 중앙정렬.
+	var cap_h: float = GOLD_H + 6.0         # readout 행보다 약간 키워 알약 패딩 확보
+	var gold_y: float = sum_y - GAP_SUM_GOLD - cap_h
+	if is_instance_valid(_resource_capsule):
+		_resource_capsule.position = Vector2(MX, gold_y)
+		_resource_capsule.size = Vector2(SUM_W, cap_h)
+	# MAX 배지: 캡슐 우상단 모서리에 걸침 (캡슐 자식이므로 로컬 좌표)
 	const BADGE_W: float = 30.0
 	const BADGE_H: float = 14.0
 	if is_instance_valid(_max_badge):
-		var readout_x: float = minion_x + MINION_ICON_W + MINION_ICON_GAP
-		_max_badge.position = Vector2(readout_x + 60.0 - BADGE_W, gold_y - BADGE_H * 0.5)
+		_max_badge.position = Vector2(SUM_W - BADGE_W - 2.0, -BADGE_H * 0.5)
 		_max_badge.size = Vector2(BADGE_W, BADGE_H)
 
 	# 팝업 캐처는 전체화면 앵커이므로 별도 배치 불필요
 
 func _refresh_summon_buttons() -> void:
-	# Phase C — minion_slot_label 숨김 유지 (캡 없어짐)
-	# slot_icon도 숨김 유지
-	# souls_icon·_minion_icon·_minion_readout은 souls_label visibility를 따름
-	if is_instance_valid(souls_icon):
-		souls_icon.visible = souls_label.visible
-	if is_instance_valid(_minion_icon):
-		_minion_icon.visible = souls_label.visible
-	if is_instance_valid(_minion_readout):
-		_minion_readout.visible = souls_label.visible
-	# MAX 배지도 readout visibility를 따름 (캡 도달 여부는 _update_minion_readout이 결정)
-	if is_instance_valid(_max_badge):
-		_max_badge.visible = _max_badge.visible and souls_label.visible
+	# Phase C — minion_slot_label·slot_icon 숨김 유지 (캡 없어짐)
+	# RD19 — 자원 캡슐 가시성은 _set_resource_hud_visible 단일 지점이 관리하므로
+	#        여기서 개별 노드 visibility 동기화 불필요 (캡슐 자식이 함께 표시/숨김됨).
 
 	# C4: 특수(상점) 웨이브 판정
 	var wave_is_combat: bool = true
@@ -2652,10 +2741,10 @@ func _refresh_summon_buttons() -> void:
 		var name_lbl: Label = _summon_name_lbls[j]
 		var cost_lbl: Label = _summon_cost_lbls[j]
 		if is_tut and (current_wave < 1 or j > 0):
-			# 튜토리얼 잠금 — 이름 라벨에 잠금 표시, 비용 라벨 숨김
+			# 튜토리얼 잠금 — 이름 라벨에 잠금 표시, 비용 행(●+숫자) 숨김
 			name_lbl.text = "🔒 %s" % [entry["label"]]
 			name_lbl.add_theme_color_override("font_color", Color(0.55, 0.50, 0.65, 0.85))
-			cost_lbl.visible = false
+			cost_lbl.get_parent().visible = false  # cost_box(아이콘+숫자) 숨김
 			btn.disabled = true
 		else:
 			var gold_short: bool = souls < cost
@@ -2666,10 +2755,10 @@ func _refresh_summon_buttons() -> void:
 			# 이름 라벨
 			name_lbl.text = entry["label"]
 			name_lbl.add_theme_color_override("font_color", Color(0.92, 0.88, 1.0, 1.0))
-			# 비용 라벨
-			cost_lbl.visible = true
-			cost_lbl.text = "● %d" % cost
-			# 골드 부족 → 빨강, 아니면 평소 밝은 색
+			# 비용 행(●+숫자) — ●은 항상 노란색, 숫자만 색 변동
+			cost_lbl.get_parent().visible = true
+			cost_lbl.text = "%d" % cost
+			# 골드 부족 → 숫자 빨강, 아니면 평소 밝은 색
 			# is_blocked 상태에서는 빨강 표시 안 함(골드 부족 전용)
 			if gold_short and not is_blocked:
 				cost_lbl.add_theme_color_override("font_color", UI_COST_SHORT)

@@ -61,7 +61,7 @@ corner_radius_bottom_left = 10
 script = ExtResource("1")
 
 [node name="Castle" type="Node2D" parent="."]
-position = Vector2(240, 760)
+position = Vector2(240, 700)
 
 [node name="CastleSprite" type="Node2D" parent="Castle"]
 script = ExtResource("4")

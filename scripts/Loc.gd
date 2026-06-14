@@ -43,6 +43,10 @@ static var _strings: Dictionary = {
 	"card_echo":          "죽음의 메아리\n하인이 죽으면 폭발. [군단] 카드를 모을수록 폭발이 강해진다",
 	"card_ritual":        "제물의 의식\n하인을 희생하면 같은 하인을 즉시 무료로 다시 소환한다. [군단] 카드를 모을수록 희생 폭발이 강해진다",
 
+	# MD12 하단 readout + MAX 배지
+	"minion_readout":         "%d / %d",  # active_minions / max_minions
+	"minion_cap_max":         "MAX",      # readout 우상단 캡 도달 배지
+
 	# MD10 희생 버튼 텍스트 (1탭 자동)
 	"sacrifice_btn_idle":     "희생",
 	"sacrifice_btn_locked":   "희생 (잠금)",
@@ -79,13 +83,18 @@ static var _strings: Dictionary = {
 
 	# ── RD16 하인 강화 시스템 ────────────────────────────────────
 	"upgrade_btn_label":      "강화",
-	"upgrade_popup_title":    "하인 강화",
+	"upgrade_popup_title":    "강화",
+	"upgrade_icon":           "▲",   # 강화 버튼 아이콘 플레이스홀더 (아트 입고 전)
 	"upgrade_card_lv":        "Lv.%d",
+	"upgrade_card_cost":      "● %d",
 	"upgrade_card_btn":       "강화 %d골드",
 	"upgrade_card_btn_broke": "강화 %d골드",
 	"upgrade_minion_warrior": "전사",
 	"upgrade_minion_archer":  "궁수",
 	"upgrade_minion_tank":    "탱크",
+
+	# ── 골드 획득 플로팅 텍스트 ─────────────────────────────────
+	"gold_floater": "● +%d",
 
 	# ── 권능(유물) 버튼 텍스트 ─────────────────────────────────
 	"ability_lightning_name":  "낙뢰의 홀",

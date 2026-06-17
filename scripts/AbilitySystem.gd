@@ -410,6 +410,9 @@ func _in_reach(slot: int, world_pos: Vector2) -> bool:
 # ──────────────────────────────────────────────────────────────
 
 func _fire_ability(slot: int, world_pos: Vector2) -> void:
+	# 마왕 바크 — 권능 발현 시 확률적으로 발동 (확률·라인 선택은 game에 위임)
+	if is_instance_valid(game) and is_instance_valid(game.demon_portrait):
+		game.demon_bark_power()
 	var id: String = _get_ability(slot)["id"]
 	match id:
 		"lightning":

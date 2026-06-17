@@ -118,6 +118,9 @@ var run_start_time: float = 0.0
 # 위엄 EXP — 런당 1회 부여 방지 (중복 호출 가드)
 var _majesty_exp_granted: bool = false
 
+# 마왕 위급 바크 — 위급 진입 엣지 디텍션
+var _castle_in_danger: bool = false
+
 # 시설 보너스
 var soul_gain_mult: float = 1.0
 
@@ -187,12 +190,6 @@ const CARD_AXIS = {
 }
 
 # 연출/대사 텍스트
-const GAME_START_LINES = [
-	"...놈들이 또 몰려오는군.",
-	"벌써 시간이 됐나.",
-	"이 짓도 지겹다.",
-	"또냐.",
-]
 const WAVE_CLEAR_LINES = [
 	"다음.",
 	"어림도 없다.",
@@ -200,6 +197,10 @@ const WAVE_CLEAR_LINES = [
 	"계속 와라.",
 	"...이 정도냐.",
 ]
+const POWER_LINES = ["쳐라!", "끝내라.", "지금이다.", "물러설 곳은 없다."]
+const DANGER_LINES = ["성이... 위험하다!", "막아라, 어서!", "이대로는 안 된다..."]
+const POWER_BARK_CHANCE: float = 0.2   # 권능 발동 시 바크 확률 (스팸 방지)
+const CASTLE_DANGER_RATIO: float = 0.25
 const BOSS_INTRO_DIALOGUES = {
 	"사관후보생":          "이, 이건 훈련 아닌가요...?",
 	"수습 용사 인턴":      "저, 저는 아직 수습 기간이라서요...!",
@@ -207,11 +208,6 @@ const BOSS_INTRO_DIALOGUES = {
 	"정의의 용사 알바생":  "의뢰받은 일은 끝내고 가겠습니다.",
 	"정의의 용사 과장":    "내가 직접 나설 줄은 몰랐겠지?",
 }
-const BOSS_ENTRANCE_PLAYER_LINES = ["또 왔군.", "이번엔 좀 강하려나.", "...지루하다.", "어디 해봐라."]
-const BOSS_KILLED_MID_LINES      = ["다음은 누구냐.", "약하군.", "...그 정도냐."]
-const BOSS_KILLED_FINAL_LINES    = ["조각이 돌아왔다.", "하나씩, 되찾겠다.", "...잘했다."]
-const GAME_OVER_PLAYER_LINES     = ["...물러선다.", "오늘은 여기까지.", "다음엔 다르다."]
-const GAME_CLEAR_PLAYER_LINES    = ["...잘 막았다.", "이 정도는 식은 죽.", "다음을 준비하라."]
 
 const SHOP_ITEMS = [
 	{"id": "repair",      "label": "성벽 수리",  "desc": "성 HP +60",         "cost": 40},
@@ -266,6 +262,10 @@ var _card_rows: Array = []
 # ── Phase B — 권능 시스템 ─────────────────────────────────────
 const AbilitySystemScript = preload("res://scripts/AbilitySystem.gd")
 var ability_system: Node = null
+
+# ── 마왕 표정 반응 컷인 ──────────────────────────────────────
+const DemonPortraitScript = preload("res://scripts/DemonPortrait.gd")
+var demon_portrait: Control = null
 
 func _ready() -> void:
 	available_skill_cards = SKILL_CARDS.duplicate()
@@ -420,15 +420,18 @@ func _ready() -> void:
 	_set_upgrade_btn_visible(true)
 	_layout_bottom_ui_phase_c()
 	_refresh_summon_buttons()
-	if not _is_tutorial() and randf() < 0.3:
-		get_tree().create_timer(1.5).timeout.connect(func() -> void:
-			var line: String = GAME_START_LINES[randi() % GAME_START_LINES.size()]
-			show_dialogue(line, Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
-		)
 	# Phase B — 권능 시스템 초기화
 	ability_system = AbilitySystemScript.new()
 	add_child(ability_system)
 	ability_system.setup(self)
+	# 마왕 표정 컷인 노드 생성 — HUD 레이어(ModalDim보다 트리상 앞)에 배치
+	# 모달 재정렬은 위에서 이미 완료됐으므로 ModalDim 바로 앞(즉 이 시점 마지막 자식이 ModalDim)에 삽입.
+	# move_child로 ModalDim 바로 앞에 끼워 레이어 순서를 보장한다.
+	demon_portrait = DemonPortraitScript.new()
+	$UI.add_child(demon_portrait)
+	var dim_idx: int = $UI.get_children().find(modal_dim)
+	if dim_idx > 0:
+		$UI.move_child(demon_portrait, dim_idx)
 	start_wave()
 
 func start_wave() -> void:
@@ -517,13 +520,6 @@ func _on_boss_entered(boss_node: Node) -> void:
 			if is_instance_valid(boss_node) and wave_active:
 				show_dialogue(intro, Color(1.0, 0.9, 0.35, 1), boss_node.global_position + Vector2(0, -40))
 		)
-	# 영주 냉소 대사 (영주 머리 위, 2.5초 후) - 웨이브 진행 중일 때만
-	get_tree().create_timer(2.5).timeout.connect(func() -> void:
-		if not wave_active:
-			return
-		var line: String = BOSS_ENTRANCE_PLAYER_LINES[randi() % BOSS_ENTRANCE_PLAYER_LINES.size()]
-		show_dialogue(line, Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
-	)
 
 func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool) -> void:
 	_screen_flash(Color(1.0, 0.85, 0.2, 0.55), 0.5)
@@ -541,12 +537,6 @@ func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool) -> void:
 	else:
 		add_souls(50)
 		_show_souls_overflow(kill_pos)
-
-	var lines: Array = BOSS_KILLED_FINAL_LINES if is_final else BOSS_KILLED_MID_LINES
-	var line: String = lines[randi() % lines.size()]
-	get_tree().create_timer(0.4).timeout.connect(func() -> void:
-		show_dialogue(line, Color(0.85, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
-	)
 
 func _show_skeleton_gain(pos: Vector2) -> void:
 	var label: Label = Label.new()
@@ -610,16 +600,36 @@ func enemy_died(is_boss: bool = false) -> void:
 	if enemies_alive <= 0:
 		end_wave()
 
+## castle_hp 변경 후 위급 진입 엣지를 감지해 마왕 바크를 1회 발사한다.
+## 모든 castle_hp 변경 지점에서 castle_bar.set_hp 옆에 함께 호출할 것.
+func _update_demon_danger() -> void:
+	if not is_instance_valid(demon_portrait):
+		return
+	var ratio: float = float(castle_hp) / float(castle_max_hp)
+	var now_danger: bool = castle_hp > 0 and ratio < CASTLE_DANGER_RATIO
+	if now_danger and not _castle_in_danger:
+		demon_portrait.say("hurt", DANGER_LINES[randi() % DANGER_LINES.size()])
+	_castle_in_danger = now_danger
+
 func castle_take_damage(dmg: int) -> void:
 	if castle_hp <= 0:
 		return
 	castle_hp -= dmg
 	castle_bar.set_hp(castle_hp, castle_max_hp)
 	castle_vis.set_hp_ratio(float(castle_hp) / float(castle_max_hp))
+	_update_demon_danger()
 	if castle_hp <= 0:
 		castle_hp = 0
 		castle_bar.set_hp(castle_hp, castle_max_hp)
 		game_over()
+
+## 권능 발동 시 AbilitySystem이 호출하는 마왕 바크 (POWER_BARK_CHANCE 확률).
+func demon_bark_power() -> void:
+	if not is_instance_valid(demon_portrait):
+		return
+	if randf() >= POWER_BARK_CHANCE:
+		return
+	demon_portrait.say("attack", POWER_LINES[randi() % POWER_LINES.size()])
 
 func end_wave() -> void:
 	if not wave_active:
@@ -630,6 +640,7 @@ func end_wave() -> void:
 	if graveyard_heal > 0:
 		castle_hp = min(castle_hp + graveyard_heal, castle_max_hp)
 		castle_bar.set_hp(castle_hp, castle_max_hp)
+		_update_demon_danger()
 
 	if current_wave >= WaveData.stage_wave_count(current_chapter, current_stage) - 1:
 		game_clear()
@@ -637,7 +648,8 @@ func end_wave() -> void:
 
 	if not _is_tutorial() and randf() < 0.3:
 		var line: String = WAVE_CLEAR_LINES[randi() % WAVE_CLEAR_LINES.size()]
-		show_dialogue(line, Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
+		if is_instance_valid(demon_portrait):
+			demon_portrait.say("victory", line)
 
 	await get_tree().create_timer(1.2).timeout
 	# Phase A1 — 키스톤/카드 선택 비활성: 선택 UI를 건너뛰고 다음 웨이브로 직행
@@ -965,6 +977,7 @@ func _apply_card(id: String, mult: float = 1.0) -> void:
 			castle_max_hp += hp_gain
 			castle_hp += hp_gain
 			castle_bar.set_hp(castle_hp, castle_max_hp)
+			_update_demon_danger()
 		"graveyard":
 			graveyard_heal += int(20 * mult)
 		"atk_speed":
@@ -1376,6 +1389,7 @@ func _apply_shop_item(id: String) -> void:
 		"repair":
 			castle_hp = min(castle_hp + 60, castle_max_hp)
 			castle_bar.set_hp(castle_hp, castle_max_hp)
+			_update_demon_danger()
 		"atk_boost":
 			attack_bonus *= 1.15
 		"heal_minion":
@@ -1437,10 +1451,6 @@ func game_over() -> void:
 			m.set_physics_process(false)
 			m.set_process(false)
 
-	# 영주 대사
-	var line: String = GAME_OVER_PLAYER_LINES[randi() % GAME_OVER_PLAYER_LINES.size()]
-	show_dialogue(line, Color(0.9, 0.55, 0.55, 1), player.global_position + Vector2(0, -60))
-
 	# 붉은 오버레이 페이드인 → 패널 등장
 	var overlay: ColorRect = ColorRect.new()
 	overlay.color = Color(0.4, 0.0, 0.0, 0.0)
@@ -1483,10 +1493,6 @@ func game_clear() -> void:
 	card_panel.visible = false
 	summon_container.visible = false
 	minion_slot_label.visible = false
-
-	# 영주 대사
-	var line: String = GAME_CLEAR_PLAYER_LINES[randi() % GAME_CLEAR_PLAYER_LINES.size()]
-	show_dialogue(line, Color(0.85, 0.95, 0.75, 1), player.global_position + Vector2(0, -60))
 
 	# 금빛 오버레이 페이드인 → 패널 등장
 	var overlay: ColorRect = ColorRect.new()
@@ -1626,6 +1632,32 @@ func _show_result(
 	title_lbl.add_theme_color_override("font_color", title_color)
 	banner_pc.add_child(title_lbl)
 	vbox.add_child(banner_pc)
+
+	# ── 마왕 일러스트 (배너 바로 아래, body 위) ───────────────────────────────
+	const _RESULT_ILLUST_SIZE: float = 150.0   # 플테 조정 대상: 결과창 일러스트 크기 (≤180이라야 보상행이 버튼 위에 안전)
+	var illust_tex: Texture2D
+	if is_clear:
+		illust_tex = preload("res://assets/characters/DemonLord/victory.png")
+	else:
+		illust_tex = preload("res://assets/characters/DemonLord/defeat.png")
+	var illust_rect := TextureRect.new()
+	illust_rect.texture = illust_tex
+	illust_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	illust_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	illust_rect.custom_minimum_size = Vector2(_RESULT_ILLUST_SIZE, _RESULT_ILLUST_SIZE)
+	illust_rect.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	illust_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(illust_rect)
+	# 가벼운 scale-pop 등장
+	illust_rect.pivot_offset = Vector2(_RESULT_ILLUST_SIZE * 0.5, _RESULT_ILLUST_SIZE * 0.5)
+	illust_rect.scale = Vector2(0.85, 0.85)
+	illust_rect.modulate.a = 0.0
+	var illust_tw: Tween = create_tween()
+	illust_tw.set_parallel(true)
+	illust_tw.tween_property(illust_rect, "scale", Vector2(1.0, 1.0), 0.28)\
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	illust_tw.tween_property(illust_rect, "modulate:a", 1.0, 0.22)\
+		.set_trans(Tween.TRANS_LINEAR).set_ease(Tween.EASE_IN)
 
 	# ── 본문 패딩 컨테이너 ───────────────────────────────────────────────────
 	var body_margin := MarginContainer.new()
@@ -2021,6 +2053,7 @@ func _apply_facility_bonuses() -> void:
 	castle_max_hp += wall_hp
 	castle_hp += wall_hp
 	castle_bar.set_hp(castle_hp, castle_max_hp)
+	_update_demon_danger()
 
 	var graveyard_bonus: int = [0, 15, 30, 50][fl.get("graveyard", 0)]
 	graveyard_heal += graveyard_bonus
@@ -3092,16 +3125,7 @@ func _trigger_wave_guide(wave_idx: int) -> void:
 		1:
 			if summon_btns.size() > 0:
 				show_tutorial_tip("전사를 소환해 방어를 강화하세요!", summon_btns[0], 12.0)
-		2:
-			get_tree().create_timer(1.5).timeout.connect(func() -> void:
-				if wave_active:
-					show_dialogue("빠른 놈이군.", Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
-			)
 		4:
-			get_tree().create_timer(1.5).timeout.connect(func() -> void:
-				if wave_active:
-					show_dialogue("...큰 놈이다.", Color(0.75, 0.85, 1.0, 1), player.global_position + Vector2(0, -60))
-			)
 			if not _special_atk_tip_shown:
 				get_tree().create_timer(2.0).timeout.connect(func() -> void:
 					if not wave_active or _special_atk_tip_shown:

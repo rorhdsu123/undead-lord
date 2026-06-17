@@ -29,6 +29,12 @@ const RAGE_DIALOGUES: Dictionary = {
 
 const BOUNDS: Rect2 = Rect2(0, -280, 1024, 900)
 const DASH_SPEED: float = 400.0
+# 보스가 성으로 끝까지 파고들면 성과 같은 높이(y)에서 x가 ±1px 진동하며 dir이
+# 완전 수평(dir.x=±1)이 돼 매 프레임 flip_h가 뒤집힌다(좌우 미러 잔상=쪼개짐).
+# → 공격 사거리(60) 안쪽인 이 거리에서 멈춰 제자리 진동 자체를 없앤다.
+const STOP_DIST: float = 52.0
+# 접근 중 dir.x가 0 근처에서 부호가 떨려도 flip이 깜빡이지 않도록 데드존.
+const FLIP_DEADZONE: float = 0.12
 
 static var _cached_frames: Dictionary = {}
 
@@ -192,7 +198,7 @@ func _pattern_intern(delta: float) -> void:
 		velocity = dash_direction * DASH_SPEED
 		move_and_slide()
 		_clamp_to_bounds()
-		anim_sprite.flip_h = dash_direction.x < 0
+		_update_facing(dash_direction.x)
 		if _anim_state not in ["hurt", "die"]:
 			_play_anim("walk")
 		if dash_elapsed >= dash_duration or not BOUNDS.has_point(position):
@@ -201,13 +207,7 @@ func _pattern_intern(delta: float) -> void:
 			anim_sprite.modulate = COLOR_NORMAL
 		return
 
-	var dir: Vector2 = (castle_pos - global_position).normalized()
-	velocity = dir * speed
-	move_and_slide()
-	_clamp_to_bounds()
-	anim_sprite.flip_h = dir.x < 0
-	if _anim_state not in ["slash", "hurt", "die"]:
-		_play_anim("walk")
+	_approach_castle(castle_pos)
 
 	rage_timer += delta
 	if rage_timer >= rage_interval:
@@ -239,13 +239,7 @@ func _pattern_albaeng(delta: float) -> void:
 		return
 
 	var castle_pos: Vector2 = game.get_node("Castle").global_position
-	var dir: Vector2 = (castle_pos - global_position).normalized()
-	velocity = dir * speed
-	move_and_slide()
-	_clamp_to_bounds()
-	anim_sprite.flip_h = dir.x < 0
-	if _anim_state not in ["slash", "hurt", "die"]:
-		_play_anim("walk")
+	_approach_castle(castle_pos)
 
 	summon_timer += delta
 	if summon_timer >= summon_interval:
@@ -423,6 +417,29 @@ func _hit_flash() -> void:
 		if is_instance_valid(self) and not is_charging_rage:
 			_restore_phase_modulate()
 	)
+
+func _update_facing(dx: float) -> void:
+	# dx가 데드존 안이면 직전 방향 유지 — 중앙 정렬 시 flip_h 깜빡임(쪼개짐) 방지
+	if absf(dx) > FLIP_DEADZONE:
+		anim_sprite.flip_h = dx < 0
+
+# 성으로 접근하되 STOP_DIST 안에 들면 멈춘다(파고들기/제자리 진동/flip 토글 방지).
+func _approach_castle(castle_pos: Vector2) -> void:
+	var to_castle: Vector2 = castle_pos - global_position
+	if to_castle.length() <= STOP_DIST:
+		velocity = Vector2.ZERO
+		move_and_slide()
+		# 정지 시 facing 갱신 안 함 — 수평 dir로 인한 매 프레임 flip 토글 차단
+		if _anim_state not in ["slash", "hurt", "die"]:
+			_play_anim("idle")
+		return
+	var dir: Vector2 = to_castle.normalized()
+	velocity = dir * speed
+	move_and_slide()
+	_clamp_to_bounds()
+	_update_facing(dir.x)
+	if _anim_state not in ["slash", "hurt", "die"]:
+		_play_anim("walk")
 
 func _clamp_to_bounds() -> void:
 	position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)

@@ -611,13 +611,20 @@ func _update_demon_danger() -> void:
 		demon_portrait.say("hurt", DANGER_LINES[randi() % DANGER_LINES.size()])
 	_castle_in_danger = now_danger
 
-func castle_take_damage(dmg: int) -> void:
+func castle_take_damage(dmg: int, from_pos: Vector2 = Vector2.INF) -> void:
 	if castle_hp <= 0:
 		return
 	castle_hp -= dmg
 	castle_bar.set_hp(castle_hp, castle_max_hp)
 	castle_vis.set_hp_ratio(float(castle_hp) / float(castle_max_hp))
 	_update_demon_danger()
+	# 공격자 위치를 외벽 사각형에 투영한 접촉점에 임팩트 표시(어느 쪽이 맞고 있는지 가독).
+	if not is_inf(from_pos.x):
+		var cc: Vector2 = $Castle.global_position
+		var contact: Vector2 = Vector2(
+			clamp(from_pos.x, cc.x - 80.0, cc.x + 80.0),
+			clamp(from_pos.y, cc.y - 80.0, cc.y + 80.0))
+		spawn_castle_hit_effect(contact)
 	if castle_hp <= 0:
 		castle_hp = 0
 		castle_bar.set_hp(castle_hp, castle_max_hp)
@@ -3012,6 +3019,20 @@ func show_crit_text() -> void:
 	tween.tween_interval(0.2)
 	tween.tween_property(label, "modulate:a", 0.0, 0.25)
 	tween.tween_callback(label.queue_free)
+
+func spawn_castle_hit_effect(pos: Vector2) -> void:
+	# 임팩트 플래시 — 마름모 한 점
+	var flash: ColorRect = ColorRect.new()
+	flash.size = Vector2(16, 16)
+	flash.position = pos - Vector2(8, 8)
+	flash.pivot_offset = Vector2(8, 8)
+	flash.rotation = 0.7853982  # 45°
+	flash.color = Color(1.0, 0.92, 0.55, 0.95)
+	add_child(flash)
+	var ftw: Tween = create_tween()
+	ftw.parallel().tween_property(flash, "scale", Vector2(0.3, 0.3), 0.22)
+	ftw.parallel().tween_property(flash, "modulate:a", 0.0, 0.22)
+	ftw.tween_callback(flash.queue_free)
 
 func spawn_death_effect(pos: Vector2, color: Color = Color(1, 0.6, 0.4, 1)) -> void:
 	for i in 6:

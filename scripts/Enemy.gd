@@ -152,14 +152,7 @@ func _physics_process(delta: float) -> void:
 		speed = base_speed
 
 	var minion_target = _find_nearby_minion()
-
-	# 사수(scout) 전용: 근접 어그로 없을 때 가장 가까운 아군 궁수(ranged 하인)를 우선 타겟.
-	# 탱크/전사가 경로에 있으면 _find_nearby_minion이 먼저 잡아 사수를 막아냄(궁수 보호).
-	var archer_target = null
-	if enemy_type == "scout" and not is_instance_valid(minion_target):
-		archer_target = _find_target_archer()
-
-	var effective_target = minion_target if is_instance_valid(minion_target) else archer_target
+	var effective_target = minion_target
 
 	var target_pos: Vector2
 	if is_instance_valid(effective_target):
@@ -204,6 +197,30 @@ func _physics_process(delta: float) -> void:
 	global_position.x = clamp(global_position.x, PLAY_BOUNDS.position.x, PLAY_BOUNDS.end.x)
 	global_position.y = clamp(global_position.y, PLAY_BOUNDS.position.y, PLAY_BOUNDS.end.y)
 
+	# 성벽 키프아웃: 적은 외벽 사각형(CASTLE_HALF 기준) 안으로 진입 불가.
+	# 매 프레임 절대좌표를 보정 → 빠른 이동·넉백 터널링 없음. 가장 가까운 변 바깥으로 고정.
+	var castle_node: Node2D = game.get_node_or_null("Castle")
+	if is_instance_valid(castle_node):
+		var c: Vector2 = castle_node.global_position
+		var wl: float = c.x - CASTLE_HALF
+		var wr: float = c.x + CASTLE_HALF
+		var wt: float = c.y - CASTLE_HALF
+		var wb: float = c.y + CASTLE_HALF
+		if global_position.x > wl and global_position.x < wr and global_position.y > wt and global_position.y < wb:
+			var d_top: float = global_position.y - wt
+			var d_bot: float = wb - global_position.y
+			var d_left: float = global_position.x - wl
+			var d_right: float = wr - global_position.x
+			var m: float = min(min(d_top, d_bot), min(d_left, d_right))
+			if m == d_top:
+				global_position.y = wt
+			elif m == d_bot:
+				global_position.y = wb
+			elif m == d_left:
+				global_position.x = wl
+			else:
+				global_position.x = wr
+
 func _do_attack(minion_target) -> void:
 	_play_anim("attack")
 	if is_instance_valid(minion_target):
@@ -214,8 +231,13 @@ func _do_attack(minion_target) -> void:
 		if is_ranged:
 			var castle = game.get_node_or_null("Castle")
 			if is_instance_valid(castle):
-				_shoot_arrow(castle.global_position)
-		game.castle_take_damage(damage)
+				# 화살은 성 중심이 아니라 가장 가까운 외벽 지점으로(마당 침범 방지, 피격 스파크와 일치).
+				var cc: Vector2 = castle.global_position
+				var contact: Vector2 = Vector2(
+					clamp(global_position.x, cc.x - CASTLE_HALF, cc.x + CASTLE_HALF),
+					clamp(global_position.y, cc.y - CASTLE_HALF, cc.y + CASTLE_HALF))
+				_shoot_arrow(contact)
+		game.castle_take_damage(damage, global_position)
 
 ## 원거리 적(사수): 대상 방향으로 시각용 화살 발사. 실제 피해는 take_damage/castle_take_damage가 처리(화살 damage=0).
 func _shoot_arrow(target_pos: Vector2) -> void:
@@ -236,28 +258,11 @@ func _find_nearby_minion():
 	for m in get_tree().get_nodes_in_group("minions"):
 		if not is_instance_valid(m):
 			continue
-		# 궁수(ranged)는 일반 어그로를 끌지 않음 — 적이 궁수에게 멈추지 않고 성으로 진행
-		# (사수의 궁수 타겟팅은 _find_target_archer에서 별도 처리)
+		# 궁수(ranged)는 일반 어그로를 끌지 않음 — 적이 궁수에게 멈추지 않고 성벽으로 진행(후열 궁수 보호)
 		if m.get("behavior") == "ranged":
 			continue
 		var d: float = global_position.distance_to(m.global_position)
 		if d < MINION_ENGAGE_RANGE and d < nearest_dist:
-			nearest_dist = d
-			nearest = m
-	return nearest
-
-## 사수(scout) 전용: 화면 전체에서 가장 가까운 아군 궁수(ranged 하인) 반환.
-## 궁수가 없으면 null — 호출자가 성으로 폴백.
-func _find_target_archer():
-	var nearest = null
-	var nearest_dist: float = INF
-	for m in get_tree().get_nodes_in_group("minions"):
-		if not is_instance_valid(m):
-			continue
-		if m.get("behavior") != "ranged":
-			continue
-		var d: float = global_position.distance_to(m.global_position)
-		if d < nearest_dist:
 			nearest_dist = d
 			nearest = m
 	return nearest

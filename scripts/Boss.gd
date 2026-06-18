@@ -29,10 +29,8 @@ const RAGE_DIALOGUES: Dictionary = {
 
 const BOUNDS: Rect2 = Rect2(0, -280, 1024, 900)
 const DASH_SPEED: float = 400.0
-# 보스가 성으로 끝까지 파고들면 성과 같은 높이(y)에서 x가 ±1px 진동하며 dir이
-# 완전 수평(dir.x=±1)이 돼 매 프레임 flip_h가 뒤집힌다(좌우 미러 잔상=쪼개짐).
-# → 공격 사거리(60) 안쪽인 이 거리에서 멈춰 제자리 진동 자체를 없앤다.
-const STOP_DIST: float = 52.0
+const CASTLE_HALF: float = 80.0  # 외벽 절반 (Enemy.gd CASTLE_HALF / CastleSprite.S 와 일치)
+const STOP_DIST: float = 18.0    # 외벽 바깥 standoff (중심 아님). deadzone ≫ 프레임 이동 → 경계 진동 방지
 # 접근 중 dir.x가 0 근처에서 부호가 떨려도 flip이 깜빡이지 않도록 데드존.
 const FLIP_DEADZONE: float = 0.12
 
@@ -169,16 +167,34 @@ func _physics_process(delta: float) -> void:
 		_pattern_albaeng(delta)
 
 	var castle_pos: Vector2 = game.get_node("Castle").global_position
-	var dist: float = global_position.distance_to(castle_pos)
-	if dist < 60.0 and not is_dashing and not is_charging_rage:
+	if _castle_wall_dist(castle_pos) <= STOP_DIST and not is_dashing and not is_charging_rage:
 		attack_timer += delta
 		if attack_timer >= attack_cooldown:
 			attack_timer = 0.0
-			game.castle_take_damage(damage)
+			game.castle_take_damage(damage, global_position)
 			if _anim_state not in ["hurt", "die"]:
 				_play_anim("slash")
 	else:
 		attack_timer = 0.0
+
+	# 성벽 키프아웃 안전망: 돌진·밀림으로 외벽 안에 들어가면 가장 가까운 변 바깥으로 고정.
+	# (정상 접근은 _approach_castle의 standoff에서 먼저 멈추므로 여기 거의 안 걸림)
+	var kc: Vector2 = castle_pos
+	if global_position.x > kc.x - CASTLE_HALF and global_position.x < kc.x + CASTLE_HALF \
+			and global_position.y > kc.y - CASTLE_HALF and global_position.y < kc.y + CASTLE_HALF:
+		var kd_top: float = global_position.y - (kc.y - CASTLE_HALF)
+		var kd_bot: float = (kc.y + CASTLE_HALF) - global_position.y
+		var kd_left: float = global_position.x - (kc.x - CASTLE_HALF)
+		var kd_right: float = (kc.x + CASTLE_HALF) - global_position.x
+		var km: float = min(min(kd_top, kd_bot), min(kd_left, kd_right))
+		if km == kd_top:
+			global_position.y = kc.y - CASTLE_HALF
+		elif km == kd_bot:
+			global_position.y = kc.y + CASTLE_HALF
+		elif km == kd_left:
+			global_position.x = kc.x - CASTLE_HALF
+		else:
+			global_position.x = kc.x + CASTLE_HALF
 
 # ============ 인턴 패턴 ============
 func _pattern_intern(delta: float) -> void:
@@ -313,7 +329,7 @@ func _execute_rage_attack() -> void:
 	rage_charge_time = 0.0
 	_restore_phase_modulate()
 	if game:
-		game.castle_take_damage(rage_damage)
+		game.castle_take_damage(rage_damage, global_position)
 
 func _summon_companions() -> void:
 	if game and game.has_method("boss_summon"):
@@ -423,23 +439,29 @@ func _update_facing(dx: float) -> void:
 	if absf(dx) > FLIP_DEADZONE:
 		anim_sprite.flip_h = dx < 0
 
-# 성으로 접근하되 STOP_DIST 안에 들면 멈춘다(파고들기/제자리 진동/flip 토글 방지).
+# 성으로 접근하되 외벽 바깥 STOP_DIST standoff에 닿으면 멈춘다(마당 진입/파고들기/flip 토글 방지).
 func _approach_castle(castle_pos: Vector2) -> void:
-	var to_castle: Vector2 = castle_pos - global_position
-	if to_castle.length() <= STOP_DIST:
+	if _castle_wall_dist(castle_pos) <= STOP_DIST:
 		velocity = Vector2.ZERO
 		move_and_slide()
 		# 정지 시 facing 갱신 안 함 — 수평 dir로 인한 매 프레임 flip 토글 차단
 		if _anim_state not in ["slash", "hurt", "die"]:
 			_play_anim("idle")
 		return
-	var dir: Vector2 = to_castle.normalized()
+	var dir: Vector2 = (castle_pos - global_position).normalized()
 	velocity = dir * speed
 	move_and_slide()
 	_clamp_to_bounds()
 	_update_facing(dir.x)
 	if _anim_state not in ["slash", "hurt", "die"]:
 		_play_anim("walk")
+
+# 외벽 사각형(CASTLE_HALF)까지의 거리 — 점이 아니라 박스 기준. 박스 안이면 0.
+func _castle_wall_dist(castle_pos: Vector2) -> float:
+	var rel: Vector2 = global_position - castle_pos
+	var dx: float = max(0.0, absf(rel.x) - CASTLE_HALF)
+	var dy: float = max(0.0, absf(rel.y) - CASTLE_HALF)
+	return sqrt(dx * dx + dy * dy)
 
 func _clamp_to_bounds() -> void:
 	position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)

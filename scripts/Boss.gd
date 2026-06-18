@@ -117,11 +117,11 @@ func _ready() -> void:
 	# 발끝 = 북벽 라인 + WALL_PENETRATION 에 멈추도록 standoff를 크기에 비례해 산정.
 	# 작은 보스는 발끝 늘어짐이 작아 음수가 될 수 있어 STOP_DIST로 하한(공격 판정 보장).
 	castle_standoff = maxf(STOP_DIST, BODY_BOTTOM_OFFSET * sprite_scale - WALL_PENETRATION)
-	# 공격 범위 표시(표시 전용·근접=파랑): 발밑에 깐다. 반경은 크기 비례.
+	# 공격 범위 표시(표시 전용·보스타입=빨강): 발밑에 깐다. 반경은 크기 비례.
 	var boss_indicator := RangeIndicatorScript.new()
 	add_child(boss_indicator)
 	# 원점→캐릭터 시각 중심 ≈ 37px×스케일 아래(발밑 아님 — 보스가 원 중심).
-	boss_indicator.setup(110.0 * sprite_scale + 40.0, Color(0.3, 0.6, 1.0), 37.0 * sprite_scale)
+	boss_indicator.setup(110.0 * sprite_scale + 40.0, Color(1.0, 0.35, 0.35), 37.0 * sprite_scale)
 	anim_sprite.animation_finished.connect(_on_animation_finished)
 	_play_anim("idle")
 

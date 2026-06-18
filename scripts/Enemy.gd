@@ -83,13 +83,12 @@ func _ready() -> void:
 	anim_sprite.scale = Vector2.ONE * BASE_SPRITE_SCALE * base_scale
 	_sprite_base_scale = anim_sprite.scale
 	anim_sprite.animation_finished.connect(_on_animation_finished)
-	# 공격 범위 표시(표시 전용): 근접=파랑·원거리=빨강. 캐릭터 시각 중심에 정원으로 깐다.
-	var ind_radius: float = castle_attack_range if is_ranged else 60.0 * base_scale
-	var ind_color: Color = Color(1.0, 0.35, 0.35) if is_ranged else Color(0.3, 0.6, 1.0)
-	var indicator := RangeIndicatorScript.new()
-	add_child(indicator)
-	# 원점→캐릭터 시각 중심 ≈ 37px×스케일 아래(발밑 아님 — 캐릭터가 원 중심).
-	indicator.setup(ind_radius, ind_color, 37.0 * anim_sprite.scale.y)
+	# 공격 범위 표시(표시 전용): 일반 적 = 파랑 원(보스 타입은 빨강, Boss.gd). 원거리(scout)만 표시(근접은 원 수프 방지).
+	if is_ranged:
+		var indicator := RangeIndicatorScript.new()
+		add_child(indicator)
+		# 원점→캐릭터 시각 중심 ≈ 37px×스케일 아래(발밑 아님 — 캐릭터가 원 중심).
+		indicator.setup(castle_attack_range, Color(0.3, 0.6, 1.0), 37.0 * anim_sprite.scale.y)
 	_play_anim("idle")
 
 static func _get_sprite_frames(folder: String, attack_folder: String) -> SpriteFrames:

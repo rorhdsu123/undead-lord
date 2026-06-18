@@ -9,7 +9,7 @@ extends Node
 # 웨이브 구조:
 #   base_hp / base_speed / base_damage : 해당 웨이브 기준치
 #   composition : [{"enemy": "타입", "count": N}, ...]
-#   적 타입: normal / scout(빠름) / brute(거인) / swarm(무리)
+#   적 타입: normal(기준) / scout(사수=원거리·하인무시) / brute(벽) / swarm(무리) / runner(돌격병=빠름·하인무시)
 #   타입별 배율은 Enemy.gd TYPE_PRESETS 참조
 # =============================================
 
@@ -26,21 +26,21 @@ const CHAPTERS = [
 					{"type": "normal", "base_hp": 35, "base_speed": 55, "base_damage": 6,
 					 "composition": [{"enemy": "normal", "count": 5}]},
 
-					# W3: 새 적 scout 등장
+					# W3: 새 적 brute(벽) 등장
 					{"type": "normal", "base_hp": 40, "base_speed": 58, "base_damage": 6,
 					 "composition": [
 						{"enemy": "normal", "count": 4},
-						{"enemy": "scout",  "count": 2},
+						{"enemy": "brute",  "count": 1},
 					 ]},
 
-					# W4: 하인 소환 학습 (적 강도 약함)
+					# W4: 하인 소환 학습 (적 강도 약함) + 사수 도입
 					{"type": "normal", "base_hp": 45, "base_speed": 60, "base_damage": 6,
 					 "composition": [
 						{"enemy": "normal", "count": 3},
-						{"enemy": "scout",  "count": 2},
+						{"enemy": "scout",  "count": 1},
 					 ]},
 
-					# W5: 새 적 brute 등장
+					# W5: brute 보강
 					{"type": "normal", "base_hp": 50, "base_speed": 60, "base_damage": 7,
 					 "composition": [
 						{"enemy": "normal", "count": 3},
@@ -93,14 +93,15 @@ const CHAPTERS = [
 
 					{"type": "normal", "base_hp": 90, "base_speed": 68, "base_damage": 12,
 					 "composition": [
-						{"enemy": "brute",  "count": 3},
 						{"enemy": "normal", "count": 3},
+						{"enemy": "runner", "count": 2},  # 돌격병 도입
 					 ]},
 
 					{"type": "normal", "base_hp": 100, "base_speed": 70, "base_damage": 12,
 					 "composition": [
-						{"enemy": "scout",  "count": 6},
+						{"enemy": "scout",  "count": 4},
 						{"enemy": "normal", "count": 3},
+						{"enemy": "runner", "count": 1},
 					 ]},
 
 					{"type": "normal", "base_hp": 110, "base_speed": 72, "base_damage": 14,
@@ -141,9 +142,9 @@ const CHAPTERS = [
 
 					{"type": "normal", "base_hp": 190, "base_speed": 76, "base_damage": 18,
 					 "composition": [
-						{"enemy": "brute", "count": 4},
-						{"enemy": "scout", "count": 4},
-					 ]},  # 양극 (느린 거인 + 빠른 척후병)
+						{"enemy": "brute",  "count": 4},
+						{"enemy": "runner", "count": 4},
+					 ]},  # 양극 (느린 벽 + 빠른 돌격)
 
 					{"type": "mid_boss", "base_hp": 170, "base_speed": 74, "base_damage": 15,
 					 "composition": [
@@ -155,9 +156,10 @@ const CHAPTERS = [
 
 					{"type": "normal", "base_hp": 210, "base_speed": 78, "base_damage": 20,
 					 "composition": [
-						{"enemy": "normal", "count": 5},
+						{"enemy": "normal", "count": 4},
 						{"enemy": "brute",  "count": 3},
 						{"enemy": "scout",  "count": 3},
+						{"enemy": "runner", "count": 2},
 					 ]},
 
 					{"type": "normal", "base_hp": 225, "base_speed": 80, "base_damage": 22,
@@ -172,6 +174,7 @@ const CHAPTERS = [
 						{"enemy": "scout",  "count": 5},
 						{"enemy": "brute",  "count": 3},
 						{"enemy": "swarm",  "count": 8},
+						{"enemy": "runner", "count": 3},
 					 ]},
 
 					{"type": "boss", "base_hp": 220, "base_speed": 78, "base_damage": 20,

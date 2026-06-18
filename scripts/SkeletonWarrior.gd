@@ -24,7 +24,14 @@ const TYPE_PRESETS: Dictionary = {
 const EVOLUTION_THRESHOLDS: Array = [5, 10]
 const EVOLUTION_MULTS: Array = [1.0, 1.25, 1.6]
 const BOMB_RADIUS: float = 80.0
-const BASE_SPRITE_SCALE: float = 0.246
+const BASE_SPRITE_SCALE: float = 0.246      # 측정 실패 시 폴백 배율
+const TARGET_CONTENT_PX: float = 85.0       # base_scale 1.0 기준 화면 콘텐츠 높이 (에셋 여백 무관 정규화)
+# 역할별 목표 높이 오버라이드 (실루엣 질량이 달라 bbox 높이만으론 안 맞는 경우 미세조정).
+const TYPE_TARGET_PX: Dictionary = {
+	"warrior": 55.0,   # 다부진 공룡 체형 — 덩치가 커 보여 하향
+	"archer": 63.0,    # 박쥐 — 옛 해골 궁수(~53px) 크기에 맞춤
+	"tank": 38.0,      # 슬라임 — 전사 수준에 맞춤 (×base_scale 1.45 = ~55px)
+}
 const BOUNDS: Rect2 = Rect2(0, -230, 1024, 930)
 
 # ── 수비 밴드 상수 (RD13, 가제 — 밸런싱 대기) ────────────────────────────
@@ -46,7 +53,16 @@ const WAIT_X_OFFSETS: Dictionary = {
 # leash: 타겟이 밴드 밖으로 이 거리 이상 나가면 추격 포기
 const LEASH_MARGIN: float = 40.0   # 밴드 상한에서 위로 얼마나 나가면 포기
 
-static var _cached_frames: Dictionary = {}
+# 정적 단일 이미지 오버라이드 (풀 애니 미입고 역할 — 전 동작이 한 컷으로 표시).
+# 추후 같은 폴더에 0_[Role]_[Motion]_###.png 프레임 입고 시 여기서 제거하고 프레임 로더로 전환.
+const STATIC_SPRITES: Dictionary = {
+	"warrior": "res://assets/characters/Warrior/Warrior.png",
+	"archer": "res://assets/characters/Archer/Archer.png",
+	"tank": "res://assets/characters/Tank/Tank.png",
+}
+
+static var _cached_frames: Dictionary = {}  # minion_type → SpriteFrames
+static var _cached_fit: Dictionary = {}     # minion_type → 자동맞춤 배율 (base_scale 1.0 기준)
 
 var minion_type: String = "warrior"
 var hp: float = 100.0
@@ -60,6 +76,7 @@ var behavior: String = "melee"
 var evolves: bool = true
 var base_max_hp: float = 100.0
 var base_scale: float = 1.0
+var sprite_base_scale: float = BASE_SPRITE_SCALE  # 자동맞춤×base_scale, _ready에서 확정
 
 var kill_count: int = 0
 var level: int = 1
@@ -90,17 +107,49 @@ func _ready() -> void:
 	evolves = preset["evolves"]
 	base_scale = preset["scale"]
 
-	var variant: int = preset["variant"]
-	anim_sprite.sprite_frames = _get_sprite_frames(variant)
-	anim_sprite.scale = Vector2.ONE * BASE_SPRITE_SCALE * base_scale
+	anim_sprite.sprite_frames = _get_sprite_frames(minion_type, preset["variant"])
+	sprite_base_scale = _get_fit_scale(minion_type, anim_sprite.sprite_frames) * base_scale
+	anim_sprite.scale = Vector2.ONE * sprite_base_scale
 	anim_sprite.animation_finished.connect(_on_animation_finished)
 	_play_anim("idle")
 
-static func _get_sprite_frames(variant: int) -> SpriteFrames:
-	if variant in _cached_frames:
-		return _cached_frames[variant]
-	var sf: SpriteFrames = _build_sprite_frames(variant)
-	_cached_frames[variant] = sf
+static func _get_sprite_frames(type: String, variant: int) -> SpriteFrames:
+	if type in _cached_frames:
+		return _cached_frames[type]
+	var sf: SpriteFrames
+	if type in STATIC_SPRITES:
+		sf = _build_static_frames(STATIC_SPRITES[type])
+	else:
+		sf = _build_sprite_frames(variant)
+	_cached_frames[type] = sf
+	return sf
+
+# idle 첫 프레임의 불투명 영역 높이를 재서 TARGET_CONTENT_PX에 맞추는 배율 (여백 무관 정규화).
+static func _get_fit_scale(type: String, sf: SpriteFrames) -> float:
+	if type in _cached_fit:
+		return _cached_fit[type]
+	var fit: float = BASE_SPRITE_SCALE  # 측정 실패 시 폴백
+	var target: float = TYPE_TARGET_PX.get(type, TARGET_CONTENT_PX)
+	if sf.has_animation("idle") and sf.get_frame_count("idle") > 0:
+		var tex: Texture2D = sf.get_frame_texture("idle", 0)
+		if tex:
+			var img: Image = tex.get_image()
+			if img and img.get_used_rect().size.y > 0:
+				fit = target / float(img.get_used_rect().size.y)
+	_cached_fit[type] = fit
+	return fit
+
+# 한 장짜리 정적 스프라이트: 전 동작을 동일 프레임으로 채움 (애니 없음, 임시).
+static func _build_static_frames(path: String) -> SpriteFrames:
+	var sf: SpriteFrames = SpriteFrames.new()
+	sf.remove_animation("default")
+	var tex: Texture2D = load(path)
+	for anim: String in ["idle", "walk", "slash", "hurt", "die"]:
+		sf.add_animation(anim)
+		sf.set_animation_loop(anim, anim == "idle" or anim == "walk")
+		sf.set_animation_speed(anim, 15.0)
+		if tex:
+			sf.add_frame(anim, tex)
 	return sf
 
 static func _load_anim(sf: SpriteFrames, anim: String, base_path: String, prefix: String, sub: String, count: int, loop: bool) -> void:
@@ -313,7 +362,7 @@ func _evolve() -> void:
 	hp += max_hp - prev_max
 	hp = min(hp, max_hp)
 	attack_damage = base_damage * mult
-	anim_sprite.scale = Vector2.ONE * BASE_SPRITE_SCALE * base_scale * (1.0 + 0.15 * (level - 1))
+	anim_sprite.scale = Vector2.ONE * sprite_base_scale * (1.0 + 0.15 * (level - 1))
 	anim_sprite.modulate = Color.WHITE.lerp(Color(1.3, 1.1, 0.5, 1.0), 0.35 * (level - 1))
 	hp_bar.value = (hp / max_hp) * 100.0
 	if game and game.has_method("spawn_evolve_effect"):

@@ -1,6 +1,7 @@
 extends CharacterBody2D
 
 const WaveData = preload("res://scripts/WaveData.gd")
+const RangeIndicatorScript = preload("res://scripts/RangeIndicator.gd")
 
 const BOSS_SPRITE_MAP: Dictionary = {
 	"수습 용사 인턴":    "boss_intern",
@@ -34,6 +35,18 @@ const STOP_DIST: float = 18.0    # 외벽 바깥 standoff (중심 아님). deadz
 # 접근 중 dir.x가 0 근처에서 부호가 떨려도 flip이 깜빡이지 않도록 데드존.
 const FLIP_DEADZONE: float = 0.12
 
+# 성벽 standoff 보정: 스프라이트가 centered라 발끝이 원점 아래로 늘어진다.
+# 발끝을 북벽 라인보다 WALL_PENETRATION만큼 성 안쪽에 두어, 큰 보스도 몸통이 벽에 닿아
+# 근접 공격이 벽과 연결돼 보이고 잡몹과 정지 라인이 어긋나지 않게 한다.
+const BODY_BOTTOM_OFFSET: float = 306.0   # 캔버스 중심→발끝 (px, 알파>200 실측, 4종 공통)
+const WALL_PENETRATION: float = 0.0       # 발끝을 북벽 라인에 맞춤(파고들지 않음). 0보다 크면 안쪽으로.
+
+# 하인 교전 (압박형) — 와인드업·격노·돌진 중엔 적용 안 됨(그 상태들이 _approach_castle 이전에 return)
+const MINION_ENGAGE_RANGE: float = 100.0  # 길목 하인 감지 거리 (Enemy.gd와 일치)
+const MINION_ATTACK_RANGE: float = 50.0   # 하인 교전 사거리 (Enemy.gd와 일치)
+const MAX_ENGAGE_TIME: float = 3.0        # 이 시간만 교전 후 뿌리치고 전진
+const ENGAGE_COOLDOWN: float = 4.0        # 뿌리친 뒤 하인 무시하고 성으로 밀고 드는 시간
+
 static var _cached_frames: Dictionary = {}
 
 var hp: float = 300.0
@@ -44,6 +57,10 @@ var damage: int = 20
 var base_damage: int = 20
 var attack_cooldown: float = 1.2
 var attack_timer: float = 0.0
+var castle_standoff: float = STOP_DIST  # _ready에서 스프라이트 크기 반영해 재계산
+var minion_attack_timer: float = 0.0
+var engage_time: float = 0.0
+var ignore_minion_timer: float = 0.0
 var boss_name: String = "보스"
 var boss_type: String = "mid_boss"
 
@@ -97,6 +114,14 @@ func _ready() -> void:
 	var sprite_scale: float = BOSS_SCALE_MAP.get(folder, BASE_SPRITE_SCALE)
 	anim_sprite.sprite_frames = _get_sprite_frames(folder)
 	anim_sprite.scale = Vector2.ONE * sprite_scale
+	# 발끝 = 북벽 라인 + WALL_PENETRATION 에 멈추도록 standoff를 크기에 비례해 산정.
+	# 작은 보스는 발끝 늘어짐이 작아 음수가 될 수 있어 STOP_DIST로 하한(공격 판정 보장).
+	castle_standoff = maxf(STOP_DIST, BODY_BOTTOM_OFFSET * sprite_scale - WALL_PENETRATION)
+	# 공격 범위 표시(표시 전용·근접=파랑): 발밑에 깐다. 반경은 크기 비례.
+	var boss_indicator := RangeIndicatorScript.new()
+	add_child(boss_indicator)
+	# 원점→캐릭터 시각 중심 ≈ 37px×스케일 아래(발밑 아님 — 보스가 원 중심).
+	boss_indicator.setup(110.0 * sprite_scale + 40.0, Color(0.3, 0.6, 1.0), 37.0 * sprite_scale)
 	anim_sprite.animation_finished.connect(_on_animation_finished)
 	_play_anim("idle")
 
@@ -167,7 +192,7 @@ func _physics_process(delta: float) -> void:
 		_pattern_albaeng(delta)
 
 	var castle_pos: Vector2 = game.get_node("Castle").global_position
-	if _castle_wall_dist(castle_pos) <= STOP_DIST and not is_dashing and not is_charging_rage:
+	if _castle_wall_dist(castle_pos) <= castle_standoff and not is_dashing and not is_charging_rage:
 		attack_timer += delta
 		if attack_timer >= attack_cooldown:
 			attack_timer = 0.0
@@ -223,7 +248,7 @@ func _pattern_intern(delta: float) -> void:
 			anim_sprite.modulate = COLOR_NORMAL
 		return
 
-	_approach_castle(castle_pos)
+	_engage_or_approach(delta, castle_pos)
 
 	rage_timer += delta
 	if rage_timer >= rage_interval:
@@ -255,7 +280,7 @@ func _pattern_albaeng(delta: float) -> void:
 		return
 
 	var castle_pos: Vector2 = game.get_node("Castle").global_position
-	_approach_castle(castle_pos)
+	_engage_or_approach(delta, castle_pos)
 
 	summon_timer += delta
 	if summon_timer >= summon_interval:
@@ -439,9 +464,69 @@ func _update_facing(dx: float) -> void:
 	if absf(dx) > FLIP_DEADZONE:
 		anim_sprite.flip_h = dx < 0
 
-# 성으로 접근하되 외벽 바깥 STOP_DIST standoff에 닿으면 멈춘다(마당 진입/파고들기/flip 토글 방지).
+# 압박형 교전: 길목의 전사·탱커와 잠깐 싸우다, MAX_ENGAGE_TIME이 지나면 뿌리치고
+# ENGAGE_COOLDOWN 동안 하인을 무시한 채 성으로 밀고 든다. 궁수는 _find_nearby_minion이 제외.
+func _engage_or_approach(delta: float, castle_pos: Vector2) -> void:
+	if ignore_minion_timer > 0.0:
+		ignore_minion_timer -= delta
+		_approach_castle(castle_pos)
+		return
+
+	var minion = _find_nearby_minion()
+	if not is_instance_valid(minion):
+		engage_time = 0.0
+		minion_attack_timer = 0.0
+		_approach_castle(castle_pos)
+		return
+
+	engage_time += delta
+	if engage_time >= MAX_ENGAGE_TIME:
+		engage_time = 0.0
+		minion_attack_timer = 0.0
+		ignore_minion_timer = ENGAGE_COOLDOWN
+		_approach_castle(castle_pos)
+		return
+
+	var target_pos: Vector2 = minion.global_position
+	var dist: float = global_position.distance_to(target_pos)
+	if dist <= MINION_ATTACK_RANGE:
+		velocity = Vector2.ZERO
+		move_and_slide()
+		minion_attack_timer += delta
+		if minion_attack_timer >= attack_cooldown:
+			minion_attack_timer = 0.0
+			minion.take_damage(damage)
+			if _anim_state not in ["hurt", "die"]:
+				_play_anim("slash")
+		elif _anim_state not in ["slash", "hurt", "die"]:
+			_play_anim("idle")
+	else:
+		var dir: Vector2 = (target_pos - global_position).normalized()
+		velocity = dir * speed
+		move_and_slide()
+		_clamp_to_bounds()
+		_update_facing(dir.x)
+		if _anim_state not in ["slash", "hurt", "die"]:
+			_play_anim("walk")
+
+# 길목 하인 탐색 — minions 그룹에서 가장 가까운 근접 하인. 궁수(ranged)는 어그로 제외(Enemy.gd와 동일).
+func _find_nearby_minion():
+	var nearest = null
+	var nearest_dist: float = INF
+	for m in get_tree().get_nodes_in_group("minions"):
+		if not is_instance_valid(m):
+			continue
+		if m.get("behavior") == "ranged":
+			continue
+		var d: float = global_position.distance_to(m.global_position)
+		if d < MINION_ENGAGE_RANGE and d < nearest_dist:
+			nearest_dist = d
+			nearest = m
+	return nearest
+
+# 성으로 접근하되 외벽 바깥 castle_standoff에 닿으면 멈춘다(마당 진입/파고들기/flip 토글 방지).
 func _approach_castle(castle_pos: Vector2) -> void:
-	if _castle_wall_dist(castle_pos) <= STOP_DIST:
+	if _castle_wall_dist(castle_pos) <= castle_standoff:
 		velocity = Vector2.ZERO
 		move_and_slide()
 		# 정지 시 facing 갱신 안 함 — 수평 dir로 인한 매 프레임 flip 토글 차단

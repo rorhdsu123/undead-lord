@@ -1,6 +1,7 @@
 extends CharacterBody2D
 
 const ArrowScene = preload("res://scenes/Arrow.tscn")
+const RangeIndicatorScript = preload("res://scripts/RangeIndicator.gd")
 
 const TYPE_PRESETS: Dictionary = {
 	"normal": {"hp_mult": 1.0, "speed_mult": 1.0, "damage_mult": 1.0, "scale": 1.0,
@@ -60,6 +61,9 @@ var game = null
 
 func _ready() -> void:
 	add_to_group("enemies")
+	# 잡몹끼리 안 밀어내고 자유롭게 겹치도록 충돌 해제(레이어 1은 유지 → 아군 화살 명중 판정 정상).
+	# 성벽 막힘은 콜리전이 아니라 수동 위치 클램프라 영향 없음. 완전 겹침 시 NaN 해소도 불필요해짐.
+	collision_mask = 0
 	var preset: Dictionary = TYPE_PRESETS.get(enemy_type, TYPE_PRESETS["normal"])
 	var base_scale: float = preset["scale"]
 	hp = BASE_HP * preset["hp_mult"]
@@ -79,6 +83,13 @@ func _ready() -> void:
 	anim_sprite.scale = Vector2.ONE * BASE_SPRITE_SCALE * base_scale
 	_sprite_base_scale = anim_sprite.scale
 	anim_sprite.animation_finished.connect(_on_animation_finished)
+	# 공격 범위 표시(표시 전용): 근접=파랑·원거리=빨강. 캐릭터 시각 중심에 정원으로 깐다.
+	var ind_radius: float = castle_attack_range if is_ranged else 60.0 * base_scale
+	var ind_color: Color = Color(1.0, 0.35, 0.35) if is_ranged else Color(0.3, 0.6, 1.0)
+	var indicator := RangeIndicatorScript.new()
+	add_child(indicator)
+	# 원점→캐릭터 시각 중심 ≈ 37px×스케일 아래(발밑 아님 — 캐릭터가 원 중심).
+	indicator.setup(ind_radius, ind_color, 37.0 * anim_sprite.scale.y)
 	_play_anim("idle")
 
 static func _get_sprite_frames(folder: String, attack_folder: String) -> SpriteFrames:

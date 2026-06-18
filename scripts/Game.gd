@@ -3146,19 +3146,6 @@ func _trigger_wave_guide(wave_idx: int) -> void:
 		1:
 			if summon_btns.size() > 0:
 				show_tutorial_tip("전사를 소환해 방어를 강화하세요!", summon_btns[0], 12.0)
-		4:
-			if not _special_atk_tip_shown:
-				get_tree().create_timer(2.0).timeout.connect(func() -> void:
-					if not wave_active or _special_atk_tip_shown:
-						return
-					souls = max(souls, special_cost)
-					_update_souls_ui()
-					_special_atk_tip_shown = true
-					_special_atk_unlocked = true
-					show_tutorial_tip("특수기로 적을 한번에 처리하세요!", attack_button, 0.0)
-					_freeze_for_special_tip = true
-					_set_battle_freeze(true)
-				)
 
 func _show_card_guide() -> void:
 	if _card_rows.size() < 3:

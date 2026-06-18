@@ -1,14 +1,23 @@
 extends CharacterBody2D
 
+const ArrowScene = preload("res://scenes/Arrow.tscn")
+
 const TYPE_PRESETS: Dictionary = {
 	"normal": {"hp_mult": 1.0, "speed_mult": 1.0, "damage_mult": 1.0, "scale": 1.0,
-		"folder": "enemy_normal", "attack_anim": "Slashing"},
-	"scout":  {"hp_mult": 0.5, "speed_mult": 1.8, "damage_mult": 0.6, "scale": 0.8,
-		"folder": "enemy_scout",  "attack_anim": "Shooting"},
-	"brute":  {"hp_mult": 3.0, "speed_mult": 0.5, "damage_mult": 1.5, "scale": 1.45,
-		"folder": "enemy_brute",  "attack_anim": "Slashing"},
+		"folder": "enemy_normal", "attack_anim": "Slashing",
+		"cooldown": 1.5, "castle_range": 2.0, "ignore_minions": false, "ranged": false},
+	"scout":  {"hp_mult": 0.5, "speed_mult": 1.0, "damage_mult": 0.6, "scale": 0.8,
+		"folder": "enemy_scout",  "attack_anim": "Shooting",
+		"cooldown": 2.0, "castle_range": 150.0, "ignore_minions": false, "ranged": true},
+	"brute":  {"hp_mult": 3.5, "speed_mult": 0.5, "damage_mult": 1.5, "scale": 1.45,
+		"folder": "enemy_brute",  "attack_anim": "Slashing",
+		"cooldown": 1.5, "castle_range": 2.0, "ignore_minions": false, "ranged": false},
 	"swarm":  {"hp_mult": 0.3, "speed_mult": 1.3, "damage_mult": 0.5, "scale": 0.65,
-		"folder": "enemy_swarm",  "attack_anim": "Kicking"},
+		"folder": "enemy_swarm",  "attack_anim": "Kicking",
+		"cooldown": 1.5, "castle_range": 2.0, "ignore_minions": false, "ranged": false},
+	"runner": {"hp_mult": 0.6, "speed_mult": 1.7, "damage_mult": 1.2, "scale": 0.9,
+		"folder": "enemy_normal", "attack_anim": "Slashing",
+		"cooldown": 1.2, "castle_range": 2.0, "ignore_minions": true, "ranged": false},
 }
 
 const BASE_HP: float = 50.0
@@ -37,6 +46,9 @@ var knockback_vel: Vector2 = Vector2.ZERO
 var knockback_resist: float = 1.0  # 질량 대용(hp_mult). 클수록 덜 밀림
 var _sprite_base_scale: Vector2 = Vector2.ONE
 var enemy_type: String = "normal"
+var castle_attack_range: float = 2.0
+var ignore_minions: bool = false
+var is_ranged: bool = false
 var _attack_anim: String = "slash"
 var _anim_state: String = ""
 var _last_valid_pos: Vector2 = Vector2.ZERO  # move_and_slide NaN 복구용 (겹친 바디 충돌 해소 가드)
@@ -57,6 +69,10 @@ func _ready() -> void:
 	damage = int(BASE_DAMAGE * preset["damage_mult"])
 	knockback_resist = preset["hp_mult"]
 	_attack_anim = preset["attack_anim"].to_lower()
+	attack_cooldown = preset.get("cooldown", 1.5)
+	castle_attack_range = preset.get("castle_range", 2.0)
+	ignore_minions = preset.get("ignore_minions", false)
+	is_ranged = preset.get("ranged", false)
 
 	var folder: String = preset["folder"]
 	anim_sprite.sprite_frames = _get_sprite_frames(folder, preset["attack_anim"])
@@ -136,23 +152,32 @@ func _physics_process(delta: float) -> void:
 		speed = base_speed
 
 	var minion_target = _find_nearby_minion()
+
+	# 사수(scout) 전용: 근접 어그로 없을 때 가장 가까운 아군 궁수(ranged 하인)를 우선 타겟.
+	# 탱크/전사가 경로에 있으면 _find_nearby_minion이 먼저 잡아 사수를 막아냄(궁수 보호).
+	var archer_target = null
+	if enemy_type == "scout" and not is_instance_valid(minion_target):
+		archer_target = _find_target_archer()
+
+	var effective_target = minion_target if is_instance_valid(minion_target) else archer_target
+
 	var target_pos: Vector2
-	if is_instance_valid(minion_target):
-		target_pos = minion_target.global_position
+	if is_instance_valid(effective_target):
+		target_pos = effective_target.global_position
 	else:
 		target_pos = game.get_node("Castle").global_position
 
 	var dist: float
 	var attack_range: float
-	if is_instance_valid(minion_target):
+	if is_instance_valid(effective_target):
 		dist = global_position.distance_to(target_pos)
-		attack_range = 50.0
+		attack_range = 50.0 if is_instance_valid(minion_target) else castle_attack_range
 	else:
 		var rel: Vector2 = global_position - target_pos
 		var dx: float = max(0.0, absf(rel.x) - CASTLE_HALF)
 		var dy: float = max(0.0, absf(rel.y) - CASTLE_HALF)
 		dist = sqrt(dx * dx + dy * dy)
-		attack_range = 2.0
+		attack_range = castle_attack_range
 	if dist < attack_range:
 		velocity = Vector2.ZERO
 		if _anim_state not in ["attack", "hurt"]:
@@ -160,7 +185,7 @@ func _physics_process(delta: float) -> void:
 		attack_timer += delta
 		if attack_timer >= attack_cooldown:
 			attack_timer = 0.0
-			_do_attack(minion_target)
+			_do_attack(effective_target)
 	else:
 		var dir: Vector2 = (target_pos - global_position).normalized()
 		velocity = dir * speed
@@ -182,21 +207,57 @@ func _physics_process(delta: float) -> void:
 func _do_attack(minion_target) -> void:
 	_play_anim("attack")
 	if is_instance_valid(minion_target):
+		if is_ranged:
+			_shoot_arrow(minion_target.global_position)
 		minion_target.take_damage(damage)
 	else:
+		if is_ranged:
+			var castle = game.get_node_or_null("Castle")
+			if is_instance_valid(castle):
+				_shoot_arrow(castle.global_position)
 		game.castle_take_damage(damage)
 
+## 원거리 적(사수): 대상 방향으로 시각용 화살 발사. 실제 피해는 take_damage/castle_take_damage가 처리(화살 damage=0).
+func _shoot_arrow(target_pos: Vector2) -> void:
+	var arrow = ArrowScene.instantiate()
+	arrow.position = global_position
+	arrow.direction = (target_pos - global_position).normalized()
+	arrow.damage = 0.0
+	arrow.source = self
+	arrow.max_distance = global_position.distance_to(target_pos)  # 대상 지점에서 멈춤(통과 방지)
+	game.add_child(arrow)
+	arrow.monitoring = false  # 시각용 — 충돌/피해 없음 (자기·아군 적 오적중 방지, "-0" 버그)
+
 func _find_nearby_minion():
+	if ignore_minions:
+		return null
 	var nearest = null
 	var nearest_dist: float = INF
 	for m in get_tree().get_nodes_in_group("minions"):
 		if not is_instance_valid(m):
 			continue
-		# 궁수(ranged)는 어그로를 끌지 않음 — 적이 궁수에게 멈추지 않고 성으로 진행
+		# 궁수(ranged)는 일반 어그로를 끌지 않음 — 적이 궁수에게 멈추지 않고 성으로 진행
+		# (사수의 궁수 타겟팅은 _find_target_archer에서 별도 처리)
 		if m.get("behavior") == "ranged":
 			continue
 		var d: float = global_position.distance_to(m.global_position)
 		if d < MINION_ENGAGE_RANGE and d < nearest_dist:
+			nearest_dist = d
+			nearest = m
+	return nearest
+
+## 사수(scout) 전용: 화면 전체에서 가장 가까운 아군 궁수(ranged 하인) 반환.
+## 궁수가 없으면 null — 호출자가 성으로 폴백.
+func _find_target_archer():
+	var nearest = null
+	var nearest_dist: float = INF
+	for m in get_tree().get_nodes_in_group("minions"):
+		if not is_instance_valid(m):
+			continue
+		if m.get("behavior") != "ranged":
+			continue
+		var d: float = global_position.distance_to(m.global_position)
+		if d < nearest_dist:
 			nearest_dist = d
 			nearest = m
 	return nearest

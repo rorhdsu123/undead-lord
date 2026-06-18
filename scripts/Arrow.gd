@@ -6,13 +6,20 @@ var speed: float = 420.0
 var lifetime: float = 1.8
 var source: Node = null
 var lifesteal: float = 0.0
+var max_distance: float = -1.0  # >=0이면 이 거리만큼 날아간 뒤 소멸 (시각용 화살이 대상 지점에서 멈추도록)
+var _traveled: float = 0.0
 
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
 	rotation = direction.angle()
 
 func _process(delta: float) -> void:
-	position += direction * speed * delta
+	var step: float = speed * delta
+	position += direction * step
+	_traveled += step
+	if max_distance >= 0.0 and _traveled >= max_distance:
+		queue_free()
+		return
 	lifetime -= delta
 	if lifetime <= 0:
 		queue_free()

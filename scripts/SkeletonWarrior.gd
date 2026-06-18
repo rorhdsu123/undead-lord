@@ -203,8 +203,12 @@ func _physics_process(delta: float) -> void:
 		if current_target.position.y < BAND_TOP - LEASH_MARGIN:
 			current_target = null
 
-	# 2) 타겟 갱신: 밴드 안에 있는 적 중 가장 깊이 침투한(y가 큰) 적
-	if not is_instance_valid(current_target):
+	# 2) 타겟 갱신
+	# 원거리(궁수)는 매 프레임 재평가 — 후열 적 사수를 최우선 저격(EN9 "사수=우선 처치 대상").
+	# 근접은 기존대로 최전방(가장 깊은 적)을 고정 타겟해 라인 홀드.
+	if behavior == "ranged":
+		current_target = _find_ranged_target_in_band()
+	elif not is_instance_valid(current_target):
 		current_target = _find_deepest_enemy_in_band()
 
 	# 3) 타겟 없으면 대기 위치로 복귀
@@ -396,6 +400,27 @@ func _find_deepest_enemy_in_band():
 			deepest_y = e.position.y
 			deepest = e
 	return deepest
+
+# 원거리 미니언 전용: 밴드 안에서 적 사수(원거리)를 최우선 — 가장 가까운 사수.
+# 사수가 없으면 기존 로직(가장 깊은 적)으로 폴백해 전열을 돕는다.
+func _find_ranged_target_in_band():
+	var enemies: Array = get_tree().get_nodes_in_group("enemies")
+	var nearest_archer = null
+	var nearest_dist: float = INF
+	for e in enemies:
+		if not is_instance_valid(e):
+			continue
+		if e.position.y < BAND_TOP:
+			continue   # 밴드 위(아직 안 들어온) 적 무시
+		if not e.get("is_ranged"):
+			continue
+		var d: float = position.distance_to(e.position)
+		if d < nearest_dist:
+			nearest_dist = d
+			nearest_archer = e
+	if nearest_archer != null:
+		return nearest_archer
+	return _find_deepest_enemy_in_band()
 
 func _heal(amount: float) -> void:
 	if amount <= 0.0:

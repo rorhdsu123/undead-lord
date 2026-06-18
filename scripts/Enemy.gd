@@ -8,7 +8,7 @@ const TYPE_PRESETS: Dictionary = {
 		"cooldown": 1.5, "castle_range": 2.0, "ignore_minions": false, "ranged": false},
 	"scout":  {"hp_mult": 0.5, "speed_mult": 1.0, "damage_mult": 0.6, "scale": 0.8,
 		"folder": "enemy_scout",  "attack_anim": "Shooting",
-		"cooldown": 2.0, "castle_range": 150.0, "ignore_minions": false, "ranged": true},
+		"cooldown": 2.0, "castle_range": 120.0, "ignore_minions": false, "ranged": true},
 	"brute":  {"hp_mult": 3.5, "speed_mult": 0.5, "damage_mult": 1.5, "scale": 1.45,
 		"folder": "enemy_brute",  "attack_anim": "Slashing",
 		"cooldown": 1.5, "castle_range": 2.0, "ignore_minions": false, "ranged": false},

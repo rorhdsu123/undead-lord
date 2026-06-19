@@ -16,6 +16,7 @@ static var _strings: Dictionary = {
 	"shop_title":    "골드 상점",
 	"shop_subtitle": "다음 웨이브 전, 전력을 보강하세요",
 	"shop_owned_souls": "보유 골드  ● %d",
+	"shop_purchased": "✓ 구매됨",
 
 	# 카드 이름/설명
 	"card_wall":          "성벽 강화\n최대 HP +50",

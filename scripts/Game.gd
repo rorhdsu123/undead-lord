@@ -77,6 +77,8 @@ var enemies_alive: int = 0
 # 플레이어 스탯
 var attack_bonus: float = 1.0
 var graveyard_heal: int = 0
+var ability_cooldown_mult: float = 1.0   # 권능 가속 (상점)
+var ability_radius_mult: float = 1.0     # 권능 확산 (상점)
 
 # 영혼 자원
 var souls: int = 0
@@ -215,13 +217,14 @@ const BOSS_INTRO_DIALOGUES = {
 }
 
 const SHOP_ITEMS = [
-	{"id": "repair",      "label": "성벽 수리",  "desc": "성 HP +60",         "cost": 40},
-	{"id": "atk_boost",   "label": "공격 강화",  "desc": "공격력 +15%",        "cost": 35},
-	{"id": "heal_minion", "label": "하인 치료",  "desc": "하인 HP 전체 회복",  "cost": 25},
-	{"id": "minion_atk",  "label": "하인 강화",  "desc": "하인 공격력 +10%",   "cost": 18},
-	{"id": "range_up",    "label": "저주 확장",  "desc": "기본 범위 +50",      "cost": 30},
+	{"id": "castle_max",      "label": "성벽 증축",  "desc": "성 최대 HP +120",   "cost": 120},
+	{"id": "restore",         "label": "긴급 수복",  "desc": "성·하인 즉시 완전 회복", "cost": 70},
+	{"id": "lightning_dmg",   "label": "낙뢰 증폭",  "desc": "낙뢰 피해 +20%",    "cost": 110},
+	{"id": "ability_cd",      "label": "권능 가속",  "desc": "권능 쿨다운 −15%",  "cost": 130},
+	{"id": "ability_radius",  "label": "권능 확산",  "desc": "권능 반경 +25%",    "cost": 90},
 ]
 var shop_btns: Array = []
+var shop_purchased: Array = []  # SH4: 상점 진입마다 리셋, 종류당 1회 구매
 
 @onready var castle_bar = $UI/CastleBar
 @onready var castle_vis: Node2D = $Castle/CastleSprite
@@ -264,6 +267,9 @@ var _tray_divider: ColorRect = null
 @onready var modal_dim: ColorRect = $UI/ModalDim
 
 var _shop_btn_pulse_tween: Tween = null
+var _shop_anim_tween: Tween = null  # 상점 진입/퇴장 트랜지션 핸들 (재진입 시 kill)
+var _shop_closing: bool = false     # 퇴장 페이드 진행 중 중복 호출 가드
+var _shop_dim_alpha: float = 0.72   # modal_dim 원래 알파 보관 (노드 실제값 사용)
 var _card_rows: Array = []
 
 # ── Phase B — 권능 시스템 ─────────────────────────────────────
@@ -968,6 +974,16 @@ func _flash_card_glow(row: Control) -> void:
 	tween.tween_property(row, "modulate", Color(1.6, 1.35, 0.5, 1), 0.12)
 	tween.tween_property(row, "modulate", Color(1.0, 1.0, 1.0, 1), 0.35)
 
+## C. 상점 구매 성공 시 버튼에 짧은 골드 플래시 (_flash_card_glow 톤 참고)
+func _flash_shop_buy(btn: Button) -> void:
+	if not is_instance_valid(btn):
+		return
+	var tween: Tween = create_tween()
+	tween.tween_property(btn, "modulate", Color(1.6, 1.4, 0.7, 1.0), 0.07) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(btn, "modulate", Color.WHITE, 0.28) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
 func _apply_card(id: String, mult: float = 1.0) -> void:
 	# Phase A2 — 패시브 3종(death_aura/skull_throw/decay_curse) 대입 무력화
 	# Player._physics_process가 이미 early-return으로 막혀 있으나 상태 변수도 설정 안 함
@@ -1312,9 +1328,16 @@ func _build_shop_buttons() -> void:
 		shop_btns.append(btn)
 
 func _show_shop() -> void:
-	modal_dim.visible = true
+	# 퇴장 페이드 중 재진입 시 가드 해제 + 기존 트윈 정리
+	_shop_closing = false
+	if _shop_anim_tween and _shop_anim_tween.is_valid():
+		_shop_anim_tween.kill()
+	_shop_anim_tween = null
+
+	# SH4: 상점 진입마다 구매 상태 리셋 (웨이브당 1회 상점 → 진입 시 초기화)
+	shop_purchased.resize(SHOP_ITEMS.size())
+	shop_purchased.fill(false)
 	_refresh_shop_buttons()
-	shop_panel.visible = true
 	if is_instance_valid(ability_system):
 		ability_system.cancel_for_shop()  # 무장 중이었다면 해제 (reach 원/무장 UI 잔상 제거)
 	# RD16: 상점 중 강화 버튼+팝업 숨김. 팝업이 골드 HUD를 숨겼다면 먼저 복원시킨 뒤
@@ -1327,66 +1350,126 @@ func _show_shop() -> void:
 	_set_upgrade_btn_visible(false)
 	shop_title.text = Loc.t("shop_title")
 	shop_subtitle.text = Loc.t("shop_subtitle")
+
+	# ── A. 진입 트랜지션 ────────────────────────────────────────────────────
+	# modal_dim: 원래 알파 보관 후 0 → 원래값 페이드인
+	_shop_dim_alpha = modal_dim.modulate.a  # 노드 실제값 사용(하드코딩 금지)
+	modal_dim.modulate.a = 0.0
+	modal_dim.visible = true
+
+	# shop_panel: 중앙 피벗 → scale·alpha 초기화 후 visible, 탄력 팝인
+	shop_panel.pivot_offset = shop_panel.size * 0.5
+	shop_panel.scale = Vector2(0.92, 0.92)
+	shop_panel.modulate.a = 0.0
+	shop_panel.visible = true
+
+	_shop_anim_tween = create_tween().set_parallel(true)
+	_shop_anim_tween.tween_property(modal_dim, "modulate:a", _shop_dim_alpha, 0.18) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_shop_anim_tween.tween_property(shop_panel, "modulate:a", 1.0, 0.22) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_shop_anim_tween.tween_property(shop_panel, "scale", Vector2.ONE, 0.22) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
 	if _is_tutorial():
 		_show_shop_guide()
 
 func _close_shop() -> void:
+	# 중복 호출 가드 (페이드 진행 중 재호출 방지)
+	if _shop_closing:
+		return
+	_shop_closing = true
+
+	# 기존 트윈 정리
+	if _shop_anim_tween and _shop_anim_tween.is_valid():
+		_shop_anim_tween.kill()
+	_shop_anim_tween = null
+
+	# 즉시 실행: 가이드·튜토리얼 상점 가이드 복원
 	_close_guide()
-	# 튜토리얼 상점 가이드 복원
 	if _shop_btn_pulse_tween and _shop_btn_pulse_tween.is_valid():
 		_shop_btn_pulse_tween.kill()
 	_shop_btn_pulse_tween = null
 	shop_close_btn.modulate = Color.WHITE
 	shop_title.text = Loc.t("shop_title")
-	shop_panel.visible = false
-	modal_dim.visible = false
-	# Phase C: 상점 닫힌 후 고용 버튼 + 자원 캡슐 복원 (minion_slot_label은 캡 없어 숨김 유지)
-	if is_instance_valid(summon_container):
-		summon_container.visible = true
-	_set_resource_hud_visible(true)  # 자원 캡슐 복원 (MAX 배지 동기화 포함)
-	# RD16: 상점 닫힌 후 강화 버튼 + 아이콘 복원
-	_set_upgrade_btn_visible(true)
-	current_wave += 1
-	start_wave()
+
+	# ── B. 퇴장 트랜지션 ────────────────────────────────────────────────────
+	# modal_dim + shop_panel 알파 → 0, 패널 scale 살짝 축소(~0.14s, 빠르게)
+	_shop_anim_tween = create_tween().set_parallel(true)
+	_shop_anim_tween.tween_property(modal_dim, "modulate:a", 0.0, 0.14) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_shop_anim_tween.tween_property(shop_panel, "modulate:a", 0.0, 0.14) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_shop_anim_tween.tween_property(shop_panel, "scale", Vector2(0.96, 0.96), 0.14) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+	# 페이드 완료 후: 숨김 + HUD 복원 + 웨이브 진행
+	_shop_anim_tween.chain().tween_callback(func() -> void:
+		shop_panel.visible = false
+		modal_dim.visible = false
+		modal_dim.modulate.a = _shop_dim_alpha  # 다음 모달(결과창 등)을 위해 알파 복원
+		shop_panel.scale = Vector2.ONE          # 다음 진입을 위해 scale 복원
+		_shop_closing = false
+		# Phase C: 상점 닫힌 후 고용 버튼 + 자원 캡슐 복원 (minion_slot_label은 캡 없어 숨김 유지)
+		if is_instance_valid(summon_container):
+			summon_container.visible = true
+		_set_resource_hud_visible(true)  # 자원 캡슐 복원 (MAX 배지 동기화 포함)
+		# RD16: 상점 닫힌 후 강화 버튼 + 아이콘 복원
+		_set_upgrade_btn_visible(true)
+		current_wave += 1
+		start_wave()
+	)
 
 func _buy_item(index: int, btn: Button = null) -> void:
+	# SH4: 이미 구매한 항목은 무시
+	if index < shop_purchased.size() and shop_purchased[index]:
+		return
 	var item: Dictionary = SHOP_ITEMS[index]
 	if souls < item["cost"]:
 		return
-	_play_button_bounce(btn)  # 구매 성공 시에만 눌림 피드백
+	_play_button_bounce(btn)   # 구매 성공 시에만 눌림 피드백
+	_flash_shop_buy(btn)       # 구매 성공 골드 플래시
 	souls -= item["cost"]
 	_update_souls_ui()
 	_apply_shop_item(item["id"])
+	# SH4: 구매 완료 마킹
+	if index < shop_purchased.size():
+		shop_purchased[index] = true
 	_refresh_shop_buttons()
 
 func _apply_shop_item(id: String) -> void:
 	match id:
-		"repair":
-			castle_hp = min(castle_hp + 60, castle_max_hp)
+		"castle_max":
+			castle_max_hp += 120
+			castle_hp += 120
 			castle_bar.set_hp(castle_hp, castle_max_hp)
 			_update_demon_danger()
-		"atk_boost":
-			attack_bonus *= 1.15
-		"heal_minion":
+		"restore":
+			castle_hp = castle_max_hp
+			castle_bar.set_hp(castle_hp, castle_max_hp)
+			_update_demon_danger()
 			for m in minions_node.get_children():
 				if is_instance_valid(m):
 					m.hp = m.max_hp
 					m.hp_bar.value = 100.0
-		"minion_atk":
-			minion_attack_bonus *= 1.1
-			for m in minions_node.get_children():
-				m.attack_damage *= 1.1
-				m.base_damage *= 1.1
-		"range_up":
-			player.basic_range += 50
-			player._update_range_circles()
+		"lightning_dmg":
+			attack_bonus *= 1.20
+		"ability_cd":
+			ability_cooldown_mult *= 0.85
+		"ability_radius":
+			ability_radius_mult *= 1.25
 
 func _refresh_shop_buttons() -> void:
 	for i in SHOP_ITEMS.size():
 		var item: Dictionary = SHOP_ITEMS[i]
 		var btn: Button = shop_btns[i]
-		btn.text = "%s  [골드 %d]\n%s" % [item["label"], item["cost"], item["desc"]]
-		btn.disabled = souls < item["cost"]
+		var purchased: bool = i < shop_purchased.size() and shop_purchased[i]
+		if purchased:
+			btn.text = "%s  %s" % [item["label"], Loc.t("shop_purchased")]
+			btn.disabled = true
+		else:
+			btn.text = "%s  [골드 %d]\n%s" % [item["label"], item["cost"], item["desc"]]
+			btn.disabled = souls < item["cost"]
 	shop_souls.text = Loc.t("shop_owned_souls") % souls
 
 func earn_crown_shards(n: int) -> void:

@@ -414,7 +414,7 @@ func on_field_tap(world_pos: Vector2) -> void:
 
 	# 발현!
 	_fire_ability(slot, world_pos)
-	_cooldowns[slot] = ability["cooldown"]
+	_cooldowns[slot] = ability["cooldown"] * _cd_mult()
 	_disarm()
 
 # ──────────────────────────────────────────────────────────────
@@ -450,11 +450,12 @@ func _fire_lightning(world_pos: Vector2) -> void:
 	var player: Node = game.get_node("Player")
 	var enemies: Array = game.get_tree().get_nodes_in_group("enemies")
 	var crit_landed: bool = false
+	var impact_r: float = LIGHTNING_IMPACT_RADIUS * _radius_mult()
 
 	for e in enemies:
 		if not is_instance_valid(e):
 			continue
-		if e.global_position.distance_to(world_pos) > LIGHTNING_IMPACT_RADIUS:
+		if e.global_position.distance_to(world_pos) > impact_r:
 			continue
 
 		if e.has_method("interrupt_windup"):  # 보스
@@ -473,8 +474,8 @@ func _fire_lightning(world_pos: Vector2) -> void:
 				* game.attack_bonus * game.keystone_lord_atk_mult * game.keystone_special_mult
 			e.take_damage(dmg)
 
-	# VFX — 착탄점 낙뢰 임팩트
-	_spawn_lightning_impact(world_pos)
+	# VFX — 착탄점 낙뢰 임팩트 (반경 mult 반영)
+	_spawn_lightning_impact(world_pos, impact_r)
 
 	# 화면 효과
 	if crit_landed:
@@ -488,11 +489,12 @@ func _fire_lightning(world_pos: Vector2) -> void:
 ## 망령의 나팔 — 탭 지점 중심 원형 펄스, 위쪽 일괄 넉백
 func _fire_trumpet(world_pos: Vector2) -> void:
 	var enemies: Array = game.get_tree().get_nodes_in_group("enemies")
+	var pulse_r: float = TRUMPET_PULSE_RADIUS * _radius_mult()
 
 	for e in enemies:
 		if not is_instance_valid(e):
 			continue
-		if e.global_position.distance_to(world_pos) > TRUMPET_PULSE_RADIUS:
+		if e.global_position.distance_to(world_pos) > pulse_r:
 			continue
 
 		# 와인드업 끊기 (피해 미미해도 끊기는 적용)
@@ -538,6 +540,14 @@ func cancel_for_shop() -> void:
 
 func _get_ability(slot: int) -> Dictionary:
 	return ABILITY_POOL[SLOT_ASSIGNMENTS[slot]]
+
+## 상점 노브: 쿨다운 배수 (기본 1.0, 상점 ability_cd 구매 시 감소)
+func _cd_mult() -> float:
+	return game.ability_cooldown_mult if is_instance_valid(game) else 1.0
+
+## 상점 노브: 반경 배수 (기본 1.0, 상점 ability_radius 구매 시 증가)
+func _radius_mult() -> float:
+	return game.ability_radius_mult if is_instance_valid(game) else 1.0
 
 # ──────────────────────────────────────────────────────────────
 # UI 빌드 — 원형 버튼 2개, 우하단 배치
@@ -723,8 +733,8 @@ func _hide_reach_circle() -> void:
 # VFX
 # ──────────────────────────────────────────────────────────────
 
-## 낙뢰 임팩트 — 착탄점 번개 스파크
-func _spawn_lightning_impact(pos: Vector2) -> void:
+## 낙뢰 임팩트 — 착탄점 번개 스파크 (impact_r: 실제 적용 반경, 상점 노브 반영)
+func _spawn_lightning_impact(pos: Vector2, impact_r: float = LIGHTNING_IMPACT_RADIUS) -> void:
 	# 중심 섬광 burst
 	var n: Node2D = Node2D.new()
 	n.position = pos
@@ -741,7 +751,7 @@ func _spawn_lightning_impact(pos: Vector2) -> void:
 	fill.color = Color(0.75, 0.95, 1.0, 0.85)
 	n.add_child(fill)
 
-	var target_scale: float = LIGHTNING_IMPACT_RADIUS / base_r
+	var target_scale: float = impact_r / base_r
 	var tw: Tween = create_tween()
 	tw.set_parallel(true)
 	tw.tween_property(n, "scale", Vector2.ONE * target_scale, 0.22)

@@ -622,8 +622,8 @@ func castle_take_damage(dmg: int, from_pos: Vector2 = Vector2.INF) -> void:
 	if not is_inf(from_pos.x):
 		var cc: Vector2 = $Castle.global_position
 		var contact: Vector2 = Vector2(
-			clamp(from_pos.x, cc.x - 80.0, cc.x + 80.0),
-			clamp(from_pos.y, cc.y - 80.0, cc.y + 80.0))
+			clamp(from_pos.x, cc.x - 94.0, cc.x + 94.0),
+			clamp(from_pos.y, cc.y - 94.0, cc.y + 94.0))
 		spawn_castle_hit_effect(contact)
 	if castle_hp <= 0:
 		castle_hp = 0

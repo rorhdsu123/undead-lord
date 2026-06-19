@@ -27,7 +27,8 @@ const BASE_DAMAGE: int = 10
 const BASE_SPRITE_SCALE: float = 0.246
 const MINION_ENGAGE_RANGE: float = 100.0
 const KNOCKBACK_DECAY: float = 700.0
-const CASTLE_HALF: float = 80.0  # CastleSprite.S 와 일치
+const CASTLE_HALF: float = 94.0  # 외벽+코너타워 외곽 (CastleSprite S+T=94)
+const BODY_FEET_OFFSET: float = 80.0  # 성벽 정지·범위원 중심 앵커(소스px 900프레임 중심 기준, *scale.y로 화면 px). 80=근접 발끝이 가운데 윗벽(커튼월)에 닿음. 값↓=더 아래로(겹침↑)·값↑=더 위. 플테 노브.
 # 적 활동 범위 — 화면 480×960 세로. 상한=스폰선(HUD ~y142 아래), 하한=성 아래 여유.
 # 나팔 넉백이 적을 화면 밖으로 날려보내 "안 보이는 적이 성을 때리는" 버그 방지.
 const PLAY_BOUNDS: Rect2 = Rect2(0.0, 150.0, 480.0, 750.0)  # x:0~480, y:150~900
@@ -46,6 +47,7 @@ var slow_timer: float = 0.0
 var knockback_vel: Vector2 = Vector2.ZERO
 var knockback_resist: float = 1.0  # 질량 대용(hp_mult). 클수록 덜 밀림
 var _sprite_base_scale: Vector2 = Vector2.ONE
+var _foot_offset: float = 0.0  # = BODY_FEET_OFFSET * 스프라이트 scale.y (원점→발끝 화면 px)
 var enemy_type: String = "normal"
 var castle_attack_range: float = 2.0
 var ignore_minions: bool = false
@@ -82,13 +84,14 @@ func _ready() -> void:
 	anim_sprite.sprite_frames = _get_sprite_frames(folder, preset["attack_anim"])
 	anim_sprite.scale = Vector2.ONE * BASE_SPRITE_SCALE * base_scale
 	_sprite_base_scale = anim_sprite.scale
+	_foot_offset = BODY_FEET_OFFSET * anim_sprite.scale.y
 	anim_sprite.animation_finished.connect(_on_animation_finished)
 	# 공격 범위 표시(표시 전용): 일반 적 = 파랑 원(보스 타입은 빨강, Boss.gd). 원거리(scout)만 표시(근접은 원 수프 방지).
 	if is_ranged:
 		var indicator := RangeIndicatorScript.new()
 		add_child(indicator)
-		# 원점→캐릭터 시각 중심 ≈ 37px×스케일 아래(발밑 아님 — 캐릭터가 원 중심).
-		indicator.setup(castle_attack_range, Color(0.3, 0.6, 1.0), 37.0 * anim_sprite.scale.y)
+		# 범위원 중심 = 발끝(_foot_offset) = 공격 판정 기준점. 원이 성에 닿을 때 실제로 공격 들어가도록 일치.
+		indicator.setup(castle_attack_range, Color(0.3, 0.6, 1.0), _foot_offset)
 	_play_anim("idle")
 
 static func _get_sprite_frames(folder: String, attack_folder: String) -> SpriteFrames:
@@ -176,7 +179,9 @@ func _physics_process(delta: float) -> void:
 		dist = global_position.distance_to(target_pos)
 		attack_range = 50.0 if is_instance_valid(minion_target) else castle_attack_range
 	else:
-		var rel: Vector2 = global_position - target_pos
+		# 성벽 판정은 발끝 기준(원점 아님) — 몸이 성에 안 잠기고 발끝=타워 윗선 정렬.
+		var feet: Vector2 = global_position + Vector2(0.0, _foot_offset)
+		var rel: Vector2 = feet - target_pos
 		var dx: float = max(0.0, absf(rel.x) - CASTLE_HALF)
 		var dy: float = max(0.0, absf(rel.y) - CASTLE_HALF)
 		dist = sqrt(dx * dx + dy * dy)
@@ -216,16 +221,19 @@ func _physics_process(delta: float) -> void:
 		var wr: float = c.x + CASTLE_HALF
 		var wt: float = c.y - CASTLE_HALF
 		var wb: float = c.y + CASTLE_HALF
-		if global_position.x > wl and global_position.x < wr and global_position.y > wt and global_position.y < wb:
-			var d_top: float = global_position.y - wt
-			var d_bot: float = wb - global_position.y
-			var d_left: float = global_position.x - wl
-			var d_right: float = wr - global_position.x
+		# 발끝(원점 + _foot_offset)을 성벽 박스 밖으로 — 북쪽 접근 시 발끝=타워 윗선, 몸은 그 위.
+		var fx: float = global_position.x
+		var fy: float = global_position.y + _foot_offset
+		if fx > wl and fx < wr and fy > wt and fy < wb:
+			var d_top: float = fy - wt
+			var d_bot: float = wb - fy
+			var d_left: float = fx - wl
+			var d_right: float = wr - fx
 			var m: float = min(min(d_top, d_bot), min(d_left, d_right))
 			if m == d_top:
-				global_position.y = wt
+				global_position.y = wt - _foot_offset
 			elif m == d_bot:
-				global_position.y = wb
+				global_position.y = wb - _foot_offset
 			elif m == d_left:
 				global_position.x = wl
 			else:

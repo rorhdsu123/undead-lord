@@ -30,7 +30,7 @@ const RAGE_DIALOGUES: Dictionary = {
 
 const BOUNDS: Rect2 = Rect2(0, -280, 1024, 900)
 const DASH_SPEED: float = 400.0
-const CASTLE_HALF: float = 80.0  # 외벽 절반 (Enemy.gd CASTLE_HALF / CastleSprite.S 와 일치)
+const CASTLE_HALF: float = 94.0  # 외벽+코너타워 외곽 (CastleSprite S+T=94)
 const STOP_DIST: float = 18.0    # 외벽 바깥 standoff (중심 아님). deadzone ≫ 프레임 이동 → 경계 진동 방지
 # 접근 중 dir.x가 0 근처에서 부호가 떨려도 flip이 깜빡이지 않도록 데드존.
 const FLIP_DEADZONE: float = 0.12

@@ -36,8 +36,8 @@ const FLIP_DEADZONE: float = 0.12
 # 성벽 standoff 보정: 스프라이트가 centered라 발끝이 원점 아래로 늘어진다.
 # 발끝을 북벽 라인보다 WALL_PENETRATION만큼 성 안쪽에 두어, 큰 보스도 몸통이 벽에 닿아
 # 근접 공격이 벽과 연결돼 보이고 잡몹과 정지 라인이 어긋나지 않게 한다.
-const BODY_BOTTOM_OFFSET: float = 150.0   # 캔버스 중심→실제 보이는 발끝 (불투명하단 306은 여백·그림자 포함이라 과대 → 보스가 성에서 떠서 때림). 보스가 성벽에 닿는 정도 조절 노브: 키우면 멀리서 멈춤, 줄이면 더 파고듦
-const WALL_PENETRATION: float = 0.0       # 발끝을 북벽 라인에 맞춤(파고들지 않음). 0보다 크면 안쪽으로.
+const BODY_BOTTOM_OFFSET: float = 150.0   # 캔버스 중심→실제 보이는 부츠(발끝)까지의 보정값. *scale로 화면px. 주의: 불투명 하단(~300소스px)·폭 기준 검출은 부츠 아래로 늘어진 망토·꼬리까지 잡아 과대 → 신뢰 기준은 플테 실측(assistant 부츠≈원점아래 66game px). 150이면 발끝이 성 박스 외곽선에 거의 정확히 닿음(실측 2px). 노브: 키우면 멀리서 멈춤, 줄이면 파고듦
+const WALL_PENETRATION: float = 30.0      # 박스 외곽선(±94=코너타워)은 중앙 커튼월(보이는 벽)보다 14px 위 + 흉벽 이빨까지 있어, 발끝이 박스에 닿아도 눈엔 떠 보임. 이 고정 game-px만큼 더 안쪽에 멈춰 발끝이 중앙 벽에 닿게 함(보스 크기 무관 균일 갭이라 여기서 보정).
 
 # 하인 교전 (압박형) — 와인드업·격노·돌진 중엔 적용 안 됨(그 상태들이 _approach_castle 이전에 return)
 const MINION_ENGAGE_RANGE: float = 100.0  # 길목 하인 감지 거리 (Enemy.gd와 일치)
@@ -77,6 +77,9 @@ var summon_timer: float = 0.0
 var summon_interval: float = 18.0
 var summon_count: int = 2
 
+var _sprite_base_scale: Vector2 = Vector2.ONE  # 피격 scale 팝 복귀 기준(스프라이트 크기 반영)
+var _hit_tween: Tween = null  # 직전 피격 팝 tween 참조(연속 피격 시 중첩 방지)
+
 @onready var hp_bar: ProgressBar = $HPBar
 @onready var name_label: Label = $NameLabel
 @onready var anim_sprite: AnimatedSprite2D = $AnimSprite
@@ -100,6 +103,7 @@ func _ready() -> void:
 	var sprite_scale: float = BOSS_SCALE_MAP.get(folder, BASE_SPRITE_SCALE)
 	anim_sprite.sprite_frames = _get_sprite_frames(folder)
 	anim_sprite.scale = Vector2.ONE * sprite_scale
+	_sprite_base_scale = anim_sprite.scale
 	# 발끝 = 북벽 라인 + WALL_PENETRATION 에 멈추도록 standoff를 크기에 비례해 산정.
 	# 작은 보스는 발끝 늘어짐이 작아 음수가 될 수 있어 STOP_DIST로 하한(공격 판정 보장).
 	castle_standoff = maxf(STOP_DIST, BODY_BOTTOM_OFFSET * sprite_scale - WALL_PENETRATION)
@@ -189,24 +193,10 @@ func _physics_process(delta: float) -> void:
 	else:
 		attack_timer = 0.0
 
-	# 성벽 키프아웃 안전망: 돌진·밀림으로 외벽 안에 들어가면 가장 가까운 변 바깥으로 고정.
-	# (정상 접근은 _approach_castle의 standoff에서 먼저 멈추므로 여기 거의 안 걸림)
-	var kc: Vector2 = castle_pos
-	if global_position.x > kc.x - CASTLE_HALF and global_position.x < kc.x + CASTLE_HALF \
-			and global_position.y > kc.y - CASTLE_HALF and global_position.y < kc.y + CASTLE_HALF:
-		var kd_top: float = global_position.y - (kc.y - CASTLE_HALF)
-		var kd_bot: float = (kc.y + CASTLE_HALF) - global_position.y
-		var kd_left: float = global_position.x - (kc.x - CASTLE_HALF)
-		var kd_right: float = (kc.x + CASTLE_HALF) - global_position.x
-		var km: float = min(min(kd_top, kd_bot), min(kd_left, kd_right))
-		if km == kd_top:
-			global_position.y = kc.y - CASTLE_HALF
-		elif km == kd_bot:
-			global_position.y = kc.y + CASTLE_HALF
-		elif km == kd_left:
-			global_position.x = kc.x - CASTLE_HALF
-		else:
-			global_position.x = kc.x + CASTLE_HALF
+	# 성벽 standoff 강제(키프아웃): 어떤 이유로든(하인 추격·밀림) 외벽에서 castle_standoff보다
+	# 가까워지면 가장 가까운 변 바깥 standoff로 되민다. _approach_castle은 standoff에서 멈추지만
+	# _engage_or_approach 하인 추격 분기엔 벽 제한이 없어 여기서 일괄 보장(발끝이 벽 안으로 못 들어감).
+	_enforce_castle_standoff(castle_pos)
 
 # ============ 인턴 패턴 ============
 func _pattern_intern(delta: float) -> void:
@@ -222,8 +212,9 @@ func _pattern_intern(delta: float) -> void:
 	var castle_pos: Vector2 = game.get_node("Castle").global_position
 	_engage_or_approach(delta, castle_pos)
 
+	# 격노는 성벽에 닿은 뒤에만 시작(타이머는 계속 누적 → 도달 즉시 발동). 멀리서 떠서 헛스윙 방지.
 	rage_timer += delta
-	if rage_timer >= rage_interval:
+	if rage_timer >= rage_interval and _is_at_wall(castle_pos):
 		rage_timer = 0.0
 		var rage_line: String = RAGE_DIALOGUES.get(boss_name, "이건 진심이다.")
 		_start_rage_charge(rage_line, Color(1.0, 0.6, 0.2))
@@ -255,7 +246,7 @@ func _pattern_albaeng(delta: float) -> void:
 		interval = rage_interval * 0.6
 	elif overtime_triggered:
 		interval = rage_interval * 0.8
-	if rage_timer >= interval:
+	if rage_timer >= interval and _is_at_wall(castle_pos):
 		rage_timer = 0.0
 		summon_timer = 0.0
 		if phase3_triggered:
@@ -412,13 +403,21 @@ func take_damage(dmg: float, tier: String = "normal") -> void:
 	if hp <= 0:
 		_die()
 		return
-	if not is_charging_rage and not is_stunned:
-		_play_anim("hurt")
+	# 피격 시 hurt 애니 미재생 — 공격·이동 모션을 끊어 어색했고, 빨강 플래시(_hit_flash)만으로
+	# 타격 피드백. 보스는 자기 행동(성 공격·접근) 유지한 채 번쩍이기만 함(잡몹과 동일 방식).
 
 func _hit_flash() -> void:
 	if is_charging_rage:
 		return
 	anim_sprite.modulate = Color(1.5, 0.5, 0.5, 1.0)
+	# 약한 scale 팝(1.05) — 거구라 잡몹 배율(1.18)은 출렁임이 과해 톤만 살짝.
+	# 연속 피격 시 직전 tween을 죽여 scale 누적·떨림 방지(base에서 다시 시작).
+	if _hit_tween and _hit_tween.is_valid():
+		_hit_tween.kill()
+	anim_sprite.scale = _sprite_base_scale * 1.05
+	_hit_tween = create_tween()
+	_hit_tween.tween_property(anim_sprite, "scale", _sprite_base_scale, 0.13) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	var t: SceneTreeTimer = get_tree().create_timer(0.1)
 	t.timeout.connect(func() -> void:
 		if is_instance_valid(self) and not is_charging_rage:
@@ -433,7 +432,7 @@ func _update_facing(dx: float) -> void:
 # 길목 교전: 앞을 막은 근접 하인이 있으면 계속 그 하인과 싸우고, 감지 범위에 하인이 없을 때만
 # 성으로 접근·공격(일반 적과 동일 — 라인이 살아 있으면 보스가 거기 묶인다). 궁수는 _find_nearby_minion이 제외.
 func _engage_or_approach(delta: float, castle_pos: Vector2) -> void:
-	var minion = _find_nearby_minion()
+	var minion = _find_nearby_minion(castle_pos)
 	if not is_instance_valid(minion):
 		minion_attack_timer = 0.0
 		_approach_castle(castle_pos)
@@ -464,13 +463,17 @@ func _engage_or_approach(delta: float, castle_pos: Vector2) -> void:
 			_play_anim("walk")
 
 # 길목 하인 탐색 — minions 그룹에서 가장 가까운 근접 하인. 궁수(ranged)는 어그로 제외(Enemy.gd와 동일).
-func _find_nearby_minion():
+# 성벽 박스 안(벽 뒤) 하인은 보스가 못 들어가므로 제외 — 추격하다 벽에서 못 닿고 떠는 지터 방지(그땐 성을 때림).
+func _find_nearby_minion(castle_pos: Vector2):
 	var nearest = null
 	var nearest_dist: float = INF
 	for m in get_tree().get_nodes_in_group("minions"):
 		if not is_instance_valid(m):
 			continue
 		if m.get("behavior") == "ranged":
+			continue
+		var mrel: Vector2 = m.global_position - castle_pos
+		if absf(mrel.x) < CASTLE_HALF and absf(mrel.y) < CASTLE_HALF:
 			continue
 		var d: float = global_position.distance_to(m.global_position)
 		if d < MINION_ENGAGE_RANGE and d < nearest_dist:
@@ -494,6 +497,40 @@ func _approach_castle(castle_pos: Vector2) -> void:
 	_update_facing(dir.x)
 	if _anim_state not in ["slash", "hurt", "die"]:
 		_play_anim("walk")
+
+# 성벽에 닿았는지(standoff 안). 격노 시작 게이트 — 멀리서 충전 시작하면 떠서 헛스윙.
+func _is_at_wall(castle_pos: Vector2) -> bool:
+	return _castle_wall_dist(castle_pos) <= castle_standoff
+
+# 외벽 박스에서 castle_standoff보다 가까우면 가장 가까운 변 바깥 standoff 거리로 밀어낸다.
+# 부호거리(박스→점) 기반이라 대각선 접근도 처리. 박스 안(d=0)이면 가장 가까운 변으로 사출.
+func _enforce_castle_standoff(castle_pos: Vector2) -> void:
+	var rel: Vector2 = global_position - castle_pos
+	var cx: float = clampf(rel.x, -CASTLE_HALF, CASTLE_HALF)
+	var cy: float = clampf(rel.y, -CASTLE_HALF, CASTLE_HALF)
+	var nx: float = rel.x - cx
+	var ny: float = rel.y - cy
+	var d: float = sqrt(nx * nx + ny * ny)
+	if d >= castle_standoff:
+		return
+	if d > 0.01:
+		var s: float = castle_standoff / d
+		global_position = castle_pos + Vector2(cx + nx * s, cy + ny * s)
+	else:
+		# 완전히 박스 안: 가장 가까운 변 바깥 standoff로
+		var dist_top: float = rel.y + CASTLE_HALF
+		var dist_bot: float = CASTLE_HALF - rel.y
+		var dist_left: float = rel.x + CASTLE_HALF
+		var dist_right: float = CASTLE_HALF - rel.x
+		var m: float = min(min(dist_top, dist_bot), min(dist_left, dist_right))
+		if m == dist_top:
+			global_position.y = castle_pos.y - CASTLE_HALF - castle_standoff
+		elif m == dist_bot:
+			global_position.y = castle_pos.y + CASTLE_HALF + castle_standoff
+		elif m == dist_left:
+			global_position.x = castle_pos.x - CASTLE_HALF - castle_standoff
+		else:
+			global_position.x = castle_pos.x + CASTLE_HALF + castle_standoff
 
 # 외벽 사각형(CASTLE_HALF)까지의 거리 — 점이 아니라 박스 기준. 박스 안이면 0.
 func _castle_wall_dist(castle_pos: Vector2) -> float:

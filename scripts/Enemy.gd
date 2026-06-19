@@ -177,7 +177,9 @@ func _physics_process(delta: float) -> void:
 	var attack_range: float
 	if is_instance_valid(effective_target):
 		dist = global_position.distance_to(target_pos)
-		attack_range = 50.0 if is_instance_valid(minion_target) else castle_attack_range
+		# 사수(ranged): 하인 타겟이어도 자기 사격 반경 유지(standoff 거리에서 저격, 50까지 붙지 않음)
+		# 근접적: 기존대로 50 근접 교전 유지
+		attack_range = (castle_attack_range if is_ranged else 50.0) if is_instance_valid(minion_target) else castle_attack_range
 	else:
 		# 성벽 판정은 발끝 기준(원점 아님) — 몸이 성에 안 잠기고 발끝=타워 윗선 정렬.
 		var feet: Vector2 = global_position + Vector2(0.0, _foot_offset)
@@ -280,7 +282,10 @@ func _find_nearby_minion():
 		if m.get("behavior") == "ranged":
 			continue
 		var d: float = global_position.distance_to(m.global_position)
-		if d < MINION_ENGAGE_RANGE and d < nearest_dist:
+		# 사수(ranged): 자기 사격 반경(castle_attack_range) 안 하인 우선 저격 — standoff 거리에서 탐지
+		# 근접 적: 기존 MINION_ENGAGE_RANGE(100) 유지
+		var engage: float = castle_attack_range if is_ranged else MINION_ENGAGE_RANGE
+		if d < engage and d < nearest_dist:
 			nearest_dist = d
 			nearest = m
 	return nearest

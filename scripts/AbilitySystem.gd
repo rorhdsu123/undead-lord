@@ -39,7 +39,7 @@ const TRUMPET_DAMAGE: float        = 1.0    # 피해 거의 0 (순수 통제)
 ## UI — 원형 버튼 (플레이테스트 조정 대상)
 const BTN_DIAMETER: float     = 72.0    # 버튼 지름 (px)
 const BTN_GAP: float          = 16.0    # 버튼 사이 간격 (px)
-const BTN_RIGHT_MARGIN: float = 24.0    # 우측 화면 여백
+const BTN_RIGHT_MARGIN: float = 12.0    # 우측 화면 여백 (좌측 버튼이 트레이 디바이더에 근접 → 묶음 우측 미세 이동)
 const BTN_BOTTOM_MARGIN: float = 80.0   # 하단 화면 여백 (성 영역과 간격)
 const BTN_BORDER_WIDTH: int   = 5       # 베벨 링 테두리 두께
 const BTN_RADIUS: float       = BTN_DIAMETER * 0.5
@@ -368,12 +368,27 @@ func on_ability_btn_pressed(slot: int) -> void:
 	_armed_slot = slot
 	_arm_state = ArmState.ARMED
 	_refresh_ui()
+	_punch_drawer(slot)  # 무장 성공 시에만 눌림 펀치(쿨다운 탭은 위 early-return → 무반응)
 
 ## X 취소 버튼 탭 — ARMED 해제
 func on_cancel_btn_pressed(slot: int) -> void:
 	if _arm_state != ArmState.ARMED or _armed_slot != slot:
 		return
 	_disarm()
+	_punch_drawer(slot)  # 취소(해제)도 성공 동작 → 눌림 펀치
+
+## 권능 드로어 눌림 펀치 — 탭 버튼은 투명이라, 시각을 그리는 드로어를 직접 스케일 바운스.
+## (다른 버튼의 _play_button_bounce와 동일 손맛: 0.9로 줄었다 BACK 이징 복귀)
+func _punch_drawer(slot: int) -> void:
+	if slot < 0 or slot >= _btn_drawers.size():
+		return
+	var drawer: AbilityButtonDrawer = _btn_drawers[slot]
+	if not is_instance_valid(drawer):
+		return
+	drawer.pivot_offset = drawer.size * 0.5
+	var tw: Tween = drawer.create_tween()
+	tw.tween_property(drawer, "scale", Vector2(0.90, 0.90), 0.07).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(drawer, "scale", Vector2.ONE, 0.13).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 ## 필드 탭 (2스텝) — Game.gd의 _unhandled_input에서 호출
 ## world_pos: 월드 좌표 탭 위치

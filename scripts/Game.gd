@@ -42,6 +42,8 @@ var _upgrade_popup: Control = null
 var _upgrade_btn: Button = null
 var _upg_icon: Label = null                 # 강화 버튼 내부 ▲ 아이콘 (HBox 자식, 아트 입고 전 플레이스홀더)
 var _upgrade_popup_catcher: Control = null  # 팝업 바깥 탭 캐처
+var _upgrade_demon: TextureRect = null            # 강화 팝업 좌상단 마왕 빼꼼(victory)
+var _upgrade_demon_bubble: Panel = null           # 마왕 바크 말풍선
 var _gold_hud_hidden_by_popup: bool = false  # 강화 팝업이 하단 골드 HUD를 숨겼는지
 
 # ── 하단 UI 팔레트 (AbilitySystem.gd BORDER_READY_COLOR 계열과 통일) ──────────
@@ -279,6 +281,9 @@ func _ready() -> void:
 	card_subtitle.text = Loc.t("card_select_subtitle")
 	result_btn1.pressed.connect(_on_result_btn1_pressed)
 	result_btn2.pressed.connect(_on_result_btn2_pressed)
+	# 눌림 바운스 — 페이드 전환(0.35s) 동안 보임. btn1은 비활성 시 pressed 안 떠 성공 시에만 재생.
+	_add_button_press_bounce(result_btn1)
+	_add_button_press_bounce(result_btn2)
 	attack_button.pressed.connect(_on_attack_pressed)
 	attack_button.add_theme_font_size_override("font_size", 16)
 	sacrifice_button = Button.new()
@@ -286,7 +291,16 @@ func _ready() -> void:
 	sacrifice_button.add_theme_font_size_override("font_size", 20)
 	sacrifice_button.pressed.connect(_on_sacrifice_pressed)
 	attack_button.get_parent().add_child(sacrifice_button)
-	shop_close_btn.pressed.connect(_close_shop)
+	# 닫기 동작 통일 — 눌렸다 돌아오는 바운스를 보여준 뒤 닫음(즉시 닫으면 패널과 함께 사라져 안 보임)
+	shop_close_btn.pressed.connect(func() -> void:
+		if not is_instance_valid(shop_close_btn):
+			return
+		shop_close_btn.pivot_offset = shop_close_btn.size * 0.5
+		var tw: Tween = create_tween()
+		tw.tween_property(shop_close_btn, "scale", Vector2(0.94, 0.94), 0.06).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.tween_property(shop_close_btn, "scale", Vector2.ONE, 0.10).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_callback(_close_shop)
+	)
 	_build_shop_buttons()
 	_build_summon_buttons()
 	_build_upgrade_ui()
@@ -1264,40 +1278,16 @@ func _build_shop_buttons() -> void:
 		sn.content_margin_top = 8.0
 		sn.content_margin_bottom = 8.0
 		btn.add_theme_stylebox_override("normal", sn)
-		# hover 상태: 약간 밝게 + 골드 테두리
-		var sh: StyleBoxFlat = StyleBoxFlat.new()
-		sh.bg_color = Color(0.24, 0.21, 0.32, 0.95)
-		sh.border_width_left = 2
-		sh.border_width_top = 2
-		sh.border_width_right = 2
-		sh.border_width_bottom = 2
-		sh.border_color = Color(0.8, 0.72, 0.5)
-		sh.corner_radius_top_left = 8
-		sh.corner_radius_top_right = 8
-		sh.corner_radius_bottom_right = 8
-		sh.corner_radius_bottom_left = 8
-		sh.content_margin_left = 12.0
-		sh.content_margin_right = 12.0
-		sh.content_margin_top = 8.0
-		sh.content_margin_bottom = 8.0
-		btn.add_theme_stylebox_override("hover", sh)
-		# pressed 상태: 더 어둡게
-		var sp: StyleBoxFlat = StyleBoxFlat.new()
-		sp.bg_color = Color(0.14, 0.12, 0.18, 0.95)
-		sp.border_width_left = 2
-		sp.border_width_top = 2
-		sp.border_width_right = 2
-		sp.border_width_bottom = 2
-		sp.border_color = Color(0.55, 0.5, 0.68)
-		sp.corner_radius_top_left = 8
-		sp.corner_radius_top_right = 8
-		sp.corner_radius_bottom_right = 8
-		sp.corner_radius_bottom_left = 8
-		sp.content_margin_left = 12.0
-		sp.content_margin_right = 12.0
-		sp.content_margin_top = 8.0
-		sp.content_margin_bottom = 8.0
-		btn.add_theme_stylebox_override("pressed", sp)
+		# 버튼 동작 통일 — hover/pressed 색 변화 없음(normal 재사용), 눌림은 성공 시 스케일 바운스.
+		btn.add_theme_stylebox_override("hover", sn)
+		btn.add_theme_stylebox_override("pressed", sn)
+		btn.add_theme_stylebox_override("focus", sn)
+		# 글자색도 상태별 고정(기본 테마 font_hover_color가 hover 시 밝아지는 것 차단)
+		var shop_font_col: Color = Color(0.90, 0.88, 0.98, 1.0)
+		btn.add_theme_color_override("font_color",         shop_font_col)
+		btn.add_theme_color_override("font_hover_color",   shop_font_col)
+		btn.add_theme_color_override("font_pressed_color", shop_font_col)
+		btn.add_theme_color_override("font_focus_color",   shop_font_col)
 		# disabled 상태: 채도 낮은 배경 + 흐린 테두리
 		var sd: StyleBoxFlat = StyleBoxFlat.new()
 		sd.bg_color = Color(0.12, 0.11, 0.15, 0.85)
@@ -1317,7 +1307,8 @@ func _build_shop_buttons() -> void:
 		btn.add_theme_stylebox_override("disabled", sd)
 		btn.add_theme_color_override("font_color_disabled", Color(0.5, 0.48, 0.54))
 		var idx: int = i
-		btn.pressed.connect(func(): _buy_item(idx))
+		# 눌림 바운스는 _buy_item 성공 경로에서만(불가 시 disabled라 pressed 자체가 안 뜸 + 골드 가드)
+		btn.pressed.connect(func(): _buy_item(idx, btn))
 		shop_items_node.add_child(btn)
 		shop_btns.append(btn)
 
@@ -1357,10 +1348,11 @@ func _close_shop() -> void:
 	current_wave += 1
 	start_wave()
 
-func _buy_item(index: int) -> void:
+func _buy_item(index: int, btn: Button = null) -> void:
 	var item: Dictionary = SHOP_ITEMS[index]
 	if souls < item["cost"]:
 		return
+	_play_button_bounce(btn)  # 구매 성공 시에만 눌림 피드백
 	souls -= item["cost"]
 	_update_souls_ui()
 	_apply_shop_item(item["id"])
@@ -1760,28 +1752,10 @@ func _show_result(
 	b1n.content_margin_left = 12.0; b1n.content_margin_right = 12.0
 	b1n.content_margin_top = 10.0; b1n.content_margin_bottom = 10.0
 	result_btn1.add_theme_stylebox_override("normal", b1n)
-	# Btn1 hover
-	var b1h := StyleBoxFlat.new()
-	b1h.bg_color = Color(0.75, 0.58, 0.18, 0.98)
-	b1h.border_width_left = 2; b1h.border_width_top = 2
-	b1h.border_width_right = 2; b1h.border_width_bottom = 2
-	b1h.border_color = Color(1.0, 0.95, 0.55, 1.0)
-	b1h.corner_radius_top_left = 8; b1h.corner_radius_top_right = 8
-	b1h.corner_radius_bottom_left = 8; b1h.corner_radius_bottom_right = 8
-	b1h.content_margin_left = 12.0; b1h.content_margin_right = 12.0
-	b1h.content_margin_top = 10.0; b1h.content_margin_bottom = 10.0
-	result_btn1.add_theme_stylebox_override("hover", b1h)
-	# Btn1 pressed
-	var b1p := StyleBoxFlat.new()
-	b1p.bg_color = Color(0.45, 0.33, 0.07, 0.98)
-	b1p.border_width_left = 2; b1p.border_width_top = 2
-	b1p.border_width_right = 2; b1p.border_width_bottom = 2
-	b1p.border_color = Color(0.85, 0.70, 0.25, 1.0)
-	b1p.corner_radius_top_left = 8; b1p.corner_radius_top_right = 8
-	b1p.corner_radius_bottom_left = 8; b1p.corner_radius_bottom_right = 8
-	b1p.content_margin_left = 12.0; b1p.content_margin_right = 12.0
-	b1p.content_margin_top = 10.0; b1p.content_margin_bottom = 10.0
-	result_btn1.add_theme_stylebox_override("pressed", b1p)
+	# 버튼 동작 통일 — hover/pressed 색 변화 없음(normal 재사용), 눌림은 바운스(페이드 동안 보임)
+	result_btn1.add_theme_stylebox_override("hover", b1n)
+	result_btn1.add_theme_stylebox_override("pressed", b1n)
+	result_btn1.add_theme_stylebox_override("focus", b1n)
 	# Btn1 disabled
 	var b1d := StyleBoxFlat.new()
 	b1d.bg_color = Color(0.14, 0.13, 0.10, 0.80)
@@ -1793,7 +1767,11 @@ func _show_result(
 	b1d.content_margin_left = 12.0; b1d.content_margin_right = 12.0
 	b1d.content_margin_top = 10.0; b1d.content_margin_bottom = 10.0
 	result_btn1.add_theme_stylebox_override("disabled", b1d)
-	result_btn1.add_theme_color_override("font_color", Color(1.0, 0.92, 0.65, 1.0) if btn1_enabled else Color(0.50, 0.47, 0.38, 1.0))
+	var b1_font: Color = Color(1.0, 0.92, 0.65, 1.0) if btn1_enabled else Color(0.50, 0.47, 0.38, 1.0)
+	result_btn1.add_theme_color_override("font_color",         b1_font)
+	result_btn1.add_theme_color_override("font_hover_color",   b1_font)  # hover 시 글자색 변화 차단
+	result_btn1.add_theme_color_override("font_pressed_color", b1_font)
+	result_btn1.add_theme_color_override("font_focus_color",   b1_font)
 	result_btn1.add_theme_color_override("font_color_disabled", Color(0.50, 0.47, 0.38, 1.0))
 
 	# Btn2 (보조) — 차분한 보라/회색
@@ -1810,17 +1788,15 @@ func _show_result(
 	b2n.content_margin_left = 12.0; b2n.content_margin_right = 12.0
 	b2n.content_margin_top = 8.0; b2n.content_margin_bottom = 8.0
 	result_btn2.add_theme_stylebox_override("normal", b2n)
-	var b2h := StyleBoxFlat.new()
-	b2h.bg_color = Color(0.24, 0.21, 0.32, 0.92)
-	b2h.border_width_left = 1; b2h.border_width_top = 1
-	b2h.border_width_right = 1; b2h.border_width_bottom = 1
-	b2h.border_color = Color(0.72, 0.68, 0.85, 0.90)
-	b2h.corner_radius_top_left = 8; b2h.corner_radius_top_right = 8
-	b2h.corner_radius_bottom_left = 8; b2h.corner_radius_bottom_right = 8
-	b2h.content_margin_left = 12.0; b2h.content_margin_right = 12.0
-	b2h.content_margin_top = 8.0; b2h.content_margin_bottom = 8.0
-	result_btn2.add_theme_stylebox_override("hover", b2h)
-	result_btn2.add_theme_color_override("font_color", Color(0.82, 0.80, 0.90, 1.0))
+	# 버튼 동작 통일 — hover/pressed 색 변화 없음(normal 재사용)
+	result_btn2.add_theme_stylebox_override("hover", b2n)
+	result_btn2.add_theme_stylebox_override("pressed", b2n)
+	result_btn2.add_theme_stylebox_override("focus", b2n)
+	var b2_font: Color = Color(0.82, 0.80, 0.90, 1.0)
+	result_btn2.add_theme_color_override("font_color",         b2_font)
+	result_btn2.add_theme_color_override("font_hover_color",   b2_font)
+	result_btn2.add_theme_color_override("font_pressed_color", b2_font)
+	result_btn2.add_theme_color_override("font_focus_color",   b2_font)
 
 	# ── 모달 + 패널 표시 ────────────────────────────────────────────────────
 	modal_dim.visible = true
@@ -2160,15 +2136,18 @@ func _make_capsule_stylebox() -> StyleBoxFlat:
 	return sb
 
 ## RD19 — 버튼 눌림 피드백: 탭 시 살짝 줄었다 커지는 스케일 바운스 (중심 기준)
+## 항상 바운스하는 버튼용(강화 토글 등). 불가 상태에서 안 눌려야 하는 버튼은
+## _add_button_press_bounce를 붙이지 말고, 핸들러의 성공 경로에서 _play_button_bounce를 직접 호출.
+func _play_button_bounce(btn: Button) -> void:
+	if not is_instance_valid(btn):
+		return
+	btn.pivot_offset = btn.size * 0.5  # 중심에서 스케일 (컨테이너 자식이라 탭 시점에 산정)
+	var tw: Tween = create_tween()
+	tw.tween_property(btn, "scale", Vector2(0.90, 0.90), 0.07).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(btn, "scale", Vector2.ONE, 0.13).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
 func _add_button_press_bounce(btn: Button) -> void:
-	btn.pressed.connect(func() -> void:
-		if not is_instance_valid(btn):
-			return
-		btn.pivot_offset = btn.size * 0.5  # 중심에서 스케일 (컨테이너 자식이라 탭 시점에 산정)
-		var tw: Tween = create_tween()
-		tw.tween_property(btn, "scale", Vector2(0.90, 0.90), 0.07).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		tw.tween_property(btn, "scale", Vector2.ONE, 0.13).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	)
+	btn.pressed.connect(func() -> void: _play_button_bounce(btn))
 
 ## 팔레트 헬퍼 — 단색 배경 + 보라 테두리 StyleBoxFlat 생성
 func _make_button_stylebox(bg: Color, border: Color, corner: int = UI_BTN_CORNER, border_w: int = UI_BTN_BORDER_W) -> StyleBoxFlat:
@@ -2206,9 +2185,9 @@ func _build_summon_buttons() -> void:
 		btn.text = ""
 		# font_color override 불필요(텍스트 없음), 기존 add_theme_color_override 제거
 		_apply_button_styleboxes(btn)
-		_add_button_press_bounce(btn)
+		# 눌림 바운스는 _on_summon_pressed 성공 경로에서만 재생(골드 부족·슬롯 꽉참 시 안 눌림)
 		var type_idx: int = HIRE_TYPE_INDICES[j]
-		btn.pressed.connect(func(): _on_summon_pressed(type_idx))
+		btn.pressed.connect(func(): _on_summon_pressed(type_idx, btn))
 		summon_container.add_child(btn)
 		summon_btns.append(btn)
 
@@ -2309,8 +2288,8 @@ func _build_upgrade_ui() -> void:
 	_upgrade_popup.mouse_filter = Control.MOUSE_FILTER_STOP
 	# 팝업 StyleBox
 	var popup_sb: StyleBoxFlat = StyleBoxFlat.new()
-	popup_sb.bg_color = Color(0.14, 0.12, 0.20, 1.0)  # 불투명 — 뒤 권능 버튼 비침(고스팅) 방지
-	popup_sb.border_color = UI_BTN_BORDER
+	popup_sb.bg_color = Color(0.93, 0.88, 0.75, 1.0)  # 양피지 크림 — 어두운 트레이와 확실히 구분(별도 팝업 인지)
+	popup_sb.border_color = Color(0.42, 0.30, 0.18, 1.0)  # 따뜻한 갈색 테두리(양피지 프레임)
 	popup_sb.set_border_width_all(UI_POPUP_BORDER_W)
 	popup_sb.set_corner_radius_all(UI_POPUP_CORNER)
 	popup_sb.content_margin_left   = 12.0
@@ -2333,7 +2312,7 @@ func _build_upgrade_ui() -> void:
 
 	# 좌측 패드(우측 ✕ 폭과 대칭 → 캡슐이 진짜 중앙) + 좌 expand 스페이서
 	var top_pad_l: Control = Control.new()
-	top_pad_l.custom_minimum_size = Vector2(26.0, 0.0)
+	top_pad_l.custom_minimum_size = Vector2(30.0, 0.0)  # 우측 ✕(30) 폭과 대칭 → 캡슐 중앙
 	top_pad_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top_row.add_child(top_pad_l)
 	var top_sp_l: Control = Control.new()
@@ -2385,16 +2364,31 @@ func _build_upgrade_ui() -> void:
 	var close_btn: Button = Button.new()
 	close_btn.text = "✕"
 	close_btn.focus_mode = Control.FOCUS_NONE
-	close_btn.custom_minimum_size = Vector2(26.0, 26.0)
-	close_btn.add_theme_font_size_override("font_size", 14)
-	close_btn.add_theme_color_override("font_color", Color(0.80, 0.76, 0.90, 1.0))
-	# ✕ 버튼은 배경 투명
-	var empty_sb: StyleBoxEmpty = StyleBoxEmpty.new()
-	close_btn.add_theme_stylebox_override("normal",   empty_sb)
-	close_btn.add_theme_stylebox_override("hover",    empty_sb)
-	close_btn.add_theme_stylebox_override("pressed",  empty_sb)
-	close_btn.add_theme_stylebox_override("focus",    empty_sb)
-	close_btn.pressed.connect(_close_upgrade_popup)
+	close_btn.custom_minimum_size = Vector2(30.0, 30.0)
+	close_btn.add_theme_font_size_override("font_size", 20)
+	var close_font_col: Color = Color(0.36, 0.26, 0.16, 1.0)  # 크림 배경 위 진한 갈색 — 플랫 코너 ✕
+	# hover 색 변화 없음 — 배경(StyleBoxEmpty)뿐 아니라 글자색 상태별로도 동일하게 고정.
+	close_btn.add_theme_color_override("font_color",         close_font_col)
+	close_btn.add_theme_color_override("font_hover_color",   close_font_col)
+	close_btn.add_theme_color_override("font_pressed_color", close_font_col)
+	close_btn.add_theme_color_override("font_focus_color",   close_font_col)
+	# 플랫 ✕ — 원형 배경 없이 글리프만(레퍼런스 코너형)
+	var close_empty: StyleBoxEmpty = StyleBoxEmpty.new()
+	close_btn.add_theme_stylebox_override("normal",   close_empty)
+	close_btn.add_theme_stylebox_override("hover",    close_empty)
+	close_btn.add_theme_stylebox_override("pressed",  close_empty)
+	close_btn.add_theme_stylebox_override("focus",    close_empty)
+	# 닫기 동작 통일 — 클릭 시 눌렸다 돌아오는 바운스를 다 보여준 뒤 닫음.
+	# (즉시 닫으면 팝업이 사라져 바운스가 안 보이므로, 풀 바운스 후 close 콜백)
+	close_btn.pressed.connect(func() -> void:
+		if not is_instance_valid(close_btn):
+			return
+		close_btn.pivot_offset = close_btn.size * 0.5
+		var tw: Tween = create_tween()
+		tw.tween_property(close_btn, "scale", Vector2(0.82, 0.82), 0.06).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.tween_property(close_btn, "scale", Vector2.ONE, 0.10).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_callback(_close_upgrade_popup)
+	)
 	top_row.add_child(close_btn)
 
 	# ── 카드 행 — 탱크/전사/궁수 가로 배치 ───────────────────────
@@ -2417,20 +2411,20 @@ func _build_upgrade_ui() -> void:
 	for type_id in display_order:
 		var card: VBoxContainer = VBoxContainer.new()
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		card.add_theme_constant_override("separation", 4)
+		card.add_theme_constant_override("separation", 5)
 		card_row.add_child(card)
 
 		# 종류명 라벨
 		var name_lbl: Label = Label.new()
 		name_lbl.text = Loc.t(type_loc_keys[type_id])
 		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		name_lbl.add_theme_font_size_override("font_size", 13)
-		name_lbl.add_theme_color_override("font_color", Color(0.88, 0.85, 1.0, 1.0))
+		name_lbl.add_theme_font_size_override("font_size", 16)
+		name_lbl.add_theme_color_override("font_color", Color(0.28, 0.20, 0.14, 1.0))  # 크림 배경 위 진한 갈색
 		card.add_child(name_lbl)
 
 		# 아이콘 슬롯 (44×44 플레이스홀더 패널)
 		var icon_slot: Panel = Panel.new()
-		icon_slot.custom_minimum_size = Vector2(56.0, 56.0)  # 풀폭 팝업 — 넉넉한 아이콘 슬롯
+		icon_slot.custom_minimum_size = Vector2(74.0, 74.0)  # 풀폭 팝업 — 넉넉한 아이콘 슬롯
 		icon_slot.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		var icon_sb: StyleBoxFlat = StyleBoxFlat.new()
 		icon_sb.bg_color = Color(0.10, 0.09, 0.14, 0.92)
@@ -2441,7 +2435,7 @@ func _build_upgrade_ui() -> void:
 		# 종별 구분 색점 (ColorRect, 중앙에 작게)
 		var dot: ColorRect = ColorRect.new()
 		dot.color = icon_accent[type_id]
-		dot.custom_minimum_size = Vector2(16.0, 16.0)
+		dot.custom_minimum_size = Vector2(20.0, 20.0)
 		dot.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		dot.size_flags_vertical   = Control.SIZE_SHRINK_CENTER
 		icon_slot.add_child(dot)
@@ -2450,8 +2444,8 @@ func _build_upgrade_ui() -> void:
 		# Lv 라벨
 		var lv_lbl: Label = Label.new()
 		lv_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lv_lbl.add_theme_font_size_override("font_size", 13)
-		lv_lbl.add_theme_color_override("font_color", Color(0.80, 0.78, 0.92, 1.0))
+		lv_lbl.add_theme_font_size_override("font_size", 15)
+		lv_lbl.add_theme_color_override("font_color", Color(0.45, 0.36, 0.26, 1.0))  # 크림 배경 위 갈색
 		lv_lbl.name = "LvLabel_" + type_id
 		card.add_child(lv_lbl)
 
@@ -2460,7 +2454,8 @@ func _build_upgrade_ui() -> void:
 		upg_btn.focus_mode = Control.FOCUS_NONE
 		upg_btn.text = ""
 		upg_btn.name = "UpgBtn_" + type_id
-		upg_btn.custom_minimum_size = Vector2(0.0, 30.0)  # 알약 형태 확보 (콘텐츠에 눌려 얇아짐 방지)
+		upg_btn.size_flags_horizontal = Control.SIZE_FILL  # 카드 폭 채움 → 버튼 사이 간격은 카드 간격(8)만
+		upg_btn.custom_minimum_size = Vector2(0.0, 36.0)   # 높이 키움(30→36), 가로는 카드 폭 채움
 		# RD19 — hover/pressed 색 제거(바운스가 피드백). 팝업보다 밝은 보라 + 골드 보더로 "올라온 알약".
 		var pill_normal: StyleBoxFlat = _make_button_stylebox(Color(0.24, 0.20, 0.34, 1.0), UI_BTN_GOLD, UI_COST_PILL_CORNER, 1)
 		var pill_dis:    StyleBoxFlat = _make_button_stylebox(Color(0.18, 0.15, 0.24, 1.0), Color(0.40, 0.35, 0.20, 0.60), UI_COST_PILL_CORNER, 1)
@@ -2469,8 +2464,8 @@ func _build_upgrade_ui() -> void:
 		upg_btn.add_theme_stylebox_override("pressed",  pill_normal)
 		upg_btn.add_theme_stylebox_override("disabled", pill_dis)
 		upg_btn.add_theme_stylebox_override("focus",    pill_normal)
-		_add_button_press_bounce(upg_btn)
-		upg_btn.pressed.connect(func(): _on_upgrade_pressed(type_id))
+		# 눌림 바운스는 _on_upgrade_pressed 성공 경로에서만 재생(골드 부족 시 안 눌림)
+		upg_btn.pressed.connect(func(): _on_upgrade_pressed(type_id, upg_btn))
 		card.add_child(upg_btn)
 		# 내부 [● 노랑][비용 숫자] 중앙정렬
 		var pill_hbox: HBoxContainer = HBoxContainer.new()
@@ -2482,17 +2477,53 @@ func _build_upgrade_ui() -> void:
 		var pill_icon: Label = Label.new()
 		pill_icon.text = "●"  # 노란 동그라미 (통일)
 		pill_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pill_icon.add_theme_font_size_override("font_size", 13)
+		pill_icon.add_theme_font_size_override("font_size", 15)
 		pill_icon.add_theme_color_override("font_color", Color(1.0, 0.85, 0.40))
 		pill_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		pill_hbox.add_child(pill_icon)
 		var pill_num: Label = Label.new()
 		pill_num.name = "UpgCost_" + type_id
 		pill_num.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pill_num.add_theme_font_size_override("font_size", 14)
+		pill_num.add_theme_font_size_override("font_size", 16)
 		pill_num.add_theme_color_override("font_color", Color(0.92, 0.88, 1.0, 1.0))
 		pill_num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		pill_hbox.add_child(pill_num)
+
+	# ── 강화 팝업 마왕 장식 (좌상단 빼꼼 + 짧은 바크) — 팝업의 형제로 추가, _open에서 배치/표시 ──
+	var dl_tex: Texture2D = preload("res://assets/characters/DemonLord/victory.png")  # 전신(900×900) — 작게, 캐릭터 전체 노출
+	var dl_h: float = 140.0   # 표시 박스 높이(노브) — 전신 작게. 900×900 정사각이라 dl_w=dl_h
+	var dl_w: float = dl_h * float(dl_tex.get_width()) / float(dl_tex.get_height())
+	_upgrade_demon = TextureRect.new()
+	_upgrade_demon.texture = dl_tex
+	# expand_mode=IGNORE_SIZE: 기본값(KEEP_SIZE)은 최소크기를 텍스처 원본(900×900)으로 고정 → size 무시됨.
+	# IGNORE_SIZE로 dl_w/dl_h(140) 박스에 맞춰 축소.
+	_upgrade_demon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_upgrade_demon.custom_minimum_size = Vector2(dl_w, dl_h)
+	_upgrade_demon.size = Vector2(dl_w, dl_h)
+	_upgrade_demon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED  # 종횡비 유지, 박스 중앙
+	_upgrade_demon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_upgrade_demon.visible = false
+	parent.add_child(_upgrade_demon)
+
+	_upgrade_demon_bubble = Panel.new()
+	var bub_sb: StyleBoxFlat = StyleBoxFlat.new()
+	bub_sb.bg_color = Color(0.97, 0.93, 0.82, 1.0)        # 밝은 크림 말풍선
+	bub_sb.border_color = Color(0.42, 0.30, 0.18, 1.0)
+	bub_sb.set_border_width_all(2)
+	bub_sb.set_corner_radius_all(8)
+	_upgrade_demon_bubble.add_theme_stylebox_override("panel", bub_sb)
+	_upgrade_demon_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_upgrade_demon_bubble.visible = false
+	parent.add_child(_upgrade_demon_bubble)
+	var bub_lbl: Label = Label.new()
+	bub_lbl.text = Loc.t("upgrade_demon_bark")
+	bub_lbl.add_theme_font_size_override("font_size", 12)
+	bub_lbl.add_theme_color_override("font_color", Color(0.30, 0.22, 0.14, 1.0))
+	bub_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bub_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bub_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	bub_lbl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_upgrade_demon_bubble.add_child(bub_lbl)
 
 	_refresh_upgrade_popup()
 
@@ -2524,28 +2555,45 @@ func _open_upgrade_popup() -> void:
 	if is_instance_valid(_resource_capsule) and _resource_capsule.visible:
 		_gold_hud_hidden_by_popup = true
 		_set_resource_hud_visible(false)
-	# RD19 — 팝업이 하단 조작 도크를 덮되 강화 버튼은 아래에 노출(레퍼런스 레이아웃).
-	# 풀폭 + 최상단 z → 권능 버튼(링 y808~880) + 소환 버튼 행을 덮음. 콘텐츠는 VBox 세로 중앙정렬.
-	# 세로: 바닥을 소환 버튼 하단에 딱 맞춰(소환 행 완전히 가림) ~ 높이는 콘텐츠에 맞춰 위로 자라게.
 	var vp: Vector2 = get_viewport_rect().size
-	const POPUP_SIDE: float    = 6.0    # 좌우 마진
-	const POPUP_COVER: float   = 2.0    # 소환 버튼 하단을 확실히 덮는 여유
-	const POPUP_TOP_MIN: float = 700.0  # 상한 — 더 위로는 안 올라가 성/전투 보호
+	const POPUP_SIDE: float    = 24.0   # 좌우 마진 — 뒤 트레이(x4~476)가 양옆 살짝 보이게(레퍼런스 여백)
+	const POPUP_BOTTOM: float   = 8.0   # 화면 바닥에서 띄울 여백 — 라운드 모서리 노출로 "별도로 떠오른 시트" 인지
+	const POPUP_TOP_MIN: float = 700.0  # 안전 상한 — 더 위로는 안 올라가 성/전투 보호
 	var content_h: float = _upgrade_popup.get_combined_minimum_size().y
 	if content_h < 120.0:
 		content_h = 178.0  # 폴백 (min 미산정 시)
-	var bottom_y: float = (vp.y - 60.0)  # 폴백 (소환 컨테이너 미배치 시)
-	if is_instance_valid(summon_container):
-		bottom_y = summon_container.position.y + summon_container.size.y + POPUP_COVER
+	# 바닥을 화면 하단에 앵커 → 콘텐츠 높이만큼 위로 자람(높이 부족 오버플로우·강화버튼 가림 방지).
+	# 트레이(y753~960) 위에 떠서 도크 버튼을 덮고, 플레이 영역(<753)은 가리지 않음.
+	var bottom_y: float = vp.y - POPUP_BOTTOM
 	var top_y: float = max(POPUP_TOP_MIN, bottom_y - content_h)
 	_upgrade_popup.position = Vector2(POPUP_SIDE, top_y)
 	_upgrade_popup.size = Vector2(vp.x - POPUP_SIDE * 2.0, bottom_y - top_y)
+	# 마왕 장식 — 팝업 좌상단 위로 빼꼼, 바크 말풍선
+	if is_instance_valid(_upgrade_demon):
+		# 좌상단에서 팝업 위로 빼꼼 — 캐릭터가 팝업 위에 서듯이 (노브: y오프셋 94)
+		_upgrade_demon.position = Vector2(POPUP_SIDE - 6.0, top_y - 94.0)
+		_upgrade_demon.visible = true
+		_upgrade_demon.move_to_front()
+	if is_instance_valid(_upgrade_demon_bubble):
+		var bub_w: float = 84.0
+		var bub_h: float = 26.0
+		_upgrade_demon_bubble.size = Vector2(bub_w, bub_h)
+		# 마왕 머리 위 중앙에 작게 (노브: y의 +18은 머리끝 맞춤 보정)
+		_upgrade_demon_bubble.position = Vector2(
+			_upgrade_demon.position.x + (_upgrade_demon.size.x - bub_w) * 0.5,
+			_upgrade_demon.position.y + 18.0 - bub_h)
+		_upgrade_demon_bubble.visible = true
+		_upgrade_demon_bubble.move_to_front()
 
 func _close_upgrade_popup() -> void:
 	if is_instance_valid(_upgrade_popup):
 		_upgrade_popup.visible = false
 	if is_instance_valid(_upgrade_popup_catcher):
 		_upgrade_popup_catcher.visible = false
+	if is_instance_valid(_upgrade_demon):
+		_upgrade_demon.visible = false
+	if is_instance_valid(_upgrade_demon_bubble):
+		_upgrade_demon_bubble.visible = false
 	# 팝업이 숨겼던 하단 자원 캡슐 복원 (상점 진입 등 다른 곳에서 끈 경우는 건드리지 않음)
 	if _gold_hud_hidden_by_popup:
 		_gold_hud_hidden_by_popup = false
@@ -2579,13 +2627,15 @@ func _refresh_upgrade_popup() -> void:
 			else:
 				upg_num.add_theme_color_override("font_color", UI_COST_SHORT)
 
-func _on_upgrade_pressed(type_id: String) -> void:
+func _on_upgrade_pressed(type_id: String, btn: Button = null) -> void:
 	if not type_id in hire_levels:
 		return
 	var lv: int = hire_levels[type_id]
 	var cost: int = HIRE_UPGRADE_COST_BASE * lv
 	if souls < cost:
-		return
+		return  # 골드 부족 — 눌림 바운스도 재생 안 됨
+	# 게이트 통과 — 성공 시에만 눌림 피드백
+	_play_button_bounce(btn)
 	souls -= cost
 	_update_souls_ui()
 	hire_levels[type_id] = lv + 1
@@ -2677,24 +2727,26 @@ func _layout_bottom_ui_phase_c() -> void:
 	# 고용/강화 버튼은 화면 좌측(x14~270)에만 위치.
 	#
 	# 좌표 역산 (바닥 기준):
-	#   BOTTOM_MARGIN = 16
-	#   강화 버튼 (h=36): y = 960-16-36 = 908  ← 맨 아래 행
+	#   DOCK_LIFT = 42  ← 도크 전체를 바닥에서 띄우는 양
+	#   BOTTOM_MARGIN = 58 (= 16 + 42)
+	#   강화 버튼 (h=36): y = 960-58-36 = 866  ← 맨 아래 행
 	#   GAP_UPG_SUM = 6
-	#   소환 컨테이너 (h=52): y = 908-6-52 = 850
+	#   소환 컨테이너 (h=52): y = 866-6-52 = 808 (← 권능 버튼 윗변과 일치)
 	#   GAP_SUM_GOLD = 6
-	#   골드+하인 HUD (h=22): y = 850-6-22 = 822
+	#   골드+하인 HUD (h=28): y = 808-6-28 = 774
 	#
-	# 트레이: y795 ~ 960 (성 가시영역 보호, 화면 전체폭 - 좌우 마진 4px)
+	# 트레이: y753 ~ 960 (하단까지 꽉 채움, 버튼만 42px 상향)
 	var vp: Vector2 = get_viewport_rect().size
 	const MX: float         = 14.0   # 좌측 마진 (트레이 패딩 고려해 10→14)
 	const SUM_W: float      = 262.0  # 소환/강화 버튼 폭 (좌측 절반 이하)
-	const BOTTOM_MARGIN: float = 16.0
+	const DOCK_LIFT: float   = 42.0   # 도크 전체를 바닥에서 띄우는 양 (소환 윗변=권능 윗변 y808 정렬 + 하단 터치 여백 확보)
+	const BOTTOM_MARGIN: float = 16.0 + DOCK_LIFT   # 도크 띄움 반영 (16 → 58)
 	const UPGRADE_H:     float = 36.0
 	const GAP_UPG_SUM:   float = 6.0
 	const SUM_H:         float = 52.0
 	const GAP_SUM_GOLD:  float = 6.0
 	const GOLD_H:        float = 22.0
-	const TRAY_TOP:      float = 795.0  # 트레이 상단 (성 y≈620으로 상향 후에도 하단 도크 유지)
+	const TRAY_TOP:      float = 795.0 - DOCK_LIFT  # 795 → 753, 도크 띄움 반영 (성 y620과 130px 이격, 안전)
 	const TRAY_SIDE_MG:  float = 4.0    # 트레이 좌우 마진
 
 	# ── 트레이 패널 배치 (최하단 z — move_child로 0번째로) ───────────
@@ -2709,20 +2761,20 @@ func _layout_bottom_ui_phase_c() -> void:
 	# ── 좌/우 구역 디바이더 (경영 메뉴 | 권능) ──────────────────────
 	# 좌측 버튼 끝(x=MX+SUM_W=276)과 권능 버튼 시작(x≈296) 사이 경계
 	if is_instance_valid(_tray_divider):
-		const DIV_X: float = 286.0
+		const DIV_X: float = 282.0   # 좌측 버튼 끝(276)과 6px 이격, 권능 버튼과의 간격 확보 위해 좌측 미세 이동
 		const DIV_INSET: float = 12.0   # 트레이 상/하단에서 띄울 여백
 		_tray_divider.position = Vector2(DIV_X, TRAY_TOP + DIV_INSET)
 		_tray_divider.size = Vector2(1.0, (vp.y - TRAY_TOP) - DIV_INSET * 2.0)
 
 	# ── 강화 버튼 — 맨 아래 행 ─────────────────────────────────────
-	var upg_y: float = vp.y - BOTTOM_MARGIN - UPGRADE_H   # = 908
+	var upg_y: float = vp.y - BOTTOM_MARGIN - UPGRADE_H   # = 866
 	if is_instance_valid(_upgrade_btn):
 		_upgrade_btn.position = Vector2(MX, upg_y)
 		_upgrade_btn.size = Vector2(SUM_W, UPGRADE_H)
 	# ▲ 아이콘은 이제 버튼 내부 HBox 자식 → 별도 위치 계산 불필요 (RD18 폴리싱)
 
 	# ── 소환 컨테이너 ───────────────────────────────────────────────
-	var sum_y: float = upg_y - GAP_UPG_SUM - SUM_H          # = 850
+	var sum_y: float = upg_y - GAP_UPG_SUM - SUM_H          # = 808
 	summon_container.position = Vector2(MX, sum_y)
 	summon_container.size = Vector2(SUM_W, SUM_H)
 
@@ -2788,9 +2840,10 @@ func _refresh_summon_buttons() -> void:
 			else:
 				cost_lbl.add_theme_color_override("font_color", Color(0.92, 0.88, 1.0, 1.0))
 
-func _on_summon_pressed(index: int) -> void:
+func _on_summon_pressed(index: int, btn: Button = null) -> void:
 	# Phase C — 고용 가능 조건: wave_active + 비특수(비상점) 웨이브 + 골드만 게이팅
 	# MD12: 전역 총량 캡(active_minions >= max_minions) 으로 교체
+	# 차단 사유(웨이브/골드/슬롯)면 여기서 early-return → 눌림 바운스도 재생 안 됨.
 	if not wave_active:
 		return
 	var wave_data: Dictionary = WaveData.get_wave(current_chapter, current_stage, current_wave)
@@ -2805,6 +2858,8 @@ func _on_summon_pressed(index: int) -> void:
 	# MD12 — 전역 총량 캡 초과 시 거부
 	if active_minions >= max_minions:
 		return
+	# 모든 게이트 통과 — 성공 시에만 눌림 피드백
+	_play_button_bounce(btn)
 	souls -= cost
 	_update_souls_ui()
 	_close_guide()

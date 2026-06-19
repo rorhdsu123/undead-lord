@@ -82,6 +82,7 @@ static var _strings: Dictionary = {
 	"upgrade_minion_warrior": "전사",
 	"upgrade_minion_archer":  "궁수",
 	"upgrade_minion_tank":    "탱크",
+	"upgrade_demon_bark":     "강화해라!",
 
 	# ── 골드 획득 플로팅 텍스트 ─────────────────────────────────
 	"gold_floater": "● +%d",

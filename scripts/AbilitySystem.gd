@@ -32,7 +32,8 @@ const LIGHTNING_DMG_MINION: float        = 3.0  # 잡몹 배수
 ## 망령의 나팔
 const TRUMPET_COOLDOWN: float      = 6.0    # 쿨다운 (초)
 const TRUMPET_PULSE_RADIUS: float  = 130.0  # 넉백 원형 펄스 반경 (px)
-const TRUMPET_KNOCKBACK: float     = 260.0  # 기준 넉백 거리 (px). 적 질량(knockback_resist)으로 나뉨
+const TRUMPET_KNOCKBACK: float     = 560.0  # 기준 넉백 거리 (px). 상한(MAX_KNOCKBACK=600) 직전까지 키워 일반 적이 ~220px 가시적으로 밀리게(질량 차등 유지). 가제
+const TRUMPET_SLOW_DURATION: float = 1.5   # 넉백 후 착지 둔화 지속(초). "번 시간"을 가시화 — apply_slow=속도 60%↓+파란 틴트. 가제
 const TRUMPET_REACH: float         = 420.0  # 성 중심 기준 탭 허용 반경 (px)
 const TRUMPET_DAMAGE: float        = 1.0    # 피해 거의 0 (순수 통제)
 
@@ -507,6 +508,8 @@ func _fire_trumpet(world_pos: Vector2) -> void:
 		# 위쪽(−y)이 되려면 from_pos.y = e.pos.y + 큰값 (e보다 아래서 밀어올림)
 		var push_origin: Vector2 = Vector2(e.global_position.x, e.global_position.y + 9999.0)
 		e.apply_knockback(push_origin, TRUMPET_KNOCKBACK)
+		if e.has_method("apply_slow"):
+			e.apply_slow(TRUMPET_SLOW_DURATION)
 
 	# VFX — 상방 스윕 음파
 	_spawn_trumpet_sweep(world_pos)

@@ -191,15 +191,29 @@ const CARD_AXIS = {
 
 # 연출/대사 텍스트
 const WAVE_CLEAR_LINES = [
-	"다음.",
-	"어림도 없다.",
-	"약하군.",
-	"계속 와라.",
-	"...이 정도냐.",
+	"좋아. 계속 막는다.",
+	"멈추지 마라. 다음.",
+	"에헴. 이 몸이 누군지 알겠지.",
+	"에헴. 이게 마왕의 실력이다.",
+	"이쯤이야 마왕에겐 가뿐하지. 에헴.",
+	"크흠, 어떠냐. 이게 마왕이다.",
 ]
-const POWER_LINES = ["쳐라!", "끝내라.", "지금이다.", "물러설 곳은 없다."]
-const DANGER_LINES = ["성이... 위험하다!", "막아라, 어서!", "이대로는 안 된다..."]
+const POWER_LINES = [
+	"이게 마왕의 힘이다.",
+	"내 성에서, 감히.",
+	"전부 쓸어주마.",
+	"한 발도 못 들인다.",
+	"여기까지다.",
+]
+const DANGER_LINES = [
+	"성벽! 조금만 버텨줘…!",
+	"마왕은… 마왕은 안 운다.",
+	"이 정도로 안 무너진다… 아마.",
+	"진정해. 마왕이잖아. 마왕.",
+	"아직… 아직 안 졌어.",
+]
 const POWER_BARK_CHANCE: float = 0.2   # 권능 발동 시 바크 확률 (스팸 방지)
+const DEMON_BARK_MIN_GAP_MSEC: int = 2800   # 마왕 바크 최소 간격(ms). 위급 바크는 무시(우선권).
 const CASTLE_DANGER_RATIO: float = 0.25
 const BOSS_INTRO_DIALOGUES = {
 	"사관후보생":          "이, 이건 훈련 아닌가요...?",
@@ -266,6 +280,7 @@ var ability_system: Node = null
 # ── 마왕 표정 반응 컷인 ──────────────────────────────────────
 const DemonPortraitScript = preload("res://scripts/DemonPortrait.gd")
 var demon_portrait: Control = null
+var _last_demon_bark_msec: int = 0
 
 func _ready() -> void:
 	available_skill_cards = SKILL_CARDS.duplicate()
@@ -600,6 +615,16 @@ func enemy_died(is_boss: bool = false) -> void:
 	if enemies_alive <= 0:
 		end_wave()
 
+## 마왕 바크 공통 게이트. force=true(위급)는 쿨다운 무시. 그 외는 DEMON_BARK_MIN_GAP_MSEC 간격 강제(연발 방지).
+func _demon_say(emotion: String, text: String, force: bool = false) -> void:
+	if not is_instance_valid(demon_portrait):
+		return
+	var now: int = Time.get_ticks_msec()
+	if not force and now - _last_demon_bark_msec < DEMON_BARK_MIN_GAP_MSEC:
+		return
+	_last_demon_bark_msec = now
+	demon_portrait.say(emotion, text)
+
 ## castle_hp 변경 후 위급 진입 엣지를 감지해 마왕 바크를 1회 발사한다.
 ## 모든 castle_hp 변경 지점에서 castle_bar.set_hp 옆에 함께 호출할 것.
 func _update_demon_danger() -> void:
@@ -608,7 +633,7 @@ func _update_demon_danger() -> void:
 	var ratio: float = float(castle_hp) / float(castle_max_hp)
 	var now_danger: bool = castle_hp > 0 and ratio < CASTLE_DANGER_RATIO
 	if now_danger and not _castle_in_danger:
-		demon_portrait.say("hurt", DANGER_LINES[randi() % DANGER_LINES.size()])
+		_demon_say("hurt", DANGER_LINES[randi() % DANGER_LINES.size()], true)
 	_castle_in_danger = now_danger
 
 func castle_take_damage(dmg: int, from_pos: Vector2 = Vector2.INF) -> void:
@@ -636,7 +661,7 @@ func demon_bark_power() -> void:
 		return
 	if randf() >= POWER_BARK_CHANCE:
 		return
-	demon_portrait.say("attack", POWER_LINES[randi() % POWER_LINES.size()])
+	_demon_say("attack", POWER_LINES[randi() % POWER_LINES.size()])
 
 func end_wave() -> void:
 	if not wave_active:
@@ -656,7 +681,7 @@ func end_wave() -> void:
 	if not _is_tutorial() and randf() < 0.3:
 		var line: String = WAVE_CLEAR_LINES[randi() % WAVE_CLEAR_LINES.size()]
 		if is_instance_valid(demon_portrait):
-			demon_portrait.say("victory", line)
+			_demon_say("victory", line)
 
 	await get_tree().create_timer(1.2).timeout
 	# Phase A1 — 키스톤/카드 선택 비활성: 선택 UI를 건너뛰고 다음 웨이브로 직행

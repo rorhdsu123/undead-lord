@@ -1,18 +1,21 @@
 extends Control
 
 # ─── 레이아웃 상수 (플테 조정 대상) ──────────────────────────────────────
-const SPEAKER_BOTTOM:     float = 788.0   # 위젯 하단 Y (조작부 TRAY_TOP=795 바로 위)
-const SPEAKER_LEFT:       float = 8.0     # 좌측 여백 (px)
-const PORTRAIT_H:         float = 104.0   # 초상(얼굴) 표시 높이 (px). 폭은 크롭 종횡비로 자동
+const SPEAKER_BOTTOM:     float = 776.0   # 위젯 하단 Y (조작부 TRAY_TOP=795 바로 위)
+const SPEAKER_LEFT:       float = 10.0    # 좌측 여백 (px)
+const PORTRAIT_H:         float = 68.0    # 초상(얼굴) 표시 높이 (px). 폭은 크롭 종횡비로 자동
 const FRAME_PAD:          float = 5.0     # 프레임 안쪽 여백 (px)
 const BUBBLE_MAX_WIDTH:   float = 300.0   # 말풍선 최대 폭 (초상+말풍선이 480 안에)
-const HOLD_DURATION:      float = 1.8     # 표시 유지 시간 (초)
+const HOLD_BASE:          float = 1.9    # 기본 유지 시간 (초)
+const HOLD_PER_CHAR:      float = 0.07   # 글자당 추가 (초)
+const HOLD_MAX:           float = 3.3    # 유지 시간 상한 (초)
 const SLIDE_IN_DURATION:  float = 0.22
 const SLIDE_OUT_DURATION: float = 0.20
 
 # 말풍선 패딩
-const _BUBBLE_PAD_H: float = 10.0   # 좌우 패딩
-const _BUBBLE_PAD_V: float = 10.0   # 상하 패딩
+const _BUBBLE_PAD_H: float = 10.0              # 좌우 패딩
+const _BUBBLE_PAD_V: float = 10.0              # 상하 패딩
+const _PORTRAIT_BUBBLE_GAP: float = 4.0        # 초상 프레임과 말풍선 사이 간격(px)
 
 # ─── 텍스처 (전신 원본에서 얼굴만 미리 잘라 구운 크롭 PNG, 320×258) ──────
 # 4종 모두 포즈 동일·얼굴만 달라 동일 크롭 영역 Rect2(290,296,320,258)으로 bake됨.
@@ -26,6 +29,7 @@ var _frame:        Panel       = null      # 라운드 사각 초상 프레임
 var _portrait:     TextureRect = null      # 얼굴 크롭
 var _bubble_panel: Panel       = null
 var _bubble_label: Label       = null
+var _bubble_tail:  Polygon2D   = null      # 말풍선 좌측 삼각형 꼬리
 
 # ─── 내부 상태 ──────────────────────────────────────────────────────────
 var _frame_w:    float          = 0.0
@@ -99,6 +103,12 @@ func _ready() -> void:
 	_bubble_label.mouse_filter  = Control.MOUSE_FILTER_IGNORE
 	_bubble_panel.add_child(_bubble_label)
 
+	# ── 말풍선 좌측 꼬리 삼각형 (말풍선 패널의 자식) ──────────────────────
+	_bubble_tail = Polygon2D.new()
+	_bubble_tail.color = style.bg_color   # 말풍선 배경색과 동일
+	_bubble_tail.polygon = PackedVector2Array([Vector2(0, -7), Vector2(0, 7), Vector2(-8, 0)])
+	_bubble_panel.add_child(_bubble_tail)
+
 	# 초기 상태: 숨김
 	modulate.a = 0.0
 	_reposition_widget("")   # 초기 위치 설정 (텍스트 없음)
@@ -126,7 +136,8 @@ func say(emotion: String, text: String) -> void:
 	_animate_in()
 
 	# 홀드 후 슬라이드-다운 + 페이드-아웃
-	_hold_timer = get_tree().create_timer(HOLD_DURATION)
+	var hold: float = clampf(HOLD_BASE + HOLD_PER_CHAR * float(text.length()), HOLD_BASE, HOLD_MAX)
+	_hold_timer = get_tree().create_timer(hold)
 	_hold_timer.timeout.connect(_animate_out, CONNECT_ONE_SHOT)
 
 # ─── 내부 헬퍼 ──────────────────────────────────────────────────────────
@@ -162,13 +173,17 @@ func _reposition_widget(text: String) -> void:
 	_bubble_panel.custom_minimum_size = Vector2(panel_w, panel_h)
 	_bubble_panel.size = Vector2(panel_w, panel_h)
 
+	# 꼬리: 말풍선 좌변 세로 중앙
+	if _bubble_tail != null:
+		_bubble_tail.position = Vector2(0.0, panel_h * 0.5)
+
 	# 초상 프레임과 말풍선 세로 중앙 정렬
 	var total_h: float = max(_frame_h, panel_h)
 	_frame.position        = Vector2(0.0, (total_h - _frame_h) * 0.5)
-	_bubble_panel.position = Vector2(_frame_w + 6.0, (total_h - panel_h) * 0.5)
+	_bubble_panel.position = Vector2(_frame_w + _PORTRAIT_BUBBLE_GAP, (total_h - panel_h) * 0.5)
 
 	# 위젯 전체 크기
-	size = Vector2(_frame_w + 6.0 + panel_w, total_h)
+	size = Vector2(_frame_w + _PORTRAIT_BUBBLE_GAP + panel_w, total_h)
 
 	# 위젯을 SPEAKER_LEFT / SPEAKER_BOTTOM 기준 배치 (슬라이드 복귀 위치)
 	position = Vector2(SPEAKER_LEFT, SPEAKER_BOTTOM - total_h)

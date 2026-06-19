@@ -1316,6 +1316,8 @@ func _show_shop() -> void:
 	modal_dim.visible = true
 	_refresh_shop_buttons()
 	shop_panel.visible = true
+	if is_instance_valid(ability_system):
+		ability_system.cancel_for_shop()  # 무장 중이었다면 해제 (reach 원/무장 UI 잔상 제거)
 	# RD16: 상점 중 강화 버튼+팝업 숨김. 팝업이 골드 HUD를 숨겼다면 먼저 복원시킨 뒤
 	# 아래에서 상점용으로 다시 끄도록, _close를 HUD 숨김 앞에서 호출.
 	_close_upgrade_popup()

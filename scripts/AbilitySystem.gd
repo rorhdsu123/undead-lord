@@ -355,8 +355,15 @@ func tick(delta: float) -> void:
 # 입력 진입점
 # ──────────────────────────────────────────────────────────────
 
+## 상점(모달) 표시 중에는 권능 입력을 전면 차단 — 상점 팝업이 권능 버튼 위를 덮어도
+## 버튼 탭이 별도 connect 경로로 들어오므로 여기서 막아야 한다.
+func _is_blocked_by_shop() -> bool:
+	return is_instance_valid(game) and is_instance_valid(game.shop_panel) and game.shop_panel.visible
+
 ## 권능 버튼 탭 (1스텝)
 func on_ability_btn_pressed(slot: int) -> void:
+	if _is_blocked_by_shop():
+		return
 	var ability: Dictionary = _get_ability(slot)
 	# 쿨 중이면 무시
 	if _cooldowns[slot] > 0.0:
@@ -393,6 +400,8 @@ func _punch_drawer(slot: int) -> void:
 ## 필드 탭 (2스텝) — Game.gd의 _unhandled_input에서 호출
 ## world_pos: 월드 좌표 탭 위치
 func on_field_tap(world_pos: Vector2) -> void:
+	if _is_blocked_by_shop():
+		return
 	if _arm_state != ArmState.ARMED:
 		return
 	var slot: int = _armed_slot
@@ -514,6 +523,11 @@ func _disarm() -> void:
 	_armed_slot = -1
 	_hide_reach_circle()
 	_refresh_ui()
+
+## 상점(모달) 진입 시 외부 호출 — 무장 상태였다면 해제해 reach 원/무장 UI 잔상 제거
+func cancel_for_shop() -> void:
+	if _arm_state == ArmState.ARMED:
+		_disarm()
 
 # ──────────────────────────────────────────────────────────────
 # 내부: 권능 데이터 접근

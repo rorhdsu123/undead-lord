@@ -636,7 +636,7 @@ func _update_demon_danger() -> void:
 		_demon_say("hurt", DANGER_LINES[randi() % DANGER_LINES.size()], true)
 	_castle_in_danger = now_danger
 
-func castle_take_damage(dmg: int, from_pos: Vector2 = Vector2.INF) -> void:
+func castle_take_damage(dmg: int, from_pos: Vector2 = Vector2.INF, big: bool = false) -> void:
 	if castle_hp <= 0:
 		return
 	castle_hp -= dmg
@@ -649,7 +649,7 @@ func castle_take_damage(dmg: int, from_pos: Vector2 = Vector2.INF) -> void:
 		var contact: Vector2 = Vector2(
 			clamp(from_pos.x, cc.x - 94.0, cc.x + 94.0),
 			clamp(from_pos.y, cc.y - 94.0, cc.y + 94.0))
-		spawn_castle_hit_effect(contact)
+		spawn_castle_hit_effect(contact, big)
 	if castle_hp <= 0:
 		castle_hp = 0
 		castle_bar.set_hp(castle_hp, castle_max_hp)
@@ -3045,19 +3045,39 @@ func show_crit_text() -> void:
 	tween.tween_property(label, "modulate:a", 0.0, 0.25)
 	tween.tween_callback(label.queue_free)
 
-func spawn_castle_hit_effect(pos: Vector2) -> void:
-	# 임팩트 플래시 — 마름모 한 점
+func spawn_castle_hit_effect(pos: Vector2, big: bool = false) -> void:
+	# 임팩트 플래시 — 마름모 한 점. big=보스 타격(크게·길게·사방 스파크로 가독성↑, 큰 몸에 안 묻히게)
+	var sz: float = 30.0 if big else 16.0
+	var dur: float = 0.34 if big else 0.22
 	var flash: ColorRect = ColorRect.new()
-	flash.size = Vector2(16, 16)
-	flash.position = pos - Vector2(8, 8)
-	flash.pivot_offset = Vector2(8, 8)
+	flash.size = Vector2(sz, sz)
+	flash.position = pos - Vector2(sz * 0.5, sz * 0.5)
+	flash.pivot_offset = Vector2(sz * 0.5, sz * 0.5)
 	flash.rotation = 0.7853982  # 45°
 	flash.color = Color(1.0, 0.92, 0.55, 0.95)
+	flash.z_index = 60  # 액터(보스 몸) 위로 — 가림 방지
 	add_child(flash)
 	var ftw: Tween = create_tween()
-	ftw.parallel().tween_property(flash, "scale", Vector2(0.3, 0.3), 0.22)
-	ftw.parallel().tween_property(flash, "modulate:a", 0.0, 0.22)
+	ftw.parallel().tween_property(flash, "scale", Vector2(0.3, 0.3), dur)
+	ftw.parallel().tween_property(flash, "modulate:a", 0.0, dur)
 	ftw.tween_callback(flash.queue_free)
+	if not big:
+		return
+	# 보스 임팩트: 사방으로 튀는 스파크 몇 점
+	for i in 7:
+		var spark: ColorRect = ColorRect.new()
+		spark.size = Vector2(7, 7)
+		spark.position = pos - Vector2(3.5, 3.5)
+		spark.color = Color(1.0, 0.85, 0.45, 1.0)
+		spark.z_index = 60
+		add_child(spark)
+		var ang: float = TAU * float(i) / 7.0
+		var dst: float = 34.0 + float(i % 3) * 10.0
+		var tgt: Vector2 = pos + Vector2(cos(ang), sin(ang)) * dst - Vector2(3.5, 3.5)
+		var stw: Tween = create_tween()
+		stw.parallel().tween_property(spark, "position", tgt, dur)
+		stw.parallel().tween_property(spark, "modulate:a", 0.0, dur)
+		stw.tween_callback(spark.queue_free)
 
 func spawn_death_effect(pos: Vector2, color: Color = Color(1, 0.6, 0.4, 1)) -> void:
 	for i in 6:

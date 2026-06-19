@@ -32,7 +32,7 @@ const TYPE_TARGET_PX: Dictionary = {
 	"archer": 63.0,    # 박쥐 — 옛 해골 궁수(~53px) 크기에 맞춤
 	"tank": 38.0,      # 슬라임 — 전사 수준에 맞춤 (×base_scale 1.45 = ~55px)
 }
-const BOUNDS: Rect2 = Rect2(0, -230, 1024, 930)
+const BOUNDS: Rect2 = Rect2(0, -230, 480, 930)  # x:0~480(화면 폭). 보스 추격 시 화면 밖 이탈 방지
 
 # ── 수비 밴드 상수 (RD13, 가제 — 밸런싱 대기) ────────────────────────────
 # 성 위치 (240, 760). 적은 y<0에서 스폰, 아래(+y) 방향으로 하강.
@@ -52,6 +52,8 @@ const WAIT_X_OFFSETS: Dictionary = {
 }
 # leash: 타겟이 밴드 밖으로 이 거리 이상 나가면 추격 포기
 const LEASH_MARGIN: float = 40.0   # 밴드 상한에서 위로 얼마나 나가면 포기
+const RETARGET_INTERVAL: float = 0.5  # 근접 유닛 타겟 재평가 주기 (초)
+const FORWARD_LIMIT_TANK: float = 490.0  # 탱크 전진 상한: 라인을 벽으로 홀드 (플테 튜닝 노브)
 
 # 정적 단일 이미지 오버라이드 (풀 애니 미입고 역할 — 전 동작이 한 컷으로 표시).
 # 추후 같은 폴더에 0_[Role]_[Motion]_###.png 프레임 입고 시 여기서 제거하고 프레임 로더로 전환.
@@ -81,6 +83,7 @@ var sprite_base_scale: float = BASE_SPRITE_SCALE  # 자동맞춤×base_scale, _r
 var kill_count: int = 0
 var level: int = 1
 var attack_timer: float = 0.0
+var retarget_timer: float = 0.0
 var current_target = null
 var game = null
 var _anim_state: String = ""
@@ -204,22 +207,25 @@ func _physics_process(delta: float) -> void:
 			current_target = null
 
 	# 2) 타겟 갱신
-	# 원거리(궁수)는 매 프레임 재평가 — 후열 적 사수를 최우선 저격(EN9 "사수=우선 처치 대상").
-	# 근접은 기존대로 최전방(가장 깊은 적)을 고정 타겟해 라인 홀드.
+	# 원거리(궁수)는 매 프레임 재평가 — 사거리 내 적 사수를 최우선 저격(EN9·EN12).
+	# 근접은 RETARGET_INTERVAL마다 가장 가까운 적으로 재평가 — 스웜 분산(RD13).
 	if behavior == "ranged":
-		current_target = _find_ranged_target_in_band()
-	elif not is_instance_valid(current_target):
-		current_target = _find_deepest_enemy_in_band()
+		current_target = _find_ranged_target()
+	else:
+		retarget_timer += delta
+		if not is_instance_valid(current_target) or retarget_timer >= RETARGET_INTERVAL:
+			current_target = _find_nearest_enemy_in_band()
+			retarget_timer = 0.0
 
 	# 3) 타겟 없으면 대기 위치로 복귀
 	if not is_instance_valid(current_target):
 		_move_to_wait_position(delta)
 		return
 
-	# 4) 마중 이동 — 밴드 상한(BAND_TOP)을 넘어 위로는 나가지 않음
+	# 4) 마중 이동 — 역할별 전진 상한(_forward_limit())을 넘어 위로는 나가지 않음
 	var clamped_target_pos: Vector2 = current_target.position
-	if clamped_target_pos.y < BAND_TOP:
-		clamped_target_pos.y = BAND_TOP
+	if clamped_target_pos.y < _forward_limit():
+		clamped_target_pos.y = _forward_limit()
 
 	var dist: float = position.distance_to(clamped_target_pos)
 	if dist > attack_range:
@@ -239,8 +245,8 @@ func _physics_process(delta: float) -> void:
 			attack_timer = 0.0
 			_do_attack()
 
-	# 5) 밴드 상한 클램프 (어떤 경우에도 위로 돌진 불가)
-	position.y = max(position.y, BAND_TOP)
+	# 5) 전진 상한 클램프 — 탱크는 FORWARD_LIMIT_TANK, 나머지는 BAND_TOP
+	position.y = max(position.y, _forward_limit())
 	position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
 	position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
 
@@ -401,26 +407,45 @@ func _find_deepest_enemy_in_band():
 			deepest = e
 	return deepest
 
-# 원거리 미니언 전용: 밴드 안에서 적 사수(원거리)를 최우선 — 가장 가까운 사수.
-# 사수가 없으면 기존 로직(가장 깊은 적)으로 폴백해 전열을 돕는다.
-func _find_ranged_target_in_band():
+# 원거리 미니언 전용: 사거리(attack_range) 안의 적 사수를 최우선 저격.
+# BAND_TOP 필터 없음 — standoff 위치(y≈466 등)의 적 사수도 포착(EN12).
+# 사수가 없으면 가장 깊이 침투한 적(전열 지원)으로 폴백.
+func _find_ranged_target():
 	var enemies: Array = get_tree().get_nodes_in_group("enemies")
 	var nearest_archer = null
 	var nearest_dist: float = INF
 	for e in enemies:
 		if not is_instance_valid(e):
 			continue
-		if e.position.y < BAND_TOP:
-			continue   # 밴드 위(아직 안 들어온) 적 무시
 		if not e.get("is_ranged"):
-			continue
+			continue   # 적 사수만 우선 탐색
 		var d: float = position.distance_to(e.position)
-		if d < nearest_dist:
+		if d <= attack_range and d < nearest_dist:
 			nearest_dist = d
 			nearest_archer = e
 	if nearest_archer != null:
 		return nearest_archer
 	return _find_deepest_enemy_in_band()
+
+# 근접 미니언 전용: 밴드 안(y >= BAND_TOP)에서 가장 가까운 적 — 스웜 분산용(RD13).
+func _find_nearest_enemy_in_band():
+	var enemies: Array = get_tree().get_nodes_in_group("enemies")
+	var nearest = null
+	var nearest_dist: float = INF
+	for e in enemies:
+		if not is_instance_valid(e):
+			continue
+		if e.position.y < BAND_TOP:
+			continue   # 밴드 위(아직 안 들어온) 적 무시
+		var d: float = position.distance_to(e.position)
+		if d < nearest_dist:
+			nearest_dist = d
+			nearest = e
+	return nearest
+
+# 역할별 전진 상한 — 탱크는 라인 앞에 벽처럼 홀드, 나머지는 밴드 상한까지
+func _forward_limit() -> float:
+	return FORWARD_LIMIT_TANK if minion_type == "tank" else BAND_TOP
 
 func _heal(amount: float) -> void:
 	if amount <= 0.0:

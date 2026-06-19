@@ -18,7 +18,6 @@ const BOSS_SCALE_MAP: Dictionary = {
 const BASE_SPRITE_SCALE: float = 0.316
 
 const COLOR_NORMAL: Color  = Color.WHITE
-const COLOR_DASH: Color    = Color(1.0, 0.85, 0.3, 1.0)
 const COLOR_OVERTIME: Color = Color(1.0, 0.55, 0.3, 1.0)
 const COLOR_PHASE3: Color  = Color(1.5, 0.4, 0.4, 1.0)
 
@@ -28,8 +27,7 @@ const RAGE_DIALOGUES: Dictionary = {
 	"용사 대리":      "더 이상은 못 봐준다.",
 }
 
-const BOUNDS: Rect2 = Rect2(0, -280, 1024, 900)
-const DASH_SPEED: float = 400.0
+const BOUNDS: Rect2 = Rect2(100, -280, 280, 900)  # x:100~380(화면 중앙 대역). 보스가 가장자리로 새지 않게 성 lane에 가둠
 const CASTLE_HALF: float = 94.0  # 외벽+코너타워 외곽 (CastleSprite S+T=94)
 const STOP_DIST: float = 18.0    # 외벽 바깥 standoff (중심 아님). deadzone ≫ 프레임 이동 → 경계 진동 방지
 # 접근 중 dir.x가 0 근처에서 부호가 떨려도 flip이 깜빡이지 않도록 데드존.
@@ -38,14 +36,12 @@ const FLIP_DEADZONE: float = 0.12
 # 성벽 standoff 보정: 스프라이트가 centered라 발끝이 원점 아래로 늘어진다.
 # 발끝을 북벽 라인보다 WALL_PENETRATION만큼 성 안쪽에 두어, 큰 보스도 몸통이 벽에 닿아
 # 근접 공격이 벽과 연결돼 보이고 잡몹과 정지 라인이 어긋나지 않게 한다.
-const BODY_BOTTOM_OFFSET: float = 306.0   # 캔버스 중심→발끝 (px, 알파>200 실측, 4종 공통)
+const BODY_BOTTOM_OFFSET: float = 150.0   # 캔버스 중심→실제 보이는 발끝 (불투명하단 306은 여백·그림자 포함이라 과대 → 보스가 성에서 떠서 때림). 보스가 성벽에 닿는 정도 조절 노브: 키우면 멀리서 멈춤, 줄이면 더 파고듦
 const WALL_PENETRATION: float = 0.0       # 발끝을 북벽 라인에 맞춤(파고들지 않음). 0보다 크면 안쪽으로.
 
 # 하인 교전 (압박형) — 와인드업·격노·돌진 중엔 적용 안 됨(그 상태들이 _approach_castle 이전에 return)
 const MINION_ENGAGE_RANGE: float = 100.0  # 길목 하인 감지 거리 (Enemy.gd와 일치)
 const MINION_ATTACK_RANGE: float = 50.0   # 하인 교전 사거리 (Enemy.gd와 일치)
-const MAX_ENGAGE_TIME: float = 3.0        # 이 시간만 교전 후 뿌리치고 전진
-const ENGAGE_COOLDOWN: float = 4.0        # 뿌리친 뒤 하인 무시하고 성으로 밀고 드는 시간
 
 static var _cached_frames: Dictionary = {}
 
@@ -59,21 +55,11 @@ var attack_cooldown: float = 1.2
 var attack_timer: float = 0.0
 var castle_standoff: float = STOP_DIST  # _ready에서 스프라이트 크기 반영해 재계산
 var minion_attack_timer: float = 0.0
-var engage_time: float = 0.0
-var ignore_minion_timer: float = 0.0
 var boss_name: String = "보스"
 var boss_type: String = "mid_boss"
 
 var game = null
 var _anim_state: String = ""
-
-# 인턴 - 돌진
-var dash_timer: float = 0.0
-var dash_interval: float = 3.0
-var is_dashing: bool = false
-var dash_direction: Vector2 = Vector2.ZERO
-var dash_duration: float = 0.5
-var dash_elapsed: float = 0.0
 
 # 알바생 - 페이즈
 var overtime_triggered: bool = false
@@ -192,12 +178,13 @@ func _physics_process(delta: float) -> void:
 		_pattern_albaeng(delta)
 
 	var castle_pos: Vector2 = game.get_node("Castle").global_position
-	if _castle_wall_dist(castle_pos) <= castle_standoff and not is_dashing and not is_charging_rage:
+	if _castle_wall_dist(castle_pos) <= castle_standoff and not is_charging_rage:
 		attack_timer += delta
 		if attack_timer >= attack_cooldown:
 			attack_timer = 0.0
-			game.castle_take_damage(damage, global_position)
+			game.castle_take_damage(damage, global_position, true)
 			if _anim_state not in ["hurt", "die"]:
+				_update_facing((castle_pos - global_position).x)  # 공격 순간 성을 바라봄(돌진 잔여 방향 보정)
 				_play_anim("slash")
 	else:
 		attack_timer = 0.0
@@ -233,21 +220,6 @@ func _pattern_intern(delta: float) -> void:
 		_summon_companions()
 
 	var castle_pos: Vector2 = game.get_node("Castle").global_position
-
-	if is_dashing:
-		dash_elapsed += delta
-		velocity = dash_direction * DASH_SPEED
-		move_and_slide()
-		_clamp_to_bounds()
-		_update_facing(dash_direction.x)
-		if _anim_state not in ["hurt", "die"]:
-			_play_anim("walk")
-		if dash_elapsed >= dash_duration or not BOUNDS.has_point(position):
-			is_dashing = false
-			dash_elapsed = 0.0
-			anim_sprite.modulate = COLOR_NORMAL
-		return
-
 	_engage_or_approach(delta, castle_pos)
 
 	rage_timer += delta
@@ -255,18 +227,6 @@ func _pattern_intern(delta: float) -> void:
 		rage_timer = 0.0
 		var rage_line: String = RAGE_DIALOGUES.get(boss_name, "이건 진심이다.")
 		_start_rage_charge(rage_line, Color(1.0, 0.6, 0.2))
-		return
-
-	dash_timer += delta
-	if dash_timer >= dash_interval:
-		dash_timer = 0.0
-		_start_dash()
-
-func _start_dash() -> void:
-	is_dashing = true
-	var angle: float = randf_range(0, PI)
-	dash_direction = Vector2(cos(angle), sin(angle))
-	anim_sprite.modulate = COLOR_DASH
 
 # ============ 알바생 패턴 ============
 func _pattern_albaeng(delta: float) -> void:
@@ -354,7 +314,13 @@ func _execute_rage_attack() -> void:
 	rage_charge_time = 0.0
 	_restore_phase_modulate()
 	if game:
-		game.castle_take_damage(rage_damage, global_position)
+		var castle_pos: Vector2 = game.get_node("Castle").global_position
+		if _anim_state not in ["hurt", "die"]:
+			_update_facing((castle_pos - global_position).x)  # 격노 일격도 성을 바라보며
+			_play_anim("slash")                                # 격노 공격에 공격 모션 부여(기존엔 데미지만)
+		# 성 외벽 사각형에 닿은 경우에만 피해 — 멀리서 격노=헛스윙(성 안 깎임)
+		if _castle_wall_dist(castle_pos) <= castle_standoff:
+			game.castle_take_damage(rage_damage, global_position, true)
 
 func _summon_companions() -> void:
 	if game and game.has_method("boss_summon"):
@@ -464,26 +430,12 @@ func _update_facing(dx: float) -> void:
 	if absf(dx) > FLIP_DEADZONE:
 		anim_sprite.flip_h = dx < 0
 
-# 압박형 교전: 길목의 전사·탱커와 잠깐 싸우다, MAX_ENGAGE_TIME이 지나면 뿌리치고
-# ENGAGE_COOLDOWN 동안 하인을 무시한 채 성으로 밀고 든다. 궁수는 _find_nearby_minion이 제외.
+# 길목 교전: 앞을 막은 근접 하인이 있으면 계속 그 하인과 싸우고, 감지 범위에 하인이 없을 때만
+# 성으로 접근·공격(일반 적과 동일 — 라인이 살아 있으면 보스가 거기 묶인다). 궁수는 _find_nearby_minion이 제외.
 func _engage_or_approach(delta: float, castle_pos: Vector2) -> void:
-	if ignore_minion_timer > 0.0:
-		ignore_minion_timer -= delta
-		_approach_castle(castle_pos)
-		return
-
 	var minion = _find_nearby_minion()
 	if not is_instance_valid(minion):
-		engage_time = 0.0
 		minion_attack_timer = 0.0
-		_approach_castle(castle_pos)
-		return
-
-	engage_time += delta
-	if engage_time >= MAX_ENGAGE_TIME:
-		engage_time = 0.0
-		minion_attack_timer = 0.0
-		ignore_minion_timer = ENGAGE_COOLDOWN
 		_approach_castle(castle_pos)
 		return
 
@@ -492,11 +444,13 @@ func _engage_or_approach(delta: float, castle_pos: Vector2) -> void:
 	if dist <= MINION_ATTACK_RANGE:
 		velocity = Vector2.ZERO
 		move_and_slide()
+		_clamp_to_bounds()  # 정지 교전 중 하인 밀림으로 화면 밖 드리프트 방지
 		minion_attack_timer += delta
 		if minion_attack_timer >= attack_cooldown:
 			minion_attack_timer = 0.0
 			minion.take_damage(damage)
 			if _anim_state not in ["hurt", "die"]:
+				_update_facing((target_pos - global_position).x)  # 때리는 하인을 바라봄
 				_play_anim("slash")
 		elif _anim_state not in ["slash", "hurt", "die"]:
 			_play_anim("idle")

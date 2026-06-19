@@ -90,10 +90,10 @@ var special_cost: int = SPECIAL_COST
 var active_minions: int = 0
 
 # 키스톤 (런 빌드 곱 레이어)
-var lord_card_count: int = 0
-var summoner_card_count: int = 0
-var keystone1: String = ""   # "" | "kingdom"(영주) | "legion"(소환사)
-var keystone2: String = ""   # "" | "berserker" | "cataclysm" | "horde" | "echo" | "ritual"
+var power_card_count: int = 0
+var army_card_count: int = 0
+var keystone1: String = ""   # "" | "legion"([군대] 트리오)
+var keystone2: String = ""   # "" | "horde" | "echo"
 # 파생값(_recompute_keystones에서 재계산)
 var keystone_lord_atk_mult: float = 1.0
 var keystone_minion_atk_mult: float = 1.0
@@ -101,6 +101,8 @@ var keystone_revive_chance: float = 0.0
 var keystone_echo_dmg: float = 0.0
 var keystone_special_mult: float = 1.0
 const KEYSTONE_ECHO_RADIUS: float = 90.0
+const HORDE_REFUND_BASE: float = 0.50
+const HORDE_REFUND_PER_CARD: float = 0.05
 var keystone_sacrifice_dmg_mult: float = 1.0
 var keystone_sacrifice_radius_mult: float = 1.0
 var keystone_sacrifice_refill: bool = false
@@ -133,23 +135,13 @@ var _freeze_for_special_tip: bool = false
 var _special_atk_unlocked: bool = false
 
 # 카드 풀 - 스킬 카드는 획득 후 제거, 스탯 카드는 계속 등장
-const SKILL_CARDS = [
-	{"id": "death_aura"},
-	{"id": "skull_throw"},
-	{"id": "decay_curse"},
-]
+const SKILL_CARDS = []  # 패시브 거취 미정 — §4.1 보류, 풀에서 제외
+# (death_aura / skull_throw / decay_curse 상수 보존, 드래프트에는 미등장)
 const STAT_CARDS = [
-	{"id": "arsenal"},
 	{"id": "wall"},
 	{"id": "graveyard"},
-	{"id": "atk_speed"},
-	{"id": "minion_speed"},
-	{"id": "range_basic"},
-	{"id": "range_all"},
-	{"id": "minion_attack"},
 	{"id": "minion_count"},
-	{"id": "summon_speed"},
-	{"id": "minion_hp"},
+	{"id": "summon_cost"},
 	{"id": "minion_range"},
 	{"id": "minion_lifesteal"},
 ]
@@ -157,22 +149,18 @@ const STAT_CARDS = [
 var available_skill_cards: Array = []
 var current_cards: Array = []
 const RARE_CHANCE: float = 0.3
-const ALWAYS_RARE: Array[String] = ["minion_count", "range_all"]
-const NEVER_RARE: Array[String] = ["minion_speed", "graveyard", "range_basic"]
+const ALWAYS_RARE: Array[String] = ["minion_count"]
+const NEVER_RARE: Array[String] = ["graveyard"]
 
 # 카드 픽업 시각 효과: ID → 카테고리
+# (보류/연기 카드: range_basic·range_all·death_aura·skull_throw·decay_curse — 풀에 없으나 엔트리 보존)
 const CARD_CATEGORY_MAP = {
-	"arsenal":       "player",
-	"atk_speed":     "player",
 	"wall":          "castle",
 	"graveyard":     "castle",
 	"range_basic":   "range",
 	"range_all":     "range",
-	"minion_speed":    "minion",
-	"minion_attack":   "minion",
 	"minion_count":    "minion",
-	"summon_speed":    "minion",
-	"minion_hp":       "minion",
+	"summon_cost":     "minion",
 	"minion_range":    "minion",
 	"minion_lifesteal": "minion",
 	"death_aura":    "skill",
@@ -181,11 +169,12 @@ const CARD_CATEGORY_MAP = {
 }
 
 # 카드 → 축 분류
+# (보류/연기 카드: range_basic·range_all·death_aura·skull_throw·decay_curse — 풀에 없으나 엔트리 보존)
 const CARD_AXIS = {
-	"arsenal": "lord", "atk_speed": "lord", "range_basic": "lord", "range_all": "lord",
-	"death_aura": "lord", "skull_throw": "lord", "decay_curse": "lord",
-	"minion_speed": "summoner", "minion_attack": "summoner", "minion_count": "summoner", "summon_speed": "summoner",
-	"minion_hp": "summoner", "minion_range": "summoner", "minion_lifesteal": "summoner",
+	"range_basic": "power", "range_all": "power",
+	"death_aura": "power", "skull_throw": "power", "decay_curse": "power",
+	"minion_count": "army", "summon_cost": "army",
+	"minion_range": "army", "minion_lifesteal": "army",
 	"wall": "neutral", "graveyard": "neutral",
 }
 
@@ -261,6 +250,8 @@ var _resource_capsule: Panel = null
 var _resource_hbox: HBoxContainer = null
 # (3) 하단 트레이 패널
 var _bottom_tray: Panel = null
+# (3b) 트레이 좌/우 구역 디바이더 (경영 메뉴 | 권능 구분)
+var _tray_divider: ColorRect = null
 @onready var shop_panel = $UI/ShopPanel
 @onready var shop_title: Label = $UI/ShopPanel/ShopTitle
 @onready var shop_subtitle: Label = $UI/ShopPanel/ShopSubtitle
@@ -401,6 +392,10 @@ func _ready() -> void:
 	_bottom_tray.add_theme_stylebox_override("panel", tray_sb)
 	hud_parent.add_child(_bottom_tray)
 	_bottom_tray.move_to_front()  # 임시 — _layout_bottom_ui_phase_c에서 move_child로 최하단으로 이동
+	_tray_divider = ColorRect.new()
+	_tray_divider.color = Color(0.45, 0.38, 0.62, 0.30)
+	_tray_divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud_parent.add_child(_tray_divider)
 	_layout_bottom_ui()
 	# Phase A4 — 하단 UI 숨김 (특수기 버튼·소환 4버튼·희생 버튼·슬롯 라벨)
 	# 상단 HUD·트래커·성HP바(UI-폴리싱 자산)는 건드리지 않음
@@ -686,8 +681,7 @@ func end_wave() -> void:
 	await get_tree().create_timer(1.2).timeout
 	# Phase A1 — 키스톤/카드 선택 비활성: 선택 UI를 건너뛰고 다음 웨이브로 직행
 	# 모달 레이어링 구조(_show_keystones/_show_cards)는 건드리지 않음 — 호출만 차단
-	# 복원: 아래 2줄을 제거하면 기존 분기가 살아남
-	# Phase C에서 고용 화면이 이 자리를 대체할 예정
+	# 복원: `if true`→`if false`로 바꾸면 카드/키스톤 루프 활성(운영자 검증 통과 후)
 	if true:  # Phase A 가드: 키스톤·카드 선택 비활성
 		current_wave += 1
 		start_wave()
@@ -695,12 +689,11 @@ func end_wave() -> void:
 	if not _is_tutorial():
 		var wtype: String = WaveData.get_wave(current_chapter, current_stage, current_wave).get("type", "normal")
 		if current_wave == 0 and keystone1 == "":
-			_show_keystones(["kingdom", "legion"])
+			# [군대] 축 단일 — legion 1종 + filler
+			_show_keystones(["legion"])
 			return
-		elif wtype == "mid_boss" and keystone2 == "" and keystone1 != "":
-			var pool: Array = ["berserker", "cataclysm", "doom"] if keystone1 == "kingdom" else ["horde", "echo", "ritual"]
-			pool.shuffle()
-			_show_keystones(pool.slice(0, 2))
+		elif wtype == "mid_boss" and keystone2 == "" and keystone1 == "legion":
+			_show_keystones(["horde", "echo"])
 			return
 	_show_cards()
 
@@ -761,10 +754,15 @@ func _pick_card(index: int) -> void:
 
 	# 축 카운트 증가 (일반 카드만)
 	var axis: String = CARD_AXIS.get(card["id"], "neutral")
-	if axis == "lord":
-		lord_card_count += 1
-	elif axis == "summoner":
-		summoner_card_count += 1
+	if axis == "power":
+		power_card_count += 1
+	elif axis == "army":
+		army_card_count += 1
+		# legion 캡 스케일: [군대] 카드 획득마다 소환 슬롯 +1
+		if keystone1 == "legion":
+			max_minions += 1
+			_update_minion_readout()
+			_refresh_summon_buttons()
 	_recompute_keystones()
 
 	card_panel.visible = false
@@ -773,6 +771,7 @@ func _pick_card(index: int) -> void:
 	start_wave()
 
 func _recompute_keystones() -> void:
+	# 기본값 리셋 (보류 트랙 변수 포함 — Player/특수기/희생 시스템이 참조)
 	keystone_lord_atk_mult = 1.0
 	keystone_minion_atk_mult = 1.0
 	keystone_revive_chance = 0.0
@@ -781,55 +780,23 @@ func _recompute_keystones() -> void:
 	keystone_sacrifice_dmg_mult = 1.0
 	keystone_sacrifice_radius_mult = 1.0
 	keystone_sacrifice_refill = false
-	match keystone1:
-		"kingdom":
-			keystone_lord_atk_mult *= (1.30 + 0.06 * float(lord_card_count))
-		"legion":
-			keystone_minion_atk_mult *= (1.0 + 0.08 * float(summoner_card_count))
+	# keystone1: legion만 활성 (kingdom 제거됨)
+	# keystone2: echo만 스케일 설정 (horde 환급은 minion_died에서 실시간 계산)
 	match keystone2:
-		"berserker":
-			keystone_lord_atk_mult *= (1.0 + 0.08 * float(lord_card_count))
-		"cataclysm":
-			keystone_lord_atk_mult *= (1.0 + 0.08 * float(lord_card_count))
-		"horde":
-			keystone_revive_chance = min(0.30 + 0.04 * float(summoner_card_count), 0.80)
 		"echo":
-			keystone_echo_dmg = 20.0 * (1.0 + 0.10 * float(summoner_card_count))
-		"doom":
-			keystone_special_mult *= (1.0 + 0.12 * float(lord_card_count))
-		"ritual":
-			keystone_sacrifice_dmg_mult = 1.0 + 0.12 * float(summoner_card_count)
-			keystone_sacrifice_radius_mult = 1.3
-			keystone_sacrifice_refill = true
+			keystone_echo_dmg = 20.0 * (1.0 + 0.10 * float(army_card_count))
 
 func _apply_keystone(id: String) -> void:
 	match id:
-		"kingdom":
-			keystone1 = "kingdom"
 		"legion":
 			keystone1 = "legion"
 			max_minions += 2
 			_update_minion_readout()
 			_refresh_summon_buttons()
-		"berserker":
-			keystone2 = "berserker"
-			player.attack_speed *= 1.5
-		"cataclysm":
-			keystone2 = "cataclysm"
-			player.basic_range *= 1.4
-			player.aura_radius *= 1.4
-			player.curse_radius *= 1.4
-			player._update_range_circles()
 		"horde":
 			keystone2 = "horde"
 		"echo":
 			keystone2 = "echo"
-		"doom":
-			keystone2 = "doom"
-			special_cost = DOOM_SPECIAL_COST
-			_update_attack_button()
-		"ritual":
-			keystone2 = "ritual"
 	_recompute_keystones()
 
 func _show_keystones(ids: Array) -> void:
@@ -869,8 +836,8 @@ func _card_desc(id: String) -> String:
 	return full.substr(nl + 1) if nl >= 0 else ""
 
 func _format_axis_tags(s: String) -> String:
-	s = s.replace("[영주]", "[color=#b5341f][lb]영주[rb][/color]")
-	s = s.replace("[군단]", "[color=#0a7d6b][lb]군단[rb][/color]")
+	s = s.replace("[권능]", "[color=#b5341f][lb]권능[rb][/color]")
+	s = s.replace("[군대]", "[color=#0a7d6b][lb]군대[rb][/color]")
 	return s
 
 func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
@@ -1002,8 +969,6 @@ func _apply_card(id: String, mult: float = 1.0) -> void:
 			player.has_skull_throw = true
 		"decay_curse":
 			player.has_decay_curse = true
-		"arsenal":
-			attack_bonus += 0.2 * mult
 		"wall":
 			var hp_gain: int = int(50 * mult)
 			castle_max_hp += hp_gain
@@ -1012,23 +977,10 @@ func _apply_card(id: String, mult: float = 1.0) -> void:
 			_update_demon_danger()
 		"graveyard":
 			graveyard_heal += int(20 * mult)
-		"atk_speed":
-			player.attack_speed *= (1.0 + 0.2 * mult)
-		"minion_speed":
-			var spd_mult: float = 1.0 + 0.15 * mult
-			minion_move_speed_bonus *= spd_mult
-			for m in minions_node.get_children():
-				m.move_speed *= spd_mult
-		"minion_attack":
-			var atk_mult: float = 1.0 + 0.2 * mult
-			minion_attack_bonus *= atk_mult
-			for m in minions_node.get_children():
-				m.attack_damage *= atk_mult
-				m.base_damage *= atk_mult
 		"minion_count":
 			max_minions += 1
 			_update_minion_readout()
-		"summon_speed":
+		"summon_cost":
 			minion_cost_reduction += int(5 * mult)
 		"range_basic":
 			player.basic_range += 30.0 * mult
@@ -1039,8 +991,6 @@ func _apply_card(id: String, mult: float = 1.0) -> void:
 			player.aura_radius *= range_mult
 			player.curse_radius *= range_mult
 			player._update_range_circles()
-		"minion_hp":
-			minion_hp_bonus *= (1.0 + 0.25 * mult)
 		"minion_range":
 			minion_range_bonus += 40.0 * mult
 		"minion_lifesteal":
@@ -2756,6 +2706,14 @@ func _layout_bottom_ui_phase_c() -> void:
 		if is_instance_valid(tray_parent):
 			tray_parent.move_child(_bottom_tray, 0)
 
+	# ── 좌/우 구역 디바이더 (경영 메뉴 | 권능) ──────────────────────
+	# 좌측 버튼 끝(x=MX+SUM_W=276)과 권능 버튼 시작(x≈296) 사이 경계
+	if is_instance_valid(_tray_divider):
+		const DIV_X: float = 286.0
+		const DIV_INSET: float = 12.0   # 트레이 상/하단에서 띄울 여백
+		_tray_divider.position = Vector2(DIV_X, TRAY_TOP + DIV_INSET)
+		_tray_divider.size = Vector2(1.0, (vp.y - TRAY_TOP) - DIV_INSET * 2.0)
+
 	# ── 강화 버튼 — 맨 아래 행 ─────────────────────────────────────
 	var upg_y: float = vp.y - BOTTOM_MARGIN - UPGRADE_H   # = 908
 	if is_instance_valid(_upgrade_btn):
@@ -2887,6 +2845,20 @@ func minion_died(pos = null, type_id: String = "") -> void:
 	# hire_levels는 유지 — 레벨은 죽어도 안 날아감 (_hire_alive 종류별 추적 제거됨 — MD12)
 	_update_minion_readout()
 	_refresh_summon_buttons()
+	# 영원한 군세(horde): 전사 시 고용비 50%+[군대]카드당 5% 골드 환급
+	if keystone2 == "horde" and type_id != "":
+		var base_cost: int = 0
+		for entry: Dictionary in MINION_TYPES:
+			if entry["id"] == type_id:
+				base_cost = entry["cost"]
+				break
+		if base_cost > 0:
+			var paid_cost: int = max(5, base_cost - minion_cost_reduction)
+			var refund_rate: float = min(HORDE_REFUND_BASE + HORDE_REFUND_PER_CARD * float(army_card_count), 1.0)
+			var refund: int = int(round(float(paid_cost) * refund_rate))
+			souls += refund
+			_update_souls_ui()
+			# TODO: 환급 VFX 미구현 (골드 튐 연출)
 	if pos == null:
 		return
 	# 죽음의 메아리: 사망 폭발
@@ -2896,7 +2868,6 @@ func minion_died(pos = null, type_id: String = "") -> void:
 				e.take_damage(keystone_echo_dmg)
 		_spawn_echo_effect(pos)
 	# Phase C — 영구사망: 자동 재소환/리필 분기 없음 (재고용은 유저가 버튼으로)
-	# keystone_revive_chance 분기 비활성 (키스톤 비활성 상태이므로 자연히 0.0이나 명시적으로 막음)
 
 func _spawn_echo_effect(pos: Vector2) -> void:
 	var n: Node2D = Node2D.new()

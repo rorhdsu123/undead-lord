@@ -693,10 +693,9 @@ func end_wave() -> void:
 			_demon_say("victory", line)
 
 	await get_tree().create_timer(1.2).timeout
-	# Phase A1 — 키스톤/카드 선택 비활성: 선택 UI를 건너뛰고 다음 웨이브로 직행
-	# 모달 레이어링 구조(_show_keystones/_show_cards)는 건드리지 않음 — 호출만 차단
-	# 복원: `if true`→`if false`로 바꾸면 카드/키스톤 루프 활성(운영자 검증 통과 후)
-	if true:  # Phase A 가드: 키스톤·카드 선택 비활성
+	# 카드/키스톤 루프 활성 — 운영자 모델 RD12 검증 통과(RD18, 2026-06-19) 후 게이트 플립
+	# 되돌리기: `if false`→`if true`로 바꾸면 드래프트 우회·다음 웨이브 직행(구 Phase A 차단)
+	if false:  # (구 Phase A 가드) 카드/키스톤 선택 차단 — 검증 통과로 해제
 		current_wave += 1
 		start_wave()
 		return
@@ -850,7 +849,7 @@ func _card_desc(id: String) -> String:
 	return full.substr(nl + 1) if nl >= 0 else ""
 
 func _format_axis_tags(s: String) -> String:
-	s = s.replace("[권능]", "[color=#b5341f][lb]권능[rb][/color]")
+	s = s.replace("[마법]", "[color=#7b4fc9][lb]마법[rb][/color]")
 	s = s.replace("[군대]", "[color=#0a7d6b][lb]군대[rb][/color]")
 	return s
 

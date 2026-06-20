@@ -55,6 +55,7 @@ var attack_cooldown: float = 1.2
 var attack_timer: float = 0.0
 var castle_standoff: float = STOP_DIST  # _ready에서 스프라이트 크기 반영해 재계산
 var at_wall: bool = false  # 성벽 도달(교전 중) 여부 — 하인 타겟팅이 참조(하강 중엔 무시). _physics_process에서 갱신
+var _blocking_minion: bool = false  # 앞 근접 하인이 보스를 막는 중 — 참이면 성 피해 차단(라인이 성 보호). _engage_or_approach에서 갱신
 var minion_attack_timer: float = 0.0
 var boss_name: String = "보스"
 var boss_type: String = "mid_boss"
@@ -185,7 +186,8 @@ func _physics_process(delta: float) -> void:
 
 	var castle_pos: Vector2 = game.get_node("Castle").global_position
 	at_wall = _is_at_wall(castle_pos)  # 하인이 참조 — 성벽 도달 후에만 보스를 타겟
-	if _castle_wall_dist(castle_pos) <= castle_standoff and not is_charging_rage:
+	# 성 피해는 앞 하인이 없을 때만(_blocking_minion=false). 라인이 살아 있으면 보스는 거기 묶임.
+	if _castle_wall_dist(castle_pos) <= castle_standoff and not is_charging_rage and not _blocking_minion:
 		attack_timer += delta
 		if attack_timer >= attack_cooldown:
 			attack_timer = 0.0
@@ -312,8 +314,12 @@ func _execute_rage_attack() -> void:
 		if _anim_state not in ["hurt", "die"]:
 			_update_facing((castle_pos - global_position).x)  # 격노 일격도 성을 바라보며
 			_play_anim("slash")                                # 격노 공격에 공격 모션 부여(기존엔 데미지만)
-		# 성 외벽 사각형에 닿은 경우에만 피해 — 멀리서 격노=헛스윙(성 안 깎임)
-		if _castle_wall_dist(castle_pos) <= castle_standoff:
+		# 앞 하인이 막고 있으면 격노 일격은 그 하인이 받아낸다(라인이 성 보호). 없을 때만 성 타격.
+		# (멀리서 격노=헛스윙: 성벽 박스에 닿은 경우에만 성 피해)
+		var rage_blocker = _find_nearby_minion(castle_pos)
+		if is_instance_valid(rage_blocker):
+			rage_blocker.take_damage(rage_damage)
+		elif _castle_wall_dist(castle_pos) <= castle_standoff:
 			game.castle_take_damage(rage_damage, global_position, true)
 
 func _summon_companions() -> void:
@@ -436,6 +442,7 @@ func _update_facing(dx: float) -> void:
 # 성으로 접근·공격(일반 적과 동일 — 라인이 살아 있으면 보스가 거기 묶인다). 궁수는 _find_nearby_minion이 제외.
 func _engage_or_approach(delta: float, castle_pos: Vector2) -> void:
 	var minion = _find_nearby_minion(castle_pos)
+	_blocking_minion = is_instance_valid(minion)  # 라인이 성 보호 — 성 피해 게이트(_physics_process·격노)가 참조
 	if not is_instance_valid(minion):
 		minion_attack_timer = 0.0
 		_approach_castle(castle_pos)

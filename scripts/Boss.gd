@@ -54,8 +54,13 @@ var base_damage: int = 20
 var attack_cooldown: float = 1.2
 var attack_timer: float = 0.0
 var castle_standoff: float = STOP_DIST  # _ready에서 스프라이트 크기 반영해 재계산
-var at_wall: bool = false  # 성벽 도달(교전 중) 여부 — 하인 타겟팅이 참조(하강 중엔 무시). _physics_process에서 갱신
+var at_wall: bool = false  # 성벽 도달(교전 중) 여부 — 격노 시작 게이트가 참조(멀리서 헛스윙 방지). _physics_process에서 갱신
 var _blocking_minion: bool = false  # 앞 근접 하인이 보스를 막는 중 — 참이면 성 피해 차단(라인이 성 보호). _engage_or_approach에서 갱신
+# 교전 지대 진입 여부 = 성벽에 닿았거나(at_wall) 앞 하인에게 묶임(_blocking_minion).
+# 하인 타겟팅은 at_wall 단독이 아니라 이 값을 참조한다: 앞 하인이 보스를 벽에서 ~70px 밖에 붙들면
+# 보스 발끝이 벽에 안 닿아 at_wall=false가 되는데, 그 순간 궁수가 보스를 즉시 놓치고(매 프레임 재평가)
+# 근접도 0.5s마다 놓쳐 surge/retreat 떨림이 생겼다. _blocking_minion을 OR로 묶어 묶인 동안 계속 타겟 유지.
+var combat_engaged: bool = false
 var minion_attack_timer: float = 0.0
 var boss_name: String = "보스"
 var boss_type: String = "mid_boss"
@@ -185,7 +190,8 @@ func _physics_process(delta: float) -> void:
 		_pattern_albaeng(delta)
 
 	var castle_pos: Vector2 = game.get_node("Castle").global_position
-	at_wall = _is_at_wall(castle_pos)  # 하인이 참조 — 성벽 도달 후에만 보스를 타겟
+	at_wall = _is_at_wall(castle_pos)  # 격노 게이트가 참조
+	combat_engaged = at_wall or _blocking_minion  # 하인 타겟팅이 참조(벽에 닿거나 앞 하인에게 묶이면 교전 중)
 	# 성 피해는 앞 하인이 없을 때만(_blocking_minion=false). 라인이 살아 있으면 보스는 거기 묶임.
 	if _castle_wall_dist(castle_pos) <= castle_standoff and not is_charging_rage and not _blocking_minion:
 		attack_timer += delta

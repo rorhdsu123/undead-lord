@@ -55,7 +55,11 @@ const WAIT_X_OFFSETS: Dictionary = {
 # leash: 타겟이 밴드 밖으로 이 거리 이상 나가면 추격 포기
 const LEASH_MARGIN: float = 40.0   # 밴드 상한에서 위로 얼마나 나가면 포기
 const RETARGET_INTERVAL: float = 0.5  # 근접 유닛 타겟 재평가 주기 (초)
-const FORWARD_LIMIT_TANK: float = CASTLE_TOP_WALL - 30.0  # = 420.8, 탱크가 윗벽 바로 앞에서 홀드 (플테 튜닝 노브)
+# 역할별 전진 상한(최대 전진 = 최소 y). 작을수록 더 앞(적 쪽). 탱크를 최전방으로, 전사를 그 바로 뒤로.
+# ⚠️탱크가 전사보다 앞이어야 보스가 '가장 가까운 하인'으로 물몸 전사 대신 탱크를 집중한다(역전 시 전사 학살).
+# (실측값: CASTLE_TOP_WALL=400.8 → 탱크 정지선 ~380.8, 전사 정지선 ~400.8. 정지=상한+공격사거리30)
+const FORWARD_LIMIT_TANK: float = CASTLE_TOP_WALL - 50.0     # 350.8, 탱크 최전방 (보스를 직접 막는 라인)
+const FORWARD_LIMIT_WARRIOR: float = CASTLE_TOP_WALL - 30.0  # 370.8, 전사는 탱크 ~20px 뒤 (근접타는 거리 무관히 적중)
 
 # 정적 단일 이미지 오버라이드 (풀 애니 미입고 역할 — 전 동작이 한 컷으로 표시).
 # 추후 같은 폴더에 0_[Role]_[Motion]_###.png 프레임 입고 시 여기서 제거하고 프레임 로더로 전환.
@@ -402,8 +406,9 @@ func _find_deepest_enemy_in_band():
 	for e in enemies:
 		if not is_instance_valid(e):
 			continue
-		# 보스는 성벽 도달(at_wall) 시 origin이 밴드 위라도 포함 — 발끝이 윗벽에 닿아 실제론 교전 범위.
-		if not (e.is_in_group("boss") and e.at_wall) and e.position.y < BAND_TOP:
+		# 보스는 교전 지대 진입(combat_engaged: 성벽 도달 또는 앞 하인에게 묶임) 시 origin이 밴드 위라도 포함.
+		# at_wall 단독이면 앞 하인이 보스를 벽 밖에 붙드는 동안 false라 궁수가 보스를 못 쏜다.
+		if not (e.is_in_group("boss") and e.combat_engaged) and e.position.y < BAND_TOP:
 			continue   # 밴드 위(아직 안 들어온) 적 무시
 		if e.position.y > deepest_y:
 			deepest_y = e.position.y
@@ -438,8 +443,9 @@ func _find_nearest_enemy_in_band():
 	for e in enemies:
 		if not is_instance_valid(e):
 			continue
-		# 보스는 성벽 도달(at_wall) 시 origin이 밴드 위라도 포함 — 발끝이 윗벽에 닿아 실제론 교전 범위.
-		if not (e.is_in_group("boss") and e.at_wall) and e.position.y < BAND_TOP:
+		# 보스는 교전 지대 진입(combat_engaged: 성벽 도달 또는 앞 하인에게 묶임) 시 origin이 밴드 위라도 포함.
+		# at_wall 단독이면 앞 하인에게 묶인 동안 false라 0.5s 재평가마다 보스를 놓쳐 surge/retreat 떨림이 났다.
+		if not (e.is_in_group("boss") and e.combat_engaged) and e.position.y < BAND_TOP:
 			continue   # 밴드 위(아직 안 들어온) 적 무시
 		var d: float = position.distance_to(e.position)
 		if d < nearest_dist:
@@ -447,9 +453,12 @@ func _find_nearest_enemy_in_band():
 			nearest = e
 	return nearest
 
-# 역할별 전진 상한 — 탱크는 라인 앞에 벽처럼 홀드, 나머지는 밴드 상한까지
+# 역할별 전진 상한 — 탱크 최전방, 전사는 그 바로 뒤, 궁수는 사격 위치(밴드 상한)
 func _forward_limit() -> float:
-	return FORWARD_LIMIT_TANK if minion_type == "tank" else BAND_TOP
+	match minion_type:
+		"tank":    return FORWARD_LIMIT_TANK
+		"warrior": return FORWARD_LIMIT_WARRIOR
+		_:         return BAND_TOP
 
 func _heal(amount: float) -> void:
 	if amount <= 0.0:

@@ -514,7 +514,7 @@ func _fire_trumpet(world_pos: Vector2) -> void:
 			e.apply_slow(TRUMPET_SLOW_DURATION)
 
 	# VFX — 상방 스윕 음파
-	_spawn_trumpet_sweep(world_pos)
+	_spawn_trumpet_sweep(world_pos, pulse_r)
 
 	# 화면 효과 (가벼운 흔들림)
 	game._screen_shake(1.2, 0.15)
@@ -748,7 +748,7 @@ func _spawn_lightning_impact(pos: Vector2, impact_r: float = LIGHTNING_IMPACT_RA
 		var a: float = (TAU / seg) * i
 		pts.append(Vector2(cos(a) * base_r, sin(a) * base_r))
 	fill.polygon = pts
-	fill.color = Color(0.75, 0.95, 1.0, 0.85)
+	fill.color = Color(1.0, 0.97, 0.70, 0.85)  # 노랑 섬광 코어
 	n.add_child(fill)
 
 	var target_scale: float = impact_r / base_r
@@ -762,7 +762,7 @@ func _spawn_lightning_impact(pos: Vector2, impact_r: float = LIGHTNING_IMPACT_RA
 	for k: int in 4:
 		var spark: Line2D = Line2D.new()
 		spark.position = pos
-		spark.default_color = Color(0.85, 0.98, 1.0, 0.90)
+		spark.default_color = Color(1.0, 0.93, 0.45, 0.90)  # 노랑 스파크
 		spark.width = 3.0
 		var angle: float = (TAU / 4.0) * k + randf_range(-0.3, 0.3)
 		var length: float = randf_range(20.0, 45.0)
@@ -775,8 +775,8 @@ func _spawn_lightning_impact(pos: Vector2, impact_r: float = LIGHTNING_IMPACT_RA
 
 	# 공격 영역 그라데이션 채움 — impact_r 반경, 중심 밝고 가장자리 투명 (area+ 반경 가독성)
 	var grad: Gradient = Gradient.new()
-	grad.set_color(0, Color(0.6, 0.9, 1.0, 0.40))  # 중심 (전기 청백)
-	grad.set_color(1, Color(0.6, 0.9, 1.0, 0.0))   # 가장자리 투명
+	grad.set_color(0, Color(1.0, 0.90, 0.30, 0.40))  # 중심 (노랑 — 번개 아이콘 일치)
+	grad.set_color(1, Color(1.0, 0.90, 0.30, 0.0))   # 가장자리 투명
 	var gtex: GradientTexture2D = GradientTexture2D.new()
 	gtex.gradient = grad
 	gtex.fill = GradientTexture2D.FILL_RADIAL
@@ -795,13 +795,36 @@ func _spawn_lightning_impact(pos: Vector2, impact_r: float = LIGHTNING_IMPACT_RA
 	tw_area.tween_callback(area_spr.queue_free)
 
 ## 망령의 나팔 상방 스윕 — 아치형 음파 (수직 방향 강조, 방사형 오인 방지)
-func _spawn_trumpet_sweep(pos: Vector2) -> void:
+func _spawn_trumpet_sweep(pos: Vector2, pulse_r: float = TRUMPET_PULSE_RADIUS) -> void:
+	var rmult: float = pulse_r / TRUMPET_PULSE_RADIUS  # 실제 타격 반경 비율(area+/상점 radius 반영)
+
+	# 공격 영역 그라데이션 채움 — pulse_r 반경, 중심 보라 밝고 가장자리 투명 (통제 범위 가독·낙뢰 시안과 구분)
+	var grad: Gradient = Gradient.new()
+	grad.set_color(0, Color(0.65, 0.45, 0.92, 0.40))  # 중심 (스펙트럴 보라 — 망령/마법축)
+	grad.set_color(1, Color(0.65, 0.45, 0.92, 0.0))   # 가장자리 투명
+	var gtex: GradientTexture2D = GradientTexture2D.new()
+	gtex.gradient = grad
+	gtex.fill = GradientTexture2D.FILL_RADIAL
+	gtex.fill_from = Vector2(0.5, 0.5)
+	gtex.fill_to = Vector2(1.0, 0.5)
+	gtex.width = 128
+	gtex.height = 128
+	var area_spr: Sprite2D = Sprite2D.new()
+	area_spr.texture = gtex
+	area_spr.position = pos
+	area_spr.z_index = 99
+	area_spr.scale = Vector2.ONE * ((pulse_r * 2.0) / 128.0)
+	game.add_child(area_spr)
+	var tw_area: Tween = create_tween()
+	tw_area.tween_property(area_spr, "modulate:a", 0.0, 0.30)
+	tw_area.tween_callback(area_spr.queue_free)
+
 	# 위쪽 반원호 (바람/음파 이미지)
 	for k: int in 3:
 		var arc: Line2D = Line2D.new()
 		arc.position = pos
-		var r: float = 20.0 + k * 22.0
-		var arc_color: Color = Color(0.70, 0.88, 1.0, 0.60 - k * 0.15)
+		var r: float = (20.0 + k * 22.0) * rmult
+		var arc_color: Color = Color(0.72, 0.50, 0.95, 0.60 - k * 0.15)  # 스펙트럴 보라
 		arc.default_color = arc_color
 		arc.width = 2.5 - k * 0.5
 		# 상방 반원호 (PI → 0, 즉 왼쪽에서 오른쪽으로 위쪽 반원)
@@ -813,7 +836,7 @@ func _spawn_trumpet_sweep(pos: Vector2) -> void:
 		var delay: float = k * 0.07
 		var tw: Tween = create_tween()
 		tw.tween_interval(delay)
-		tw.tween_property(arc, "position:y", arc.position.y - 40.0, 0.30)
+		tw.tween_property(arc, "position:y", arc.position.y - 40.0 * rmult, 0.30)
 		tw.parallel().tween_property(arc, "modulate:a", 0.0, 0.30)
 		tw.chain().tween_callback(arc.queue_free)
 
@@ -821,11 +844,11 @@ func _spawn_trumpet_sweep(pos: Vector2) -> void:
 	for _p in 6:
 		var dot: ColorRect = ColorRect.new()
 		dot.size = Vector2(6, 6)
-		dot.color = Color(0.75, 0.90, 1.0, 0.80)
+		dot.color = Color(0.75, 0.52, 0.96, 0.80)  # 스펙트럴 보라
 		dot.position = pos - Vector2(3, 3)
 		game.add_child(dot)
 		var angle: float = randf_range(-PI * 0.6, -PI * 0.4)  # 위쪽 부채꼴
-		var dist: float = randf_range(30.0, 70.0)
+		var dist: float = randf_range(30.0, 70.0) * rmult
 		var target: Vector2 = pos + Vector2(cos(angle) * dist, sin(angle) * dist) - Vector2(3, 3)
 		var tw2: Tween = create_tween()
 		tw2.set_parallel(true)

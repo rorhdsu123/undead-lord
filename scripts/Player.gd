@@ -28,7 +28,6 @@ const CURSE_INTERVAL: float = 2.0
 
 # 넉백 세기 (튜닝값; 적 저항 = hp_mult로 나뉨)
 const BASIC_KNOCKBACK: float = 170.0
-const SPECIAL_KNOCKBACK: float = 340.0
 
 const SkullScene = preload("res://scenes/Skull.tscn")
 
@@ -52,7 +51,7 @@ func _ready():
 
 func _setup_sprite() -> void:
 	anim_sprite.sprite_frames = _build_necromancer_frames()
-	anim_sprite.scale = Vector2(0.633, 0.633)
+	anim_sprite.scale = Vector2(0.823, 0.823)  # 0.633 × 1.3 (성 확대 맞춤 캐릭터 비주얼 확대)
 	anim_sprite.animation_finished.connect(_on_animation_finished)
 	anim_sprite.play("idle")
 
@@ -187,51 +186,6 @@ func _handle_attacks(delta):
 		if curse_timer >= CURSE_INTERVAL:
 			curse_timer = 0.0
 			_decay_curse()
-
-func use_special_attack() -> void:
-	# 특수기: 적 종류·상태별 데미지 분기 (영혼 50 소모는 Game.gd에서 체크)
-	_play_anim("throw")
-	var enemies: Array = get_tree().get_nodes_in_group("enemies")
-	var crit_landed: bool = false
-	for e in enemies:
-		if e.has_method("interrupt_windup"):  # 보스
-			if e.is_charging_rage:
-				e.interrupt_windup()  # 캔슬 + 스턴
-				e.take_damage(attack_damage * 2.0 * game.attack_bonus * game.keystone_lord_atk_mult * game.keystone_special_mult, "crit")
-				crit_landed = true
-			else:
-				e.take_damage(attack_damage * 1.0 * game.attack_bonus * game.keystone_lord_atk_mult * game.keystone_special_mult, "resist")
-		else:  # 잡몹 — ×3 유지
-			e.take_damage(attack_damage * 3.0 * game.attack_bonus * game.keystone_lord_atk_mult * game.keystone_special_mult)
-		e.apply_knockback(position, SPECIAL_KNOCKBACK)
-		_flash_attack_line(e.position)
-	_flash_special_burst()
-	if game:
-		if crit_landed:
-			game._screen_shake(3.5, 0.25)
-			game.hit_stop(0.1)
-			game.show_crit_text()
-		else:
-			game._screen_shake(2.0, 0.15)
-			game.hit_stop(0.07)
-
-func _flash_special_burst() -> void:
-	var n: Node2D = Node2D.new()
-	add_child(n)
-	var base_r: float = 10.0
-	var seg: int = 32
-	var fill: Polygon2D = Polygon2D.new()
-	var pts: PackedVector2Array = PackedVector2Array()
-	for i: int in seg:
-		var a: float = (TAU / seg) * i
-		pts.append(Vector2(cos(a) * base_r, sin(a) * base_r))
-	fill.polygon = pts
-	fill.color = Color(0.6, 0.0, 1.0, 0.7)
-	n.add_child(fill)
-	var tween: Tween = create_tween()
-	tween.parallel().tween_property(n, "scale", Vector2.ONE * 50.0, 0.4)
-	tween.parallel().tween_property(n, "modulate:a", 0.0, 0.4)
-	tween.tween_callback(n.queue_free)
 
 func _basic_attack():
 	var enemies = get_tree().get_nodes_in_group("enemies")

@@ -462,16 +462,16 @@ func _fire_lightning(world_pos: Vector2) -> void:
 			if e.is_charging_rage:
 				e.interrupt_windup()
 				var dmg: float = player.attack_damage * LIGHTNING_DMG_BOSS_WINDUP \
-					* game.attack_bonus * game.keystone_lord_atk_mult * game.keystone_special_mult
+					* game.attack_bonus * game.keystone_lord_atk_mult
 				e.take_damage(dmg, "crit")
 				crit_landed = true
 			else:
 				var dmg: float = player.attack_damage * LIGHTNING_DMG_BOSS_NORMAL \
-					* game.attack_bonus * game.keystone_lord_atk_mult * game.keystone_special_mult
+					* game.attack_bonus * game.keystone_lord_atk_mult
 				e.take_damage(dmg, "resist")
 		else:  # 잡몹
 			var dmg: float = player.attack_damage * LIGHTNING_DMG_MINION \
-				* game.attack_bonus * game.keystone_lord_atk_mult * game.keystone_special_mult
+				* game.attack_bonus * game.keystone_lord_atk_mult
 			e.take_damage(dmg)
 
 	# VFX — 착탄점 낙뢰 임팩트 (반경 mult 반영)

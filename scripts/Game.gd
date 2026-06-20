@@ -86,10 +86,6 @@ var _souls_shown: int = 0
 var _souls_roll_tween: Tween = null
 var _souls_bump_tween: Tween = null
 var _gold_floaters: Array = []  # 화면에 살아 있는 골드 플로터 목록 (소프트 캡 관리용)
-const SPECIAL_COST: int = 50
-const DOOM_SPECIAL_COST: int = 35
-var special_cost: int = SPECIAL_COST
-
 # 언데드 하인 상태
 var active_minions: int = 0
 
@@ -103,7 +99,6 @@ var keystone_lord_atk_mult: float = 1.0
 var keystone_minion_atk_mult: float = 1.0
 var keystone_revive_chance: float = 0.0
 var keystone_echo_dmg: float = 0.0
-var keystone_special_mult: float = 1.0
 const KEYSTONE_ECHO_RADIUS: float = 90.0
 const HORDE_REFUND_BASE: float = 0.50
 const HORDE_REFUND_PER_CARD: float = 0.05
@@ -134,10 +129,6 @@ var soul_gain_mult: float = 1.0
 var _guide_layer: CanvasLayer = null
 var _guide_active: bool = false
 var _guide_tween: Tween = null
-var _special_atk_tip_shown: bool = false
-var _freeze_for_special_tip: bool = false
-var _special_atk_unlocked: bool = false
-
 # 카드 풀 - 스킬 카드는 획득 후 제거, 스탯 카드는 계속 등장
 const SKILL_CARDS = []  # 패시브 거취 미정 — §4.1 보류, 풀에서 제외
 # (death_aura / skull_throw / decay_curse 상수 보존, 드래프트에는 미등장)
@@ -238,7 +229,6 @@ var shop_purchased: Array = []  # SH4: 상점 진입마다 리셋, 종류당 1�
 @onready var wave_tracker = $UI/WaveTracker
 var _last_tracker_sig: String = ""  # 직전 트래커 표시 노드 집합 시그니처(디졸브 트리거 판정용)
 @onready var player = $Player
-@onready var attack_button = $UI/AttackButton
 var sacrifice_button: Button = null
 @onready var summon_container: HBoxContainer = $UI/SummonContainer
 @onready var minion_slot_label: Label = $UI/MinionSlotLabel
@@ -290,13 +280,11 @@ func _ready() -> void:
 	# 눌림 바운스 — 페이드 전환(0.35s) 동안 보임. btn1은 비활성 시 pressed 안 떠 성공 시에만 재생.
 	_add_button_press_bounce(result_btn1)
 	_add_button_press_bounce(result_btn2)
-	attack_button.pressed.connect(_on_attack_pressed)
-	attack_button.add_theme_font_size_override("font_size", 16)
 	sacrifice_button = Button.new()
 	sacrifice_button.focus_mode = Control.FOCUS_NONE
 	sacrifice_button.add_theme_font_size_override("font_size", 20)
 	sacrifice_button.pressed.connect(_on_sacrifice_pressed)
-	attack_button.get_parent().add_child(sacrifice_button)
+	$UI.add_child(sacrifice_button)
 	# 닫기 동작 통일 — 눌렸다 돌아오는 바운스를 보여준 뒤 닫음(즉시 닫으면 패널과 함께 사라져 안 보임)
 	shop_close_btn.pressed.connect(func() -> void:
 		if not is_instance_valid(shop_close_btn):
@@ -416,7 +404,6 @@ func _ready() -> void:
 	_tray_divider.color = Color(0.45, 0.38, 0.62, 0.30)
 	_tray_divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud_parent.add_child(_tray_divider)
-	_layout_bottom_ui()
 	# Phase A4 — 하단 UI 숨김 (특수기 버튼·소환 4버튼·희생 버튼·슬롯 라벨)
 	# 상단 HUD·트래커·성HP바(UI-폴리싱 자산)는 건드리지 않음
 	# 복원: 아래 블록을 제거하고 _process()의 Phase A 가드도 제거
@@ -795,7 +782,6 @@ func _recompute_keystones() -> void:
 	keystone_minion_atk_mult = 1.0
 	keystone_revive_chance = 0.0
 	keystone_echo_dmg = 0.0
-	keystone_special_mult = 1.0
 	keystone_sacrifice_dmg_mult = 1.0
 	keystone_sacrifice_radius_mult = 1.0
 	keystone_sacrifice_refill = false
@@ -1959,11 +1945,10 @@ func _process(delta: float) -> void:
 	# Phase C — 고용 버튼은 매 프레임 갱신 (골드·웨이브 상태 반영)
 	_refresh_summon_buttons()
 	# 아래는 Phase A 가드로 비활성 유지 (복원 시 제거)
-	if true:  # Phase A 가드: 희생 쿨·특수기 버튼 갱신 비활성
+	if true:  # Phase A 가드: 희생 쿨 갱신 비활성
 		return
 	if sacrifice_cooldown > 0.0:
 		sacrifice_cooldown = max(0.0, sacrifice_cooldown - delta)
-	_update_attack_button()
 	_update_sacrifice_button()
 
 ## Phase B — 필드 탭 감지 (2스텝 발현)
@@ -1982,34 +1967,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		# 팝업이 열린 상태에서 이 함수까지 도달하는 탭은 팝업/버튼 위이므로 그냥 통과.
 		if is_instance_valid(ability_system):
 			ability_system.on_field_tap(tap_pos)
-
-func _on_attack_pressed() -> void:
-	if not wave_active:
-		return
-	if _is_tutorial() and not _special_atk_unlocked:
-		return
-	if souls < special_cost:
-		return
-	_close_guide()  # 특수기 팁 동결 중이면 즉시 해제
-	souls -= special_cost
-	_update_souls_ui()
-	player.use_special_attack()
-
-func _update_attack_button() -> void:
-	if not wave_active:
-		attack_button.disabled = true
-		attack_button.text = "특수기 (%d)" % special_cost
-		return
-	if _is_tutorial() and not _special_atk_unlocked:
-		attack_button.disabled = true
-		attack_button.text = "특수기 (잠금)"
-		return
-	if souls >= special_cost:
-		attack_button.disabled = false
-		attack_button.text = "특수기 (%d)" % special_cost
-	else:
-		attack_button.disabled = true
-		attack_button.text = "특수기 (%d/%d)" % [souls, special_cost]
 
 func _update_sacrifice_button() -> void:
 	if not is_instance_valid(sacrifice_button):
@@ -2756,11 +2713,9 @@ func _apply_upgrade_to_alive_minions(type_id: String, new_lv: int) -> void:
 
 func _hide_bottom_ui_phase_a() -> void:
 	# Phase A4 — 하단 전투 UI 전체 숨김
-	# attack_button(특수기), sacrifice_button(희생), summon_container(소환 4버튼),
+	# sacrifice_button(희생), summon_container(소환 4버튼),
 	# minion_slot_label(슬롯 카운터), 아이콘 라벨들 숨김
 	# 복원: 이 함수 호출을 _ready()에서 제거하면 됨
-	if is_instance_valid(attack_button):
-		attack_button.visible = false
 	if is_instance_valid(sacrifice_button):
 		sacrifice_button.visible = false
 	if is_instance_valid(summon_container):
@@ -2771,44 +2726,6 @@ func _hide_bottom_ui_phase_a() -> void:
 		slot_icon.visible = false
 	# RD19 — 자원 캡슐 초기 숨김 (Phase C _ready 진입 시 다시 표시됨)
 	_set_resource_hud_visible(false)
-
-func _layout_bottom_ui() -> void:
-	var vp: Vector2 = get_viewport_rect().size
-	var mx: float = 10.0
-	var btn_w: float = vp.x - mx * 2
-	var atk_h: float = 50.0
-	var sum_h: float = 48.0
-	var lbl_h: float = 20.0
-	var bottom_margin: float = 20.0
-	var gap: float = 22.0
-
-	var btn_gap: float = 8.0
-	var attack_w: float = (btn_w - btn_gap) * 0.6
-	var sacrifice_w: float = (btn_w - btn_gap) * 0.4
-	var atk_y: float = vp.y - bottom_margin - atk_h
-	attack_button.position = Vector2(mx, atk_y)
-	attack_button.size = Vector2(attack_w, atk_h)
-	if is_instance_valid(sacrifice_button):
-		sacrifice_button.position = Vector2(mx + attack_w + btn_gap, atk_y)
-		sacrifice_button.size = Vector2(sacrifice_w, atk_h)
-
-	summon_container.position = Vector2(mx, attack_button.position.y - gap - sum_h)
-	summon_container.size = Vector2(btn_w, sum_h)
-
-	minion_slot_label.position = Vector2(0, summon_container.position.y - 4 - lbl_h)
-	minion_slot_label.size = Vector2(vp.x - mx, lbl_h)
-	minion_slot_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-
-	var icon_w: float = 18.0
-	var icon_gap: float = 4.0
-	souls_icon.position = Vector2(mx, minion_slot_label.position.y)
-	souls_icon.size = Vector2(icon_w, lbl_h)
-	souls_label.position = Vector2(mx + icon_w + icon_gap, minion_slot_label.position.y)
-	souls_label.size = Vector2(vp.x * 0.5 - icon_w - icon_gap, lbl_h)
-	souls_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	souls_label.add_theme_font_size_override("font_size", 16)
-	slot_icon.size = Vector2(icon_w, lbl_h)
-	slot_icon.position.y = minion_slot_label.position.y
 
 func _layout_bottom_ui_phase_c() -> void:
 	# Phase C — 하단 UI 배치 (아래→위: 강화 / 소환 / 골드+하인 readout HUD)
@@ -3507,6 +3424,3 @@ func _close_guide() -> void:
 		_guide_layer.queue_free()
 	_guide_layer = null
 	_guide_active = false
-	if _freeze_for_special_tip:
-		_freeze_for_special_tip = false
-		_set_battle_freeze(false)

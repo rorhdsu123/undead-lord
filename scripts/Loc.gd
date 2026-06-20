@@ -114,7 +114,7 @@ static var _strings: Dictionary = {
 	"doctrine_soul_A_name":   "골드 비축",
 	"doctrine_soul_A_desc":   "미사용 골드 일부 메타 이월",
 	"doctrine_soul_B_name":   "골드 폭주",
-	"doctrine_soul_B_desc":   "특수기 후 5초 골드 드롭 ×2",
+	"doctrine_soul_B_desc":   "마법 발동 후 5초 골드 드롭 ×2",
 
 	# 부하의 율법
 	"doctrine_minion_A_name": "명예",

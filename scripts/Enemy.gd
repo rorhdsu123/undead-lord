@@ -24,10 +24,10 @@ const TYPE_PRESETS: Dictionary = {
 const BASE_HP: float = 50.0
 const BASE_SPEED: float = 60.0
 const BASE_DAMAGE: int = 10
-const BASE_SPRITE_SCALE: float = 0.246
+const BASE_SPRITE_SCALE: float = 0.32  # 0.246 × 1.3 (성 1.8배 확대에 맞춘 캐릭터 비주얼 확대)
 const MINION_ENGAGE_RANGE: float = 100.0
 const KNOCKBACK_DECAY: float = 700.0
-const CASTLE_HALF: float = 94.0  # 외벽+코너타워 외곽 (CastleSprite S+T=94)
+const CASTLE_HALF: float = 169.2  # 외벽+코너타워 외곽 (CastleSprite S+T=94 × Castle 노드 scale 1.8)
 const BODY_FEET_OFFSET: float = 80.0  # 성벽 정지·범위원 중심 앵커(소스px 900프레임 중심 기준, *scale.y로 화면 px). 80=근접 발끝이 가운데 윗벽(커튼월)에 닿음. 값↓=더 아래로(겹침↑)·값↑=더 위. 플테 노브.
 # 적 활동 범위 — 화면 480×960 세로. 상한=스폰선(HUD ~y142 아래), 하한=성 아래 여유.
 # 나팔 넉백이 적을 화면 밖으로 날려보내 "안 보이는 적이 성을 때리는" 버그 방지.

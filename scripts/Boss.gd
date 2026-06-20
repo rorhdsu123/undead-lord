@@ -28,7 +28,7 @@ const RAGE_DIALOGUES: Dictionary = {
 }
 
 const BOUNDS: Rect2 = Rect2(100, -280, 280, 900)  # x:100~380(화면 중앙 대역). 보스가 가장자리로 새지 않게 성 lane에 가둠
-const CASTLE_HALF: float = 94.0  # 외벽+코너타워 외곽 (CastleSprite S+T=94)
+const CASTLE_HALF: float = 169.2  # 외벽+코너타워 외곽 (CastleSprite S+T=94 × Castle 노드 scale 1.8)
 const STOP_DIST: float = 18.0    # 외벽 바깥 standoff (중심 아님). deadzone ≫ 프레임 이동 → 경계 진동 방지
 # 접근 중 dir.x가 0 근처에서 부호가 떨려도 flip이 깜빡이지 않도록 데드존.
 const FLIP_DEADZONE: float = 0.12
@@ -54,6 +54,7 @@ var base_damage: int = 20
 var attack_cooldown: float = 1.2
 var attack_timer: float = 0.0
 var castle_standoff: float = STOP_DIST  # _ready에서 스프라이트 크기 반영해 재계산
+var at_wall: bool = false  # 성벽 도달(교전 중) 여부 — 하인 타겟팅이 참조(하강 중엔 무시). _physics_process에서 갱신
 var minion_attack_timer: float = 0.0
 var boss_name: String = "보스"
 var boss_type: String = "mid_boss"
@@ -86,6 +87,7 @@ var _hit_tween: Tween = null  # 직전 피격 팝 tween 참조(연속 피격 시
 
 func _ready() -> void:
 	add_to_group("enemies")
+	add_to_group("boss")  # 하인 타겟팅이 보스를 origin 대신 at_wall 기준으로 판정
 	base_speed = speed
 	base_damage = damage
 	name_label.text = boss_name
@@ -182,6 +184,7 @@ func _physics_process(delta: float) -> void:
 		_pattern_albaeng(delta)
 
 	var castle_pos: Vector2 = game.get_node("Castle").global_position
+	at_wall = _is_at_wall(castle_pos)  # 하인이 참조 — 성벽 도달 후에만 보스를 타겟
 	if _castle_wall_dist(castle_pos) <= castle_standoff and not is_charging_rage:
 		attack_timer += delta
 		if attack_timer >= attack_cooldown:

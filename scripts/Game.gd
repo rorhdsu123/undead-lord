@@ -2830,7 +2830,7 @@ func _layout_bottom_ui_phase_c() -> void:
 	const SUM_H:         float = 52.0
 	const GAP_SUM_GOLD:  float = 6.0
 	const GOLD_H:        float = 22.0
-	const TRAY_TOP:      float = 795.0 - DOCK_LIFT  # 795 → 753, 도크 띄움 반영 (성 y620과 130px 이격, 안전)
+	const TRAY_TOP:      float = 795.0 - DOCK_LIFT  # 795 → 753, 도크 띄움 반영 (성 1.8배·y570 → 바닥 739, 트레이와 ~14px 이격)
 	const TRAY_SIDE_MG:  float = 4.0    # 트레이 좌우 마진
 
 	# ── 트레이 패널 배치 (최하단 z — move_child로 0번째로) ───────────

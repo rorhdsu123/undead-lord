@@ -28,22 +28,24 @@ const BASE_SPRITE_SCALE: float = 0.246      # 측정 실패 시 폴백 배율
 const TARGET_CONTENT_PX: float = 85.0       # base_scale 1.0 기준 화면 콘텐츠 높이 (에셋 여백 무관 정규화)
 # 역할별 목표 높이 오버라이드 (실루엣 질량이 달라 bbox 높이만으론 안 맞는 경우 미세조정).
 const TYPE_TARGET_PX: Dictionary = {
-	"warrior": 55.0,   # 다부진 공룡 체형 — 덩치가 커 보여 하향
-	"archer": 63.0,    # 박쥐 — 옛 해골 궁수(~53px) 크기에 맞춤
-	"tank": 38.0,      # 슬라임 — 전사 수준에 맞춤 (×base_scale 1.45 = ~55px)
+	"warrior": 71.5,   # 다부진 공룡 체형 (55 × 1.3, 성 확대 맞춤)
+	"archer": 81.9,    # 박쥐 (63 × 1.3)
+	"tank": 49.4,      # 슬라임 (38 × 1.3, ×base_scale 1.45 = ~72px)
 }
 const BOUNDS: Rect2 = Rect2(0, -230, 480, 930)  # x:0~480(화면 폭). 보스 추격 시 화면 밖 이탈 방지
 
-# ── 수비 밴드 상수 (RD13, 가제 — 밸런싱 대기) ────────────────────────────
-# 성 위치 (240, 760). 적은 y<0에서 스폰, 아래(+y) 방향으로 하강.
-# 밴드는 성 바로 위(y감소 방향) BAND_DEPTH px 구간.
-const CASTLE_POS: Vector2 = Vector2(240.0, 760.0)
-const BAND_DEPTH: float = 300.0           # 밴드 세로 깊이 (성 위 ~300px)
-const BAND_TOP: float = CASTLE_POS.y - BAND_DEPTH   # 밴드 상한 y (= 460)
-# 역할별 대기 y 위치 (성 기준 위쪽)
-const WAIT_Y_TANK: float    = CASTLE_POS.y - 230.0  # 최전방 (= 530)
-const WAIT_Y_WARRIOR: float = CASTLE_POS.y - 150.0  # 중간    (= 610)
-const WAIT_Y_ARCHER: float  = CASTLE_POS.y - 70.0   # 후방    (= 690)
+# ── 수비 밴드 상수 (RD13) ─ 실제 성 노드 기준 정렬 (성 1.8배 확대 대응) ──────
+# 성 노드 = Game.tscn (240, 620). 적은 y<0 스폰, 아래(+y)로 하강해 윗벽서 멈춤.
+# 적은 윗벽(CASTLE_TOP_WALL) 바깥에서 정지하고 origin은 발끝보다 위라 y≈414~434에 선다.
+# 밴드/전진상한은 이 적 정지선을 포함하도록 윗벽 기준으로 잡는다.
+const CASTLE_POS: Vector2 = Vector2(240.0, 570.0)   # 실제 성 위치(Game.tscn). 성 1.8배 확대로 바닥이 하단 UI와 겹쳐 620→570 상향
+const CASTLE_HALF: float = 169.2                     # Enemy/Boss CASTLE_HALF와 동일(성 scale 1.8). ⚠️성 크기 바꾸면 같이 수정
+const CASTLE_TOP_WALL: float = CASTLE_POS.y - CASTLE_HALF   # = 450.8, 적이 멈추는 윗벽 라인
+const BAND_TOP: float = CASTLE_TOP_WALL - 50.0      # = 400.8. 적 정지 origin(~414~434)을 밴드에 포함
+# 역할별 대기 y 위치 (성 윗벽 안쪽 상단에 포진)
+const WAIT_Y_TANK: float    = CASTLE_POS.y - 160.0  # 최전방 (= 460, 윗벽 바로 안쪽)
+const WAIT_Y_WARRIOR: float = CASTLE_POS.y - 110.0  # 중간    (= 510)
+const WAIT_Y_ARCHER: float  = CASTLE_POS.y - 60.0   # 후방    (= 560)
 # 역할별 대기 x (겹침 방지용 분산)
 const WAIT_X_OFFSETS: Dictionary = {
 	"tank":    [200.0, 280.0],
@@ -53,7 +55,7 @@ const WAIT_X_OFFSETS: Dictionary = {
 # leash: 타겟이 밴드 밖으로 이 거리 이상 나가면 추격 포기
 const LEASH_MARGIN: float = 40.0   # 밴드 상한에서 위로 얼마나 나가면 포기
 const RETARGET_INTERVAL: float = 0.5  # 근접 유닛 타겟 재평가 주기 (초)
-const FORWARD_LIMIT_TANK: float = 490.0  # 탱크 전진 상한: 라인을 벽으로 홀드 (플테 튜닝 노브)
+const FORWARD_LIMIT_TANK: float = CASTLE_TOP_WALL - 30.0  # = 420.8, 탱크가 윗벽 바로 앞에서 홀드 (플테 튜닝 노브)
 
 # 정적 단일 이미지 오버라이드 (풀 애니 미입고 역할 — 전 동작이 한 컷으로 표시).
 # 추후 같은 폴더에 0_[Role]_[Motion]_###.png 프레임 입고 시 여기서 제거하고 프레임 로더로 전환.
@@ -201,9 +203,9 @@ func _physics_process(delta: float) -> void:
 		return
 
 	# ── 수비 밴드 AI (RD13) ───────────────────────────────────────────────
-	# 1) leash: 현재 타겟이 밴드 밖으로 나갔으면 포기
+	# 1) leash: 현재 타겟이 밴드 밖으로 나갔으면 포기 (단 성벽 교전 중인 보스는 예외 — origin이 발끝보다 한참 위라 항상 밴드 밖으로 보임)
 	if is_instance_valid(current_target):
-		if current_target.position.y < BAND_TOP - LEASH_MARGIN:
+		if current_target.position.y < BAND_TOP - LEASH_MARGIN and not current_target.is_in_group("boss"):
 			current_target = null
 
 	# 2) 타겟 갱신
@@ -400,7 +402,8 @@ func _find_deepest_enemy_in_band():
 	for e in enemies:
 		if not is_instance_valid(e):
 			continue
-		if e.position.y < BAND_TOP:
+		# 보스는 성벽 도달(at_wall) 시 origin이 밴드 위라도 포함 — 발끝이 윗벽에 닿아 실제론 교전 범위.
+		if not (e.is_in_group("boss") and e.at_wall) and e.position.y < BAND_TOP:
 			continue   # 밴드 위(아직 안 들어온) 적 무시
 		if e.position.y > deepest_y:
 			deepest_y = e.position.y
@@ -435,7 +438,8 @@ func _find_nearest_enemy_in_band():
 	for e in enemies:
 		if not is_instance_valid(e):
 			continue
-		if e.position.y < BAND_TOP:
+		# 보스는 성벽 도달(at_wall) 시 origin이 밴드 위라도 포함 — 발끝이 윗벽에 닿아 실제론 교전 범위.
+		if not (e.is_in_group("boss") and e.at_wall) and e.position.y < BAND_TOP:
 			continue   # 밴드 위(아직 안 들어온) 적 무시
 		var d: float = position.distance_to(e.position)
 		if d < nearest_dist:

@@ -18,6 +18,7 @@ offset_left = -60.0
 offset_top = -75.0
 offset_right = 60.0
 offset_bottom = -60.0
+mouse_filter = 2
 value = 100.0
 show_percentage = false
 

@@ -135,6 +135,7 @@ var _desc_label: Label = null           # 무장 시 마법 설명 텍스트
 
 # _btn_canvases 의 AbilityButtonDrawer 참조 캐시
 var _btn_drawers: Array = []  # Array[AbilityButtonDrawer]
+var _tap_btns: Array = []     # Array[Button] — 슬롯별 투명 탭 버튼 (상점 진입 시 숨김용)
 
 # ──────────────────────────────────────────────────────────────
 # AbilityButtonDrawer — 원형 버튼 + 레이디얼 쿨 + 배지를 _draw로 그리는 내부 클래스
@@ -529,10 +530,26 @@ func _disarm() -> void:
 	_hide_reach_circle()
 	_refresh_ui()
 
-## 상점(모달) 진입 시 외부 호출 — 무장 상태였다면 해제해 reach 원/무장 UI 잔상 제거
+## 상점(모달) 진입 시 외부 호출 — 무장 해제 + 마법 버튼 숨김.
+## 투명 탭 버튼은 트리상 ShopPanel보다 뒤(=위)라, 숨기지 않으면 상점 버튼 위 탭을
+## 가로채고 _is_blocked_by_shop early-return으로 무반응이 된다(다음 웨이브 버튼 상단 먹힘).
 func cancel_for_shop() -> void:
 	if _arm_state == ArmState.ARMED:
 		_disarm()
+	_set_field_buttons_visible(false)
+
+## 상점 퇴장 시 외부 호출 — 마법 버튼 복원
+func restore_after_shop() -> void:
+	_set_field_buttons_visible(true)
+
+## 슬롯 버튼(시각 드로어 + 투명 탭 버튼) 일괄 표시/숨김
+func _set_field_buttons_visible(v: bool) -> void:
+	for d in _btn_drawers:
+		if is_instance_valid(d):
+			d.visible = v
+	for b in _tap_btns:
+		if is_instance_valid(b):
+			b.visible = v
 
 # ──────────────────────────────────────────────────────────────
 # 내부: 마법 데이터 접근
@@ -610,6 +627,7 @@ func _build_ui() -> void:
 		var slot_i: int = i
 		tap_btn.pressed.connect(func() -> void: _on_tap_btn_pressed(slot_i, tap_btn))
 		ui.add_child(tap_btn)
+		_tap_btns.append(tap_btn)
 
 	# ── 마법 설명 캡션 패널 (하단 중앙 가로 바, 무장 시 표시) ──────────
 	# 위치: 화면 최하단 중앙. 버튼 하단(y≈880)보다 아래(908~944)에 배치해 겹침 없음.

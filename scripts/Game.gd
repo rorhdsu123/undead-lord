@@ -1406,6 +1406,9 @@ func _close_shop() -> void:
 		if is_instance_valid(summon_container):
 			summon_container.visible = true
 		_set_resource_hud_visible(true)  # 자원 캡슐 복원 (MAX 배지 동기화 포함)
+		# 마법 버튼 복원 (상점 진입 시 cancel_for_shop으로 숨김)
+		if is_instance_valid(ability_system):
+			ability_system.restore_after_shop()
 		# RD16: 상점 닫힌 후 강화 버튼 + 아이콘 복원
 		_set_upgrade_btn_visible(true)
 		current_wave += 1

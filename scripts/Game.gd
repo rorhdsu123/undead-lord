@@ -215,8 +215,8 @@ const SHOP_ITEMS = [
 	{"id": "castle_max",      "label": "성벽 증축",  "desc": "성 최대 HP +120",   "cost": 120},
 	{"id": "restore",         "label": "긴급 수복",  "desc": "성·하인 즉시 완전 회복", "cost": 70},
 	{"id": "lightning_dmg",   "label": "낙뢰 증폭",  "desc": "낙뢰 피해 +20%",    "cost": 110},
-	{"id": "ability_cd",      "label": "권능 가속",  "desc": "권능 쿨다운 −15%",  "cost": 130},
-	{"id": "ability_radius",  "label": "권능 확산",  "desc": "권능 반경 +25%",    "cost": 90},
+	{"id": "ability_cd",      "label": "마법 가속",  "desc": "마법 쿨다운 −15%",  "cost": 130},
+	{"id": "ability_radius",  "label": "마법 확산",  "desc": "마법 반경 +25%",    "cost": 90},
 ]
 var shop_btns: Array = []
 var shop_purchased: Array = []  # SH4: 상점 진입마다 리셋, 종류당 1회 구매

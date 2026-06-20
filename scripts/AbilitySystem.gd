@@ -1,12 +1,12 @@
 ## AbilitySystem.gd
-## Phase B — 권능 시스템 (탭 권능 2슬롯, 3스텝 상태기계)
+## Phase B — 마법 시스템 (탭 마법 2슬롯, 3스텝 상태기계)
 ##
 ## 책임:
-##   - 권능 데이터 정의 (2종 고정 슬롯)
+##   - 마법 데이터 정의 (2종 고정 슬롯)
 ##   - 3스텝 탭 입력 상태기계 (IDLE → ARMED → 발현 / 취소)
 ##   - 낙뢰의 홀 (처치형) 및 망령의 나팔 (통제형) 효과 실행
 ##   - 쿨다운 타이머 관리
-##   - 권능 버튼 UI (원형 버튼 + 레이디얼 쿨다운 오버레이, 우하단 배치)
+##   - 마법 버튼 UI (원형 버튼 + 레이디얼 쿨다운 오버레이, 우하단 배치)
 ##   - 망령의 나팔 reach 경계 원 표시 (무장 시)
 ##
 ## 설계 원칙:
@@ -78,7 +78,7 @@ const BADGE_COLOR: Color      = Color(0.85, 0.12, 0.10, 1.0)
 const BADGE_X_COLOR: Color    = Color(1.0, 1.0, 1.0, 1.0)
 
 # ──────────────────────────────────────────────────────────────
-# 권능 데이터 정의
+# 마법 데이터 정의
 # 나중에 슬롯 풀 확장 시 이 배열만 교체하면 됨
 # ──────────────────────────────────────────────────────────────
 const ABILITY_POOL: Array = [
@@ -130,8 +130,8 @@ var game: Node = null  # Game.gd 부모
 # ──────────────────────────────────────────────────────────────
 var _btn_canvases: Array[Control]  = []  # 슬롯별 원형 버튼 커스텀 드로 컨트롤
 var _reach_circle: Node2D = null        # 망령의 나팔 reach 경계 원
-var _desc_panel: Panel = null           # 무장 시 권능 설명 캡션 패널
-var _desc_label: Label = null           # 무장 시 권능 설명 텍스트
+var _desc_panel: Panel = null           # 무장 시 마법 설명 캡션 패널
+var _desc_label: Label = null           # 무장 시 마법 설명 텍스트
 
 # _btn_canvases 의 AbilityButtonDrawer 참조 캐시
 var _btn_drawers: Array = []  # Array[AbilityButtonDrawer]
@@ -356,12 +356,12 @@ func tick(delta: float) -> void:
 # 입력 진입점
 # ──────────────────────────────────────────────────────────────
 
-## 상점(모달) 표시 중에는 권능 입력을 전면 차단 — 상점 팝업이 권능 버튼 위를 덮어도
+## 상점(모달) 표시 중에는 마법 입력을 전면 차단 — 상점 팝업이 마법 버튼 위를 덮어도
 ## 버튼 탭이 별도 connect 경로로 들어오므로 여기서 막아야 한다.
 func _is_blocked_by_shop() -> bool:
 	return is_instance_valid(game) and is_instance_valid(game.shop_panel) and game.shop_panel.visible
 
-## 권능 버튼 탭 (1스텝)
+## 마법 버튼 탭 (1스텝)
 func on_ability_btn_pressed(slot: int) -> void:
 	if _is_blocked_by_shop():
 		return
@@ -385,7 +385,7 @@ func on_cancel_btn_pressed(slot: int) -> void:
 	_disarm()
 	_punch_drawer(slot)  # 취소(해제)도 성공 동작 → 눌림 펀치
 
-## 권능 드로어 눌림 펀치 — 탭 버튼은 투명이라, 시각을 그리는 드로어를 직접 스케일 바운스.
+## 마법 드로어 눌림 펀치 — 탭 버튼은 투명이라, 시각을 그리는 드로어를 직접 스케일 바운스.
 ## (다른 버튼의 _play_button_bounce와 동일 손맛: 0.9로 줄었다 BACK 이징 복귀)
 func _punch_drawer(slot: int) -> void:
 	if slot < 0 or slot >= _btn_drawers.size():
@@ -431,11 +431,11 @@ func _in_reach(slot: int, world_pos: Vector2) -> bool:
 	return world_pos.distance_to(castle_pos) <= reach
 
 # ──────────────────────────────────────────────────────────────
-# 내부: 권능 발현 로직
+# 내부: 마법 발현 로직
 # ──────────────────────────────────────────────────────────────
 
 func _fire_ability(slot: int, world_pos: Vector2) -> void:
-	# 마왕 바크 — 권능 발현 시 확률적으로 발동 (확률·라인 선택은 game에 위임)
+	# 마왕 바크 — 마법 발현 시 확률적으로 발동 (확률·라인 선택은 game에 위임)
 	if is_instance_valid(game) and is_instance_valid(game.demon_portrait):
 		game.demon_bark_power()
 	var id: String = _get_ability(slot)["id"]
@@ -535,7 +535,7 @@ func cancel_for_shop() -> void:
 		_disarm()
 
 # ──────────────────────────────────────────────────────────────
-# 내부: 권능 데이터 접근
+# 내부: 마법 데이터 접근
 # ──────────────────────────────────────────────────────────────
 
 func _get_ability(slot: int) -> Dictionary:
@@ -611,7 +611,7 @@ func _build_ui() -> void:
 		tap_btn.pressed.connect(func() -> void: _on_tap_btn_pressed(slot_i, tap_btn))
 		ui.add_child(tap_btn)
 
-	# ── 권능 설명 캡션 패널 (하단 중앙 가로 바, 무장 시 표시) ──────────
+	# ── 마법 설명 캡션 패널 (하단 중앙 가로 바, 무장 시 표시) ──────────
 	# 위치: 화면 최하단 중앙. 버튼 하단(y≈880)보다 아래(908~944)에 배치해 겹침 없음.
 	const CAP_W: float   = 380.0   # 텍스트가 한 줄에 들어갈 넉넉한 너비
 	const CAP_H: float   = 36.0    # 높이 (한 줄 기준)

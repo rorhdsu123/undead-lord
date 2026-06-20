@@ -77,9 +77,9 @@ var enemies_alive: int = 0
 # 플레이어 스탯
 var attack_bonus: float = 1.0
 var graveyard_heal: int = 0
-var ability_cooldown_mult: float = 1.0   # 권능 가속 (상점)
-var ability_radius_mult: float = 1.0     # 권능 확산 (상점)
-var ability_radius_card_mult: float = 1.0  # 권능 반경 (연료 카드 area+)
+var ability_cooldown_mult: float = 1.0   # 마법 가속 (상점)
+var ability_radius_mult: float = 1.0     # 마법 확산 (상점)
+var ability_radius_card_mult: float = 1.0  # 마법 반경 (연료 카드 area+)
 
 # 영혼 자원
 var souls: int = 0
@@ -200,7 +200,7 @@ const DANGER_LINES = [
 	"진정해. 마왕이잖아. 마왕.",
 	"아직… 아직 안 졌어.",
 ]
-const POWER_BARK_CHANCE: float = 0.2   # 권능 발동 시 바크 확률 (스팸 방지)
+const POWER_BARK_CHANCE: float = 0.2   # 마법 발동 시 바크 확률 (스팸 방지)
 const DEMON_BARK_MIN_GAP_MSEC: int = 2800   # 마왕 바크 최소 간격(ms). 위급 바크는 무시(우선권).
 const CASTLE_DANGER_RATIO: float = 0.25
 const BOSS_INTRO_DIALOGUES = {
@@ -249,7 +249,7 @@ var _resource_capsule: Panel = null
 var _resource_hbox: HBoxContainer = null
 # (3) 하단 트레이 패널
 var _bottom_tray: Panel = null
-# (3b) 트레이 좌/우 구역 디바이더 (경영 메뉴 | 권능 구분)
+# (3b) 트레이 좌/우 구역 디바이더 (경영 메뉴 | 마법 구분)
 var _tray_divider: ColorRect = null
 @onready var shop_panel = $UI/ShopPanel
 @onready var shop_title: Label = $UI/ShopPanel/ShopTitle
@@ -266,7 +266,7 @@ var _shop_closing: bool = false     # 퇴장 페이드 진행 중 중복 호출 
 var _shop_dim_alpha: float = 0.72   # modal_dim 원래 알파 보관 (노드 실제값 사용)
 var _card_rows: Array = []
 
-# ── Phase B — 권능 시스템 ─────────────────────────────────────
+# ── Phase B — 마법 시스템 ─────────────────────────────────────
 const AbilitySystemScript = preload("res://scripts/AbilitySystem.gd")
 var ability_system: Node = null
 
@@ -433,7 +433,7 @@ func _ready() -> void:
 		souls = HIRE_START_GOLD
 	_update_souls_ui()
 	# Phase C — 고용 버튼 + 골드 HUD 표시
-	# summon_container: 권능 버튼(우하단)과 겹치지 않게 _layout_bottom_ui_phase_c에서 배치
+	# summon_container: 마법 버튼(우하단)과 겹치지 않게 _layout_bottom_ui_phase_c에서 배치
 	if is_instance_valid(summon_container):
 		summon_container.visible = true
 	# minion_slot_label·slot_icon은 캡 없어졌으므로 숨김 유지
@@ -441,7 +441,7 @@ func _ready() -> void:
 	_set_upgrade_btn_visible(true)
 	_layout_bottom_ui_phase_c()
 	_refresh_summon_buttons()
-	# Phase B — 권능 시스템 초기화
+	# Phase B — 마법 시스템 초기화
 	ability_system = AbilitySystemScript.new()
 	add_child(ability_system)
 	ability_system.setup(self)
@@ -661,7 +661,7 @@ func castle_take_damage(dmg: int, from_pos: Vector2 = Vector2.INF, big: bool = f
 		castle_bar.set_hp(castle_hp, castle_max_hp)
 		game_over()
 
-## 권능 발동 시 AbilitySystem이 호출하는 마왕 바크 (POWER_BARK_CHANCE 확률).
+## 마법 발동 시 AbilitySystem이 호출하는 마왕 바크 (POWER_BARK_CHANCE 확률).
 func demon_bark_power() -> void:
 	if not is_instance_valid(demon_portrait):
 		return
@@ -1944,7 +1944,7 @@ func _fade_to_scene(path: String) -> void:
 	)
 
 func _process(delta: float) -> void:
-	# Phase B — 권능 시스템 쿨다운 + UI 갱신 (Phase A 가드보다 앞에 위치)
+	# Phase B — 마법 시스템 쿨다운 + UI 갱신 (Phase A 가드보다 앞에 위치)
 	if is_instance_valid(ability_system):
 		ability_system.tick(delta)
 	# Phase A4/A5 — 희생·특수기 UI 갱신 비활성 (버튼 숨김 유지)
@@ -1958,7 +1958,7 @@ func _process(delta: float) -> void:
 	_update_sacrifice_button()
 
 ## Phase B — 필드 탭 감지 (2스텝 발현)
-## GUI 버튼(권능 버튼, 취소 버튼 등) 탭은 _unhandled_input에 도달하지 않으므로 안전
+## GUI 버튼(마법 버튼, 취소 버튼 등) 탭은 _unhandled_input에 도달하지 않으므로 안전
 func _unhandled_input(event: InputEvent) -> void:
 	var tap_pos: Vector2 = Vector2.ZERO
 	var is_tap: bool = false
@@ -2597,7 +2597,7 @@ func _open_upgrade_popup() -> void:
 		return
 	_refresh_upgrade_popup()
 	# 캐처 먼저 표시 (팝업이 위에 그려짐)
-	# move_to_front으로 권능 버튼 등 다른 UI 형제 위로 올림 (캐처→팝업 순서로 팝업이 최상단)
+	# move_to_front으로 마법 버튼 등 다른 UI 형제 위로 올림 (캐처→팝업 순서로 팝업이 최상단)
 	if is_instance_valid(_upgrade_popup_catcher):
 		_upgrade_popup_catcher.visible = true
 		_upgrade_popup_catcher.move_to_front()
@@ -2735,7 +2735,7 @@ func _hide_bottom_ui_phase_a() -> void:
 
 func _layout_bottom_ui_phase_c() -> void:
 	# Phase C — 하단 UI 배치 (아래→위: 강화 / 소환 / 골드+하인 readout HUD)
-	# 권능 버튼은 AbilitySystem이 우하단(x≈280~460)에 배치 → 겹침 없음.
+	# 마법 버튼은 AbilitySystem이 우하단(x≈280~460)에 배치 → 겹침 없음.
 	# 고용/강화 버튼은 화면 좌측(x14~270)에만 위치.
 	#
 	# 좌표 역산 (바닥 기준):
@@ -2743,7 +2743,7 @@ func _layout_bottom_ui_phase_c() -> void:
 	#   BOTTOM_MARGIN = 58 (= 16 + 42)
 	#   강화 버튼 (h=36): y = 960-58-36 = 866  ← 맨 아래 행
 	#   GAP_UPG_SUM = 6
-	#   소환 컨테이너 (h=52): y = 866-6-52 = 808 (← 권능 버튼 윗변과 일치)
+	#   소환 컨테이너 (h=52): y = 866-6-52 = 808 (← 마법 버튼 윗변과 일치)
 	#   GAP_SUM_GOLD = 6
 	#   골드+하인 HUD (h=28): y = 808-6-28 = 774
 	#
@@ -2751,7 +2751,7 @@ func _layout_bottom_ui_phase_c() -> void:
 	var vp: Vector2 = get_viewport_rect().size
 	const MX: float         = 14.0   # 좌측 마진 (트레이 패딩 고려해 10→14)
 	const SUM_W: float      = 262.0  # 소환/강화 버튼 폭 (좌측 절반 이하)
-	const DOCK_LIFT: float   = 42.0   # 도크 전체를 바닥에서 띄우는 양 (소환 윗변=권능 윗변 y808 정렬 + 하단 터치 여백 확보)
+	const DOCK_LIFT: float   = 42.0   # 도크 전체를 바닥에서 띄우는 양 (소환 윗변=마법 윗변 y808 정렬 + 하단 터치 여백 확보)
 	const BOTTOM_MARGIN: float = 16.0 + DOCK_LIFT   # 도크 띄움 반영 (16 → 58)
 	const UPGRADE_H:     float = 36.0
 	const GAP_UPG_SUM:   float = 6.0
@@ -2770,10 +2770,10 @@ func _layout_bottom_ui_phase_c() -> void:
 		if is_instance_valid(tray_parent):
 			tray_parent.move_child(_bottom_tray, 0)
 
-	# ── 좌/우 구역 디바이더 (경영 메뉴 | 권능) ──────────────────────
-	# 좌측 버튼 끝(x=MX+SUM_W=276)과 권능 버튼 시작(x≈296) 사이 경계
+	# ── 좌/우 구역 디바이더 (경영 메뉴 | 마법) ──────────────────────
+	# 좌측 버튼 끝(x=MX+SUM_W=276)과 마법 버튼 시작(x≈296) 사이 경계
 	if is_instance_valid(_tray_divider):
-		const DIV_X: float = 282.0   # 좌측 버튼 끝(276)과 6px 이격, 권능 버튼과의 간격 확보 위해 좌측 미세 이동
+		const DIV_X: float = 282.0   # 좌측 버튼 끝(276)과 6px 이격, 마법 버튼과의 간격 확보 위해 좌측 미세 이동
 		const DIV_INSET: float = 12.0   # 트레이 상/하단에서 띄울 여백
 		_tray_divider.position = Vector2(DIV_X, TRAY_TOP + DIV_INSET)
 		_tray_divider.size = Vector2(1.0, (vp.y - TRAY_TOP) - DIV_INSET * 2.0)

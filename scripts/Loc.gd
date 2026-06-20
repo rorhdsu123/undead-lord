@@ -89,7 +89,7 @@ static var _strings: Dictionary = {
 	# ── 골드 획득 플로팅 텍스트 ─────────────────────────────────
 	"gold_floater": "● +%d",
 
-	# ── 권능(유물) 버튼 텍스트 ─────────────────────────────────
+	# ── 마법(유물) 버튼 텍스트 ─────────────────────────────────
 	"ability_lightning_name":  "낙뢰의 홀",
 	"ability_lightning_cool":  "준비 중 (%ds)",
 	"ability_lightning_desc":  "탭한 곳에 벼락을 내린다.",

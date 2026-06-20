@@ -2165,6 +2165,11 @@ const FLOATER_POP_DUR:   float = 0.08   # 초기 scale 팝 시간(s)
 const FLOATER_FONT_SIZE: int   = 15     # 폰트 크기 (플테 조정 대상)
 const FLOATER_OUTLINE:   int   = 3      # 검은 외곽선 두께 (플테 조정 대상)
 const FLOATER_SOFT_CAP:  int   = 8      # 동시 최대 플로터 수 (초과 시 가장 오래된 것 정리)
+# horde 환급 월드 코인 연출 상수 (플테 조정 대상)
+const COIN_RADIUS:       float = 5.0    # 코인 원 반지름(px) (플테 조정 대상)
+const COIN_RISE:         float = 22.0   # 위로 아치 상승 거리(px) (플테 조정 대상)
+const COIN_DURATION:     float = 0.50   # 총 연출 시간(s) (플테 조정 대상)
+const COIN_POP_DUR:      float = 0.10   # 초기 scale 팝 시간(s) (플테 조정 대상)
 
 func _spawn_gold_floater(amount: int) -> void:
 	if not is_instance_valid(souls_icon):
@@ -2997,7 +3002,10 @@ func minion_died(pos = null, type_id: String = "") -> void:
 			var refund: int = int(round(float(paid_cost) * refund_rate))
 			souls += refund
 			_update_souls_ui()
-			# TODO: 환급 VFX 미구현 (골드 튐 연출)
+			if refund > 0:
+				_spawn_gold_floater(refund)
+				if pos != null:
+					_spawn_refund_coin(pos)
 	if pos == null:
 		return
 	# 죽음의 메아리: 사망 폭발
@@ -3026,6 +3034,30 @@ func _spawn_echo_effect(pos: Vector2) -> void:
 	tween.parallel().tween_property(n, "scale", Vector2.ONE * (KEYSTONE_ECHO_RADIUS / base_r), 0.4)
 	tween.parallel().tween_property(n, "modulate:a", 0.0, 0.4)
 	tween.tween_callback(n.queue_free)
+
+## horde 환급 월드 코인 연출 — 하인 사망 위치에서 금색 원이 위로 튀어오르며 페이드
+func _spawn_refund_coin(pos: Vector2) -> void:
+	var n: Node2D = Node2D.new()
+	n.position = pos
+	n.z_index = 10  # 액터 레이어 위에 그려지도록
+	add_child(n)
+	# 금색 정원 (Polygon2D)
+	var seg: int = 16
+	var fill: Polygon2D = Polygon2D.new()
+	var pts: PackedVector2Array = PackedVector2Array()
+	for i: int in seg:
+		var a: float = (TAU / seg) * i
+		pts.append(Vector2(cos(a) * COIN_RADIUS, sin(a) * COIN_RADIUS))
+	fill.polygon = pts
+	fill.color = UI_BTN_GOLD
+	n.add_child(fill)
+	# 연출: scale 팝(0.6→1.0) 후 위로 아치 상승 + 페이드아웃 병렬
+	n.scale = Vector2(0.6, 0.6)
+	var tw: Tween = create_tween()
+	tw.tween_property(n, "scale", Vector2.ONE, COIN_POP_DUR).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(n, "position", pos + Vector2(0.0, -COIN_RISE), COIN_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(n, "modulate:a", 0.0, COIN_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_callback(n.queue_free)
 
 func show_dialogue(text: String, color: Color = Color(1, 1, 0.3, 1), world_pos: Vector2 = Vector2(240, 400)) -> void:
 	var label: Label = Label.new()

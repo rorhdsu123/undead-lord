@@ -79,6 +79,7 @@ var attack_bonus: float = 1.0
 var graveyard_heal: int = 0
 var ability_cooldown_mult: float = 1.0   # 권능 가속 (상점)
 var ability_radius_mult: float = 1.0     # 권능 확산 (상점)
+var ability_radius_card_mult: float = 1.0  # 권능 반경 (연료 카드 area+)
 
 # 영혼 자원
 var souls: int = 0
@@ -139,6 +140,7 @@ const STAT_CARDS = [
 	{"id": "summon_cost"},
 	{"id": "minion_range"},
 	{"id": "minion_lifesteal"},
+	{"id": "area"},
 ]
 
 var available_skill_cards: Array = []
@@ -161,6 +163,7 @@ const CARD_CATEGORY_MAP = {
 	"death_aura":    "skill",
 	"skull_throw":   "skill",
 	"decay_curse":   "skill",
+	"area":          "range",
 }
 
 # 카드 → 축 분류
@@ -170,6 +173,7 @@ const CARD_AXIS = {
 	"death_aura": "power", "skull_throw": "power", "decay_curse": "power",
 	"minion_count": "army", "summon_cost": "army",
 	"minion_range": "army", "minion_lifesteal": "army",
+	"area": "magic",
 	"wall": "neutral", "graveyard": "neutral",
 }
 
@@ -1010,6 +1014,8 @@ func _apply_card(id: String, mult: float = 1.0) -> void:
 			minion_range_bonus += 40.0 * mult
 		"minion_lifesteal":
 			minion_lifesteal += 0.20 * mult
+		"area":
+			ability_radius_card_mult += 0.25 * mult
 
 ## 웨이브 트래커 — 카피바라고 스타일 캡슐형 노드 스트립
 ## 아이콘은 NotoEmoji placeholder (아트 입고 후 교체)

@@ -545,9 +545,9 @@ func _get_ability(slot: int) -> Dictionary:
 func _cd_mult() -> float:
 	return game.ability_cooldown_mult if is_instance_valid(game) else 1.0
 
-## 상점 노브: 반경 배수 (기본 1.0, 상점 ability_radius 구매 시 증가)
+## 상점 노브 × 카드 노브: 반경 배수 (상점 ability_radius + 카드 area 누적)
 func _radius_mult() -> float:
-	return game.ability_radius_mult if is_instance_valid(game) else 1.0
+	return (game.ability_radius_mult * game.ability_radius_card_mult) if is_instance_valid(game) else 1.0
 
 # ──────────────────────────────────────────────────────────────
 # UI 빌드 — 원형 버튼 2개, 우하단 배치
@@ -772,6 +772,27 @@ func _spawn_lightning_impact(pos: Vector2, impact_r: float = LIGHTNING_IMPACT_RA
 		var tw2: Tween = create_tween()
 		tw2.tween_property(spark, "modulate:a", 0.0, 0.20)
 		tw2.tween_callback(spark.queue_free)
+
+	# 공격 영역 그라데이션 채움 — impact_r 반경, 중심 밝고 가장자리 투명 (area+ 반경 가독성)
+	var grad: Gradient = Gradient.new()
+	grad.set_color(0, Color(0.6, 0.9, 1.0, 0.40))  # 중심 (전기 청백)
+	grad.set_color(1, Color(0.6, 0.9, 1.0, 0.0))   # 가장자리 투명
+	var gtex: GradientTexture2D = GradientTexture2D.new()
+	gtex.gradient = grad
+	gtex.fill = GradientTexture2D.FILL_RADIAL
+	gtex.fill_from = Vector2(0.5, 0.5)  # 텍스처 중심
+	gtex.fill_to = Vector2(1.0, 0.5)    # 가장자리 = offset 1
+	gtex.width = 128
+	gtex.height = 128
+	var area_spr: Sprite2D = Sprite2D.new()
+	area_spr.texture = gtex
+	area_spr.position = pos
+	area_spr.z_index = 99  # 액터 위, 링과 동급 레이어
+	area_spr.scale = Vector2.ONE * ((impact_r * 2.0) / 128.0)  # 텍스처 반경(64px)→impact_r
+	game.add_child(area_spr)
+	var tw_area: Tween = create_tween()
+	tw_area.tween_property(area_spr, "modulate:a", 0.0, 0.30)
+	tw_area.tween_callback(area_spr.queue_free)
 
 ## 망령의 나팔 상방 스윕 — 아치형 음파 (수직 방향 강조, 방사형 오인 방지)
 func _spawn_trumpet_sweep(pos: Vector2) -> void:

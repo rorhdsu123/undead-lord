@@ -23,6 +23,7 @@ static var _strings: Dictionary = {
 	"card_graveyard":     "묘지\n웨이브 클리어 시 HP +20 회복",
 	"card_range_basic":   "마법 사거리 증가\n[마법] 마법 사거리 +30",
 	"card_range_all":     "마법 범위 증가\n[마법] 마법 범위 +25%",
+	"card_area":         "넓은 권능\n[마법] 권능 적중 반경 +25%",
 	"card_minion_count":  "소환 한도 증가\n[군대] 최대 소환 수 +1",
 	"card_summon_cost":       "소환 비용 감소\n[군대] 소환 비용 -5 골드",
 	"card_minion_range":      "하인 사거리 증가\n[군대] 하인 공격 사거리 +40",

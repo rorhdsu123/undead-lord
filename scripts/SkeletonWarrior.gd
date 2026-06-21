@@ -4,19 +4,19 @@ const ArrowScene = preload("res://scenes/Arrow.tscn")
 
 const TYPE_PRESETS: Dictionary = {
 	"warrior": {
-		"hp": 100, "speed": 90, "damage": 10, "range": 30, "interval": 1.0,
+		"hp": 100, "speed": 105, "damage": 10, "range": 30, "interval": 1.0,
 		"scale": 1.0, "behavior": "melee", "evolves": true, "variant": 1,
 	},
 	"archer": {
-		"hp": 60, "speed": 80, "damage": 8, "range": 260, "interval": 1.2,
+		"hp": 60, "speed": 90, "damage": 8, "range": 260, "interval": 1.2,
 		"scale": 0.85, "behavior": "ranged", "evolves": true, "variant": 2,
 	},
 	"tank": {
-		"hp": 250, "speed": 50, "damage": 14, "range": 30, "interval": 1.3,
+		"hp": 250, "speed": 65, "damage": 14, "range": 30, "interval": 1.3,
 		"scale": 1.45, "behavior": "melee", "evolves": true, "variant": 3,
 	},
 	"bomber": {
-		"hp": 50, "speed": 115, "damage": 60, "range": 25, "interval": 999.0,
+		"hp": 50, "speed": 125, "damage": 60, "range": 25, "interval": 999.0,
 		"scale": 0.85, "behavior": "bomber", "evolves": false, "variant": 1,
 	},
 }
@@ -56,6 +56,7 @@ const WAIT_X_OFFSETS: Dictionary = {
 const LEASH_MARGIN: float = 40.0   # 밴드 상한에서 위로 얼마나 나가면 포기
 const ACQUIRE_TOP: float = BAND_TOP - LEASH_MARGIN   # 획득선=leash 포기선과 일치(경계 깜빡임 제거)
 const RETREAT_GRACE: float = 1.5   # 필드에 적 0인 채 이 시간 지나야 대형으로 복귀
+const SPAWN_BELOW_WAIT: float = 40.0  # 스폰 시 정착선보다 이만큼 아래(짧게 한 발 올라서며 대형 합류, B안)
 const RETARGET_INTERVAL: float = 0.5  # 근접 유닛 타겟 재평가 주기 (초)
 # 역할별 전진 상한(최대 전진 = 최소 y). 작을수록 더 앞(적 쪽). 탱크를 최전방으로, 전사를 그 바로 뒤로.
 # ⚠️탱크가 전사보다 앞이어야 보스가 '가장 가까운 하인'으로 물몸 전사 대신 탱크를 집중한다(역전 시 전사 학살).
@@ -341,6 +342,11 @@ func _get_wait_position() -> Vector2:
 	var offsets: Array = WAIT_X_OFFSETS.get(minion_type, [200.0, 240.0, 280.0])
 	var wait_x: float = offsets[get_instance_id() % offsets.size()]
 	return Vector2(wait_x, wait_y)
+
+# 스폰 위치 — 역할별 정착선 살짝 아래에서 출발해 짧게 합류 (B안). 탱크 110px→40px 트럭킹 단축.
+func get_spawn_position() -> Vector2:
+	var wait_pos: Vector2 = _get_wait_position()
+	return wait_pos + Vector2(randf_range(-20.0, 20.0), SPAWN_BELOW_WAIT)
 
 func _do_attack() -> void:
 	if not is_instance_valid(current_target):

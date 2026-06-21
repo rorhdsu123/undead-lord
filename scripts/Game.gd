@@ -2944,9 +2944,9 @@ func _on_summon_pressed(index: int, btn: Button = null) -> void:
 
 func _spawn_minion(type_id: String) -> void:
 	var m = SkeletonWarriorScene.instantiate()
-	m.position = $Castle.position + Vector2(randf_range(-30, 30), -50)
 	m.game = self
 	m.minion_type = type_id
+	m.position = m.get_spawn_position()  # 역할별 정착선 살짝 아래에서 스폰 (B안)
 	minions_node.add_child(m)
 	# 카드 보너스 반영 (프리셋 적용 후)
 	m.base_damage *= minion_attack_bonus * keystone_minion_atk_mult

@@ -484,41 +484,60 @@ func start_wave() -> void:
 	wave_active = true
 	_reveal_wave_tracker()
 
-	# composition 기반 스폰
-	var composition: Array = data["composition"]
 	var base_hp: float = data["base_hp"]
 	var base_speed: float = data["base_speed"]
 	var base_damage: int = data["base_damage"]
 
-	enemies_alive = 0
-	for entry: Dictionary in composition:
-		enemies_alive += entry["count"]
-
 	# HUD 하단(~y142) 바로 아래에서 스폰 — 상시 바가 적을 가리지 않도록 (카피바라고 방식)
-	var spawn_y_min: float = 150.0
-	var spawn_y_max: float = 240.0
+	_wave_spawn_y_min = 150.0
+	_wave_spawn_y_max = 240.0
 	if _is_tutorial() and current_wave == 4:
-		spawn_y_min = 220.0
-		spawn_y_max = 300.0
+		_wave_spawn_y_min = 220.0
+		_wave_spawn_y_max = 300.0
 		# 느린 브루트 → 플레이어 사거리 안쪽에서 등장하도록 살짝 아래 스폰
 
-	var vp_w: float = get_viewport_rect().size.x
-	for entry: Dictionary in composition:
-		var preset: Dictionary = Enemy.TYPE_PRESETS[entry["enemy"]]
-		var e_hp: float = base_hp * preset["hp_mult"]
-		var e_spd: float = base_speed * preset["speed_mult"]
-		var e_dmg: int = int(base_damage * preset["damage_mult"])
-		for i in entry["count"]:
-			var e = EnemyScene.instantiate()
-			e.position = Vector2(randf_range(30, vp_w - 30), randf_range(spawn_y_min, spawn_y_max))
-			e.enemy_type = entry["enemy"]
-			e.hp = e_hp
-			e.max_hp = e_hp
-			e.speed = e_spd
-			e.base_speed = e_spd
-			e.damage = e_dmg
-			e.game = self
-			enemies_node.add_child(e)
+	# 펄스 스케줄 구축
+	_spawn_schedule.clear()
+	_wave_elapsed = 0.0
+
+	# pulses 포맷 처리 (composition fallback 포함)
+	if data.has("pulses"):
+		enemies_alive = 0
+		for pulse: Dictionary in data["pulses"]:
+			var pulse_t: float = float(pulse["t"])
+			for entry: Dictionary in pulse["spawn"]:
+				var preset: Dictionary = Enemy.TYPE_PRESETS[entry["enemy"]]
+				var e_hp: float = base_hp * preset["hp_mult"]
+				var e_spd: float = base_speed * preset["speed_mult"]
+				var e_dmg: int = int(base_damage * preset["damage_mult"])
+				for _i: int in entry["count"]:
+					_spawn_schedule.append({
+						"t": pulse_t + randf_range(0.0, 0.4),
+						"enemy": entry["enemy"],
+						"hp": e_hp,
+						"spd": e_spd,
+						"dmg": e_dmg,
+					})
+					enemies_alive += 1
+	elif data.has("composition"):
+		# 레거시 fallback: composition을 전부 t=0 펄스로 취급
+		enemies_alive = 0
+		for entry: Dictionary in data["composition"]:
+			var preset: Dictionary = Enemy.TYPE_PRESETS[entry["enemy"]]
+			var e_hp: float = base_hp * preset["hp_mult"]
+			var e_spd: float = base_speed * preset["speed_mult"]
+			var e_dmg: int = int(base_damage * preset["damage_mult"])
+			for _i: int in entry["count"]:
+				_spawn_schedule.append({
+					"t": randf_range(0.0, 0.4),
+					"enemy": entry["enemy"],
+					"hp": e_hp,
+					"spd": e_spd,
+					"dmg": e_dmg,
+				})
+				enemies_alive += 1
+
+	_spawn_schedule.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["t"] < b["t"])
 
 	if data["type"] == "mid_boss" or data["type"] == "boss":
 		enemies_alive += 1
@@ -598,6 +617,19 @@ func _show_souls_overflow(pos: Vector2) -> void:
 	tween.parallel().tween_property(label, "position:y", label.position.y - 60, 1.2)
 	tween.parallel().tween_property(label, "modulate:a", 0.0, 1.2)
 	tween.tween_callback(label.queue_free)
+
+func _spawn_scheduled_enemy(s: Dictionary) -> void:
+	var vp_w: float = get_viewport_rect().size.x
+	var e = EnemyScene.instantiate()
+	e.position = Vector2(randf_range(30, vp_w - 30), randf_range(_wave_spawn_y_min, _wave_spawn_y_max))
+	e.enemy_type = s["enemy"]
+	e.hp = s["hp"]
+	e.max_hp = s["hp"]
+	e.speed = s["spd"]
+	e.base_speed = s["spd"]
+	e.damage = s["dmg"]
+	e.game = self
+	enemies_node.add_child(e)
 
 func boss_summon(enemy_type: String, count: int) -> void:
 	if not wave_active:
@@ -685,6 +717,7 @@ func end_wave() -> void:
 	if not wave_active:
 		return
 	wave_active = false
+	_spawn_schedule.clear()
 	_close_guide()
 
 	if graveyard_heal > 0:
@@ -1511,6 +1544,7 @@ func _format_time(seconds: float) -> String:
 
 func game_over() -> void:
 	wave_active = false
+	_spawn_schedule.clear()
 	_close_guide()
 	card_panel.visible = false
 	shop_panel.visible = false
@@ -1970,6 +2004,11 @@ func _fade_to_scene(path: String) -> void:
 	)
 
 func _process(delta: float) -> void:
+	# 펄스 스폰 드레인 — 웨이브 진행 중에만 동작
+	if wave_active and not _spawn_schedule.is_empty():
+		_wave_elapsed += delta
+		while not _spawn_schedule.is_empty() and _spawn_schedule[0]["t"] <= _wave_elapsed:
+			_spawn_scheduled_enemy(_spawn_schedule.pop_front())
 	# Phase B — 마법 시스템 쿨다운 + UI 갱신 (Phase A 가드보다 앞에 위치)
 	if is_instance_valid(ability_system):
 		ability_system.tick(delta)

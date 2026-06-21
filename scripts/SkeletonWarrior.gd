@@ -54,6 +54,8 @@ const WAIT_X_OFFSETS: Dictionary = {
 }
 # leash: 타겟이 밴드 밖으로 이 거리 이상 나가면 추격 포기
 const LEASH_MARGIN: float = 40.0   # 밴드 상한에서 위로 얼마나 나가면 포기
+const ACQUIRE_TOP: float = BAND_TOP - LEASH_MARGIN   # 획득선=leash 포기선과 일치(경계 깜빡임 제거)
+const RETREAT_GRACE: float = 1.5   # 필드에 적 0인 채 이 시간 지나야 대형으로 복귀
 const RETARGET_INTERVAL: float = 0.5  # 근접 유닛 타겟 재평가 주기 (초)
 # 역할별 전진 상한(최대 전진 = 최소 y). 작을수록 더 앞(적 쪽). 탱크를 최전방으로, 전사를 그 바로 뒤로.
 # ⚠️탱크가 전사보다 앞이어야 보스가 '가장 가까운 하인'으로 물몸 전사 대신 탱크를 집중한다(역전 시 전사 학살).
@@ -90,6 +92,7 @@ var kill_count: int = 0
 var level: int = 1
 var attack_timer: float = 0.0
 var retarget_timer: float = 0.0
+var no_enemy_timer: float = 0.0
 var current_target = null
 var game = null
 var _anim_state: String = ""
@@ -223,9 +226,18 @@ func _physics_process(delta: float) -> void:
 			current_target = _find_nearest_enemy_in_band()
 			retarget_timer = 0.0
 
-	# 3) 타겟 없으면 대기 위치로 복귀
+	# 3) 타겟 없음 — 필드에 적이 남아 있으면 그 자리 사수하며 재탐색 대기(곧장 후진 금지).
+	#    필드에 적이 0일 때만 짧은 유예 후 대형으로 복귀(웨이브 소강).
 	if not is_instance_valid(current_target):
-		_move_to_wait_position(delta)
+		if _any_enemy_on_field():
+			no_enemy_timer = 0.0
+			_hold_position()
+		else:
+			no_enemy_timer += delta
+			if no_enemy_timer >= RETREAT_GRACE:
+				_move_to_wait_position(delta)
+			else:
+				_hold_position()
 		return
 
 	# 4) 마중 이동 — 역할별 전진 상한(_forward_limit())을 넘어 위로는 나가지 않음
@@ -285,6 +297,19 @@ func _physics_process_bomber(delta: float) -> void:
 			_do_attack()
 	position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
 	position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
+
+# 적이 필드에 남아 있을 때 — 후진하지 않고 그 자리에서 사수(idle)
+func _hold_position() -> void:
+	velocity = Vector2.ZERO
+	if _anim_state not in ["slash", "hurt"]:
+		_play_anim("idle")
+
+# 필드(보스 포함)에 살아있는 적이 하나라도 있는지
+func _any_enemy_on_field() -> bool:
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(e):
+			return true
+	return false
 
 # 대기 위치로 서서히 복귀
 func _move_to_wait_position(delta: float) -> void:
@@ -408,14 +433,14 @@ func _find_deepest_enemy_in_band():
 			continue
 		# 보스는 교전 지대 진입(combat_engaged: 성벽 도달 또는 앞 하인에게 묶임) 시 origin이 밴드 위라도 포함.
 		# at_wall 단독이면 앞 하인이 보스를 벽 밖에 붙드는 동안 false라 궁수가 보스를 못 쏜다.
-		if not (e.is_in_group("boss") and e.combat_engaged) and e.position.y < BAND_TOP:
+		if not (e.is_in_group("boss") and e.combat_engaged) and e.position.y < ACQUIRE_TOP:
 			continue   # 밴드 위(아직 안 들어온) 적 무시
 		if e.position.y > deepest_y:
 			deepest_y = e.position.y
 			deepest = e
 	return deepest
 
-# 원거리 미니언 전용: 사거리(attack_range) 안의 적 사수를 최우선 저격.
+# 원거리 미니언 전용: 화면 내 적 사수를 사거리 무관 최우선 저격.
 # BAND_TOP 필터 없음 — standoff 위치(y≈466 등)의 적 사수도 포착(EN12).
 # 사수가 없으면 가장 깊이 침투한 적(전열 지원)으로 폴백.
 func _find_ranged_target():
@@ -427,8 +452,10 @@ func _find_ranged_target():
 			continue
 		if not e.get("is_ranged"):
 			continue   # 적 사수만 우선 탐색
+		# 적 사수는 사거리 밖이라도 최우선 락온 — 화살이 전 화면을 덮으므로(speed×lifetime≈756px)
+		# 제자리에서 쏴도 명중한다. standoff(120)로 우리 궁수보다 앞에 멈추는 적 사수를 놓치지 않도록 거리 게이트 제거.
 		var d: float = position.distance_to(e.position)
-		if d <= attack_range and d < nearest_dist:
+		if d < nearest_dist:
 			nearest_dist = d
 			nearest_archer = e
 	if nearest_archer != null:
@@ -445,7 +472,7 @@ func _find_nearest_enemy_in_band():
 			continue
 		# 보스는 교전 지대 진입(combat_engaged: 성벽 도달 또는 앞 하인에게 묶임) 시 origin이 밴드 위라도 포함.
 		# at_wall 단독이면 앞 하인에게 묶인 동안 false라 0.5s 재평가마다 보스를 놓쳐 surge/retreat 떨림이 났다.
-		if not (e.is_in_group("boss") and e.combat_engaged) and e.position.y < BAND_TOP:
+		if not (e.is_in_group("boss") and e.combat_engaged) and e.position.y < ACQUIRE_TOP:
 			continue   # 밴드 위(아직 안 들어온) 적 무시
 		var d: float = position.distance_to(e.position)
 		if d < nearest_dist:

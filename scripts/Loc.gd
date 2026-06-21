@@ -24,6 +24,7 @@ static var _strings: Dictionary = {
 	"card_range_basic":   "마법 사거리 증가\n[마법] 마법 사거리 +30",
 	"card_range_all":     "마법 범위 증가\n[마법] 마법 범위 +25%",
 	"card_area":         "넓은 마법\n[마법] 마법 적중 반경 +25%",
+	"card_chain_lightning": "연쇄 낙뢰\n[마법] 낙뢰가 적중하면 인근 적에게 연쇄. 모을수록 연쇄 대상이 늘어난다",
 	"card_minion_count":  "소환 한도 증가\n[군대] 최대 소환 수 +1",
 	"card_summon_cost":       "소환 비용 감소\n[군대] 소환 비용 -5 골드",
 	"card_minion_range":      "하인 사거리 증가\n[군대] 하인 공격 사거리 +40",
@@ -34,6 +35,7 @@ static var _strings: Dictionary = {
 	"card_legion":        "소환 증원\n소환 슬롯 +2. [군대] 카드를 모을수록 슬롯이 늘어난다",
 	"card_horde":         "골드 환급\n하인 전사 시 고용비 50%를 골드로 환급. [군대] 카드를 모을수록 환급이 커진다",
 	"card_echo":          "사망 폭발\n하인이 죽으면 폭발. [군대] 카드를 모을수록 폭발이 강해진다",
+	"card_surge":         "쇄도\n모든 마법 쿨다운 -35%. [마법] 카드를 모을수록 쿨다운이 짧아진다",
 
 	# MD12 하단 readout + MAX 배지
 	"minion_readout":         "%d / %d",  # active_minions / max_minions

@@ -74,12 +74,20 @@ var castle_max_hp: int = 500
 var wave_active: bool = false
 var enemies_alive: int = 0
 
+# 펄스 스폰 스케줄러
+var _spawn_schedule: Array[Dictionary] = []  # 각 {t, enemy, hp, spd, dmg}
+var _wave_elapsed: float = 0.0
+var _wave_spawn_y_min: float = 150.0
+var _wave_spawn_y_max: float = 240.0
+
 # 플레이어 스탯
 var attack_bonus: float = 1.0
 var graveyard_heal: int = 0
 var ability_cooldown_mult: float = 1.0   # 마법 가속 (상점)
 var ability_radius_mult: float = 1.0     # 마법 확산 (상점)
 var ability_radius_card_mult: float = 1.0  # 마법 반경 (연료 카드 area+)
+var ability_cooldown_card_mult: float = 1.0  # 마법 쿨다운 (키스톤 쇄도, 상점 ability_cooldown_mult와 분리)
+var chain_lightning_targets: int = 0   # 연쇄 낙뢰: 공격형 마법 적중 시 추가 연쇄 대상 수
 
 # 영혼 자원
 var souls: int = 0
@@ -93,7 +101,8 @@ var active_minions: int = 0
 # 키스톤 (런 빌드 곱 레이어)
 var power_card_count: int = 0
 var army_card_count: int = 0
-var keystone1: String = ""   # "" | "legion"([군대] 트리오)
+var magic_card_count: int = 0
+var keystone1: String = ""   # "" | "legion"([군대]) | "surge"([마법] 쇄도)
 var keystone2: String = ""   # "" | "horde" | "echo"
 # 파생값(_recompute_keystones에서 재계산)
 var keystone_lord_atk_mult: float = 1.0
@@ -141,6 +150,7 @@ const STAT_CARDS = [
 	{"id": "minion_range"},
 	{"id": "minion_lifesteal"},
 	{"id": "area"},
+	{"id": "chain_lightning"},
 ]
 
 var available_skill_cards: Array = []
@@ -164,6 +174,7 @@ const CARD_CATEGORY_MAP = {
 	"skull_throw":   "skill",
 	"decay_curse":   "skill",
 	"area":          "range",
+	"chain_lightning": "range",
 }
 
 # 카드 → 축 분류
@@ -174,6 +185,7 @@ const CARD_AXIS = {
 	"minion_count": "army", "summon_cost": "army",
 	"minion_range": "army", "minion_lifesteal": "army",
 	"area": "magic",
+	"chain_lightning": "magic",
 	"wall": "neutral", "graveyard": "neutral",
 }
 
@@ -700,7 +712,7 @@ func end_wave() -> void:
 		var wtype: String = WaveData.get_wave(current_chapter, current_stage, current_wave).get("type", "normal")
 		if current_wave == 0 and keystone1 == "":
 			# [군대] 축 단일 — legion 1종 + filler
-			_show_keystones(["legion"])
+			_show_keystones(["legion", "surge"])
 			return
 		elif wtype == "mid_boss" and keystone2 == "" and keystone1 == "legion":
 			_show_keystones(["horde", "echo"])
@@ -773,6 +785,8 @@ func _pick_card(index: int) -> void:
 			max_minions += 1
 			_update_minion_readout()
 			_refresh_summon_buttons()
+	elif axis == "magic":
+		magic_card_count += 1
 	_recompute_keystones()
 
 	card_panel.visible = false
@@ -789,11 +803,16 @@ func _recompute_keystones() -> void:
 	keystone_sacrifice_dmg_mult = 1.0
 	keystone_sacrifice_radius_mult = 1.0
 	keystone_sacrifice_refill = false
+	ability_cooldown_card_mult = 1.0
 	# keystone1: legion만 활성 (kingdom 제거됨)
 	# keystone2: echo만 스케일 설정 (horde 환급은 minion_died에서 실시간 계산)
 	match keystone2:
 		"echo":
 			keystone_echo_dmg = 20.0 * (1.0 + 0.10 * float(army_card_count))
+	# keystone1: 쇄도 = [마법] 카드 수에 비례한 쿨다운 감소 (echo처럼 파생 곱으로 재계산)
+	if keystone1 == "surge":
+		var reduction: float = min(0.35 + 0.05 * float(magic_card_count), 0.60)
+		ability_cooldown_card_mult = 1.0 - reduction
 
 func _apply_keystone(id: String) -> void:
 	match id:
@@ -802,6 +821,8 @@ func _apply_keystone(id: String) -> void:
 			max_minions += 2
 			_update_minion_readout()
 			_refresh_summon_buttons()
+		"surge":
+			keystone1 = "surge"
 		"horde":
 			keystone2 = "horde"
 		"echo":
@@ -1016,6 +1037,8 @@ func _apply_card(id: String, mult: float = 1.0) -> void:
 			minion_lifesteal += 0.20 * mult
 		"area":
 			ability_radius_card_mult += 0.25 * mult
+		"chain_lightning":
+			chain_lightning_targets += 1
 
 ## 웨이브 트래커 — 카피바라고 스타일 캡슐형 노드 스트립
 ## 아이콘은 NotoEmoji placeholder (아트 입고 후 교체)

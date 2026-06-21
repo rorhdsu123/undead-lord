@@ -28,6 +28,8 @@ const LIGHTNING_IMPACT_RADIUS: float = 55.0  # 착탄 관용 반경 (px)
 const LIGHTNING_DMG_BOSS_NORMAL: float  = 1.0  # 보스 일반 배수
 const LIGHTNING_DMG_BOSS_WINDUP: float  = 2.0  # 보스 와인드업 치명타 배수
 const LIGHTNING_DMG_MINION: float        = 3.0  # 잡몹 배수
+const CHAIN_DMG_FACTOR: float = 0.5      # 연쇄 낙뢰 피해 = 본 낙뢰의 50% (가제)
+const CHAIN_IMPACT_RADIUS: float = 35.0  # 연쇄 대상 작은 임팩트 반경 px (가제)
 
 ## 망령의 나팔
 const TRUMPET_COOLDOWN: float      = 6.0    # 쿨다운 (초)
@@ -118,6 +120,7 @@ var _armed_slot: int = -1   # 현재 무장된 슬롯 인덱스
 # 쿨다운 상태
 # ──────────────────────────────────────────────────────────────
 var _cooldowns: Array[float] = [0.0, 0.0]         # 각 슬롯의 남은 쿨다운(초)
+var _cooldown_totals: Array[float] = [0.0, 0.0]   # 발동 시점의 실제 쿨다운(쇄도 등 반영) — 링이 0부터 꽉 차게 정규화
 var _prev_on_cooldown: Array[bool] = [false, false] # 전이 감지용: 직전 프레임 쿨 상태
 
 # ──────────────────────────────────────────────────────────────
@@ -415,7 +418,9 @@ func on_field_tap(world_pos: Vector2) -> void:
 
 	# 발현!
 	_fire_ability(slot, world_pos)
-	_cooldowns[slot] = ability["cooldown"] * _cd_mult()
+	var actual_cd: float = ability["cooldown"] * _cd_mult()
+	_cooldowns[slot] = actual_cd
+	_cooldown_totals[slot] = actual_cd   # 링은 이 실제 쿨 기준으로 0→꽉 참(쇄도 시 더 빨리)
 	_disarm()
 
 # ──────────────────────────────────────────────────────────────
@@ -477,6 +482,39 @@ func _fire_lightning(world_pos: Vector2) -> void:
 
 	# VFX — 착탄점 낙뢰 임팩트 (반경 mult 반영)
 	_spawn_lightning_impact(world_pos, impact_r)
+
+	# 연쇄 낙뢰 — chain_lightning 카드 누적 시 인근 미적중 적에게 튐
+	var chain_n: int = game.chain_lightning_targets
+	if chain_n > 0:
+		# player는 함수 상단에서 이미 선언됨 (재선언 금지)
+		var all_enemies: Array = game.get_tree().get_nodes_in_group("enemies")
+		# 본 착탄 반경 밖 적만 후보 (이미 맞은 적 제외)
+		var candidates: Array = []
+		for e in all_enemies:
+			if not is_instance_valid(e):
+				continue
+			if e.global_position.distance_to(world_pos) > impact_r:
+				candidates.append(e)
+		# 거리 오름차순 정렬 (가장 가까운 적 우선)
+		candidates.sort_custom(func(a: Node, b: Node) -> bool:
+			return a.global_position.distance_to(world_pos) < b.global_position.distance_to(world_pos)
+		)
+		var chain_count: int = min(chain_n, candidates.size())
+		for ci in chain_count:
+			var e: Node = candidates[ci]
+			if not is_instance_valid(e):
+				continue
+			if e.has_method("interrupt_windup"):  # 보스
+				var dmg: float = player.attack_damage * LIGHTNING_DMG_BOSS_NORMAL \
+					* CHAIN_DMG_FACTOR * game.attack_bonus * game.keystone_lord_atk_mult
+				e.take_damage(dmg, "resist")
+			else:  # 잡몹
+				var dmg: float = player.attack_damage * LIGHTNING_DMG_MINION \
+					* CHAIN_DMG_FACTOR * game.attack_bonus * game.keystone_lord_atk_mult
+				e.take_damage(dmg)
+			# VFX — 아크 + 작은 임팩트
+			_spawn_chain_arc(world_pos, e.global_position)
+			_spawn_lightning_impact(e.global_position, CHAIN_IMPACT_RADIUS)
 
 	# 화면 효과
 	if crit_landed:
@@ -560,7 +598,7 @@ func _get_ability(slot: int) -> Dictionary:
 
 ## 상점 노브: 쿨다운 배수 (기본 1.0, 상점 ability_cd 구매 시 감소)
 func _cd_mult() -> float:
-	return game.ability_cooldown_mult if is_instance_valid(game) else 1.0
+	return (game.ability_cooldown_mult * game.ability_cooldown_card_mult) if is_instance_valid(game) else 1.0
 
 ## 상점 노브 × 카드 노브: 반경 배수 (상점 ability_radius + 카드 area 누적)
 func _radius_mult() -> float:
@@ -686,7 +724,9 @@ func _refresh_ui() -> void:
 	for i in SLOT_COUNT:
 		var ability: Dictionary = _get_ability(i)
 		var cd: float = _cooldowns[i]
-		var total_cd: float = ability["cooldown"]
+		# 링 정규화 = 발동 시점의 실제 쿨(쇄도 반영). 기본 쿨로 나누면 줄어든 만큼 링이 잘려
+		# "이미 일부 찬 채로 시작"하므로 어색 → 실제 쿨 기준이면 항상 0→꽉 참(단지 더 빠름).
+		var total_cd: float = _cooldown_totals[i] if _cooldown_totals[i] > 0.0 else ability["cooldown"]
 		var is_armed: bool = (_arm_state == ArmState.ARMED and _armed_slot == i)
 		var on_cd: bool = cd > 0.0
 
@@ -750,6 +790,30 @@ func _hide_reach_circle() -> void:
 # ──────────────────────────────────────────────────────────────
 # VFX
 # ──────────────────────────────────────────────────────────────
+
+## 연쇄 낙뢰 아크 — from_pos에서 to_pos로 지그재그 번개 선 (ICON_LIGHTNING_COLOR, ~0.20s 페이드)
+func _spawn_chain_arc(from_pos: Vector2, to_pos: Vector2) -> void:
+	var seg_count: int = randi_range(3, 5)  # 지그재그 꺾임 수 (중간점 3~5개)
+	var arc: Line2D = Line2D.new()
+	arc.default_color = ICON_LIGHTNING_COLOR
+	arc.width = 2.5
+	arc.z_index = 99  # 액터 위, 임팩트와 동급 레이어
+	# 시작점 → 중간 지터점들 → 끝점
+	arc.add_point(from_pos)
+	for k: int in seg_count:
+		var t: float = float(k + 1) / float(seg_count + 1)
+		var mid: Vector2 = from_pos.lerp(to_pos, t)
+		# 수직 지터: 경로와 수직 방향으로 흔들기
+		var perp: Vector2 = (to_pos - from_pos).rotated(PI * 0.5).normalized()
+		var jitter_scale: float = (to_pos - from_pos).length() * 0.12  # 거리의 12% 진폭 (가제)
+		mid += perp * randf_range(-jitter_scale, jitter_scale)
+		arc.add_point(mid)
+	arc.add_point(to_pos)
+	game.add_child(arc)
+	# 알파 페이드 후 제거
+	var tw: Tween = create_tween()
+	tw.tween_property(arc, "modulate:a", 0.0, randf_range(0.18, 0.22))
+	tw.tween_callback(arc.queue_free)
 
 ## 낙뢰 임팩트 — 착탄점 번개 스파크 (impact_r: 실제 적용 반경, 상점 노브 반영)
 func _spawn_lightning_impact(pos: Vector2, impact_r: float = LIGHTNING_IMPACT_RADIUS) -> void:

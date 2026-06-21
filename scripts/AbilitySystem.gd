@@ -30,6 +30,8 @@ const LIGHTNING_DMG_BOSS_WINDUP: float  = 2.0  # 보스 와인드업 치명타 �
 const LIGHTNING_DMG_MINION: float        = 3.0  # 잡몹 배수
 const CHAIN_DMG_FACTOR: float = 0.5      # 연쇄 낙뢰 피해 = 본 낙뢰의 50% (가제)
 const CHAIN_IMPACT_RADIUS: float = 35.0  # 연쇄 대상 작은 임팩트 반경 px (가제)
+const CHAIN_START_DELAY: float = 0.12   # 본 낙뢰 착탄 후 첫 연쇄 홉까지의 텀 (초, 가제)
+const CHAIN_HOP_DELAY: float = 0.08     # 사슬 홉 간격 (초, 가제)
 
 ## 망령의 나팔
 const TRUMPET_COOLDOWN: float      = 6.0    # 쿨다운 (초)
@@ -483,38 +485,78 @@ func _fire_lightning(world_pos: Vector2) -> void:
 	# VFX — 착탄점 낙뢰 임팩트 (반경 mult 반영)
 	_spawn_lightning_impact(world_pos, impact_r)
 
-	# 연쇄 낙뢰 — chain_lightning 카드 누적 시 인근 미적중 적에게 튐
+	# 연쇄 낙뢰 — chain_lightning 카드 누적 시 순차 사슬(daisy-chain)로 튐
+	# 흐름: 착탄점 → A → B → C … (직전 적에서 다음 가장 가까운 적으로 이어짐)
 	var chain_n: int = game.chain_lightning_targets
 	if chain_n > 0:
 		# player는 함수 상단에서 이미 선언됨 (재선언 금지)
 		var all_enemies: Array = game.get_tree().get_nodes_in_group("enemies")
-		# 본 착탄 반경 밖 적만 후보 (이미 맞은 적 제외)
+		# 본 착탄 반경 밖 적만 후보 풀 (이미 맞은 적 제외)
 		var candidates: Array = []
 		for e in all_enemies:
 			if not is_instance_valid(e):
 				continue
 			if e.global_position.distance_to(world_pos) > impact_r:
 				candidates.append(e)
-		# 거리 오름차순 정렬 (가장 가까운 적 우선)
-		candidates.sort_custom(func(a: Node, b: Node) -> bool:
-			return a.global_position.distance_to(world_pos) < b.global_position.distance_to(world_pos)
-		)
-		var chain_count: int = min(chain_n, candidates.size())
-		for ci in chain_count:
-			var e: Node = candidates[ci]
-			if not is_instance_valid(e):
-				continue
-			if e.has_method("interrupt_windup"):  # 보스
-				var dmg: float = player.attack_damage * LIGHTNING_DMG_BOSS_NORMAL \
-					* CHAIN_DMG_FACTOR * game.attack_bonus * game.keystone_lord_atk_mult
-				e.take_damage(dmg, "resist")
-			else:  # 잡몹
-				var dmg: float = player.attack_damage * LIGHTNING_DMG_MINION \
-					* CHAIN_DMG_FACTOR * game.attack_bonus * game.keystone_lord_atk_mult
-				e.take_damage(dmg)
-			# VFX — 아크 + 작은 임팩트
-			_spawn_chain_arc(world_pos, e.global_position)
-			_spawn_lightning_impact(e.global_position, CHAIN_IMPACT_RADIUS)
+
+		# 순차 사슬: 경로 탐색은 동기(다음 홉 기준점 필요), 피해+VFX는 홉별 지연 콜백
+		var current_pos: Vector2 = world_pos
+		var used: Array = []
+		# 각 홉의 (from_pos, to_pos, 적 노드) 미리 캡처 — 경로 순서는 지금 결정
+		var hop_data: Array = []  # Array of {from, to, target}
+
+		for _hop in chain_n:
+			# current_pos에서 가장 가까운 미사용 후보 탐색
+			var best: Node = null
+			var best_dist: float = INF
+			for e in candidates:
+				if not is_instance_valid(e):
+					continue
+				if e in used:
+					continue
+				var d: float = e.global_position.distance_to(current_pos)
+				if d < best_dist:
+					best_dist = d
+					best = e
+			if best == null:
+				break  # 이을 적 없음
+
+			# 피해 적용 없이 경로만 기록 (피해는 지연 콜백에서)
+			hop_data.append({
+				"from": current_pos,
+				"to": best.global_position,
+				"target": best
+			})
+
+			# 다음 홉 준비
+			current_pos = best.global_position
+			used.append(best)
+
+		# 피해+VFX — CHAIN_START_DELAY 후 홉당 CHAIN_HOP_DELAY씩 순차 점등
+		for i: int in hop_data.size():
+			var from_pos: Vector2 = hop_data[i]["from"]
+			var to_pos: Vector2   = hop_data[i]["to"]
+			var hop_target: Node  = hop_data[i]["target"]
+			var delay: float      = CHAIN_START_DELAY + i * CHAIN_HOP_DELAY
+			var timer := game.get_tree().create_timer(delay)
+			timer.timeout.connect(
+				func() -> void:
+					if not is_instance_valid(self) or not is_instance_valid(game):
+						return
+					# 적이 아직 유효하면 피해 적용
+					if is_instance_valid(hop_target):
+						if hop_target.has_method("interrupt_windup"):  # 보스
+							var dmg: float = player.attack_damage * LIGHTNING_DMG_BOSS_NORMAL \
+								* CHAIN_DMG_FACTOR * game.attack_bonus * game.keystone_lord_atk_mult
+							hop_target.take_damage(dmg, "resist")
+						else:  # 잡몹
+							var dmg: float = player.attack_damage * LIGHTNING_DMG_MINION \
+								* CHAIN_DMG_FACTOR * game.attack_bonus * game.keystone_lord_atk_mult
+							hop_target.take_damage(dmg)
+					# 적이 이미 죽어 무효여도 VFX는 캡처된 위치로 (사슬 시각 끊김 방지)
+					_spawn_chain_arc(from_pos, to_pos)
+					_spawn_lightning_impact(to_pos, CHAIN_IMPACT_RADIUS)
+			)
 
 	# 화면 효과
 	if crit_landed:

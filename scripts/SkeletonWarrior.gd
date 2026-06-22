@@ -64,6 +64,11 @@ const RETARGET_INTERVAL: float = 0.5  # 근접 유닛 타겟 재평가 주기 (�
 const FORWARD_LIMIT_TANK: float = CASTLE_TOP_WALL - 50.0     # 350.8, 탱크 최전방 (보스를 직접 막는 라인)
 const FORWARD_LIMIT_WARRIOR: float = CASTLE_TOP_WALL - 30.0  # 370.8, 전사는 탱크 ~20px 뒤 (근접타는 거리 무관히 적중)
 
+# ── 분리 스티어링 — 아군끼리 겹쳐 한 덩어리로 보이는 문제 완화(약한 밀어내기) ──
+# 충돌 물리 대신 가벼운 밀어내기: 라인 정렬은 유지하면서 겹침만 푼다. move_speed보다 작게(접근·복귀 우선).
+const SEPARATION_RADIUS: float = 30.0     # 이 거리 안의 아군에게서 밀려남
+const SEPARATION_STRENGTH: float = 45.0   # 밀어내기 속도(px/s) — 에디터 플테 노브
+
 # 정적 단일 이미지 오버라이드 (풀 애니 미입고 역할 — 전 동작이 한 컷으로 표시).
 # 추후 같은 폴더에 0_[Role]_[Motion]_###.png 프레임 입고 시 여기서 제거하고 프레임 로더로 전환.
 const STATIC_SPRITES: Dictionary = {
@@ -93,6 +98,7 @@ var kill_count: int = 0
 var level: int = 1
 var attack_timer: float = 0.0
 var retarget_timer: float = 0.0
+var attack_phase: float = 0.0   # 같은 종 일제 타격 방지용 위상 오프셋(_ready에서 randf)
 var no_enemy_timer: float = 0.0
 var current_target = null
 var game = null
@@ -116,6 +122,8 @@ func _ready() -> void:
 	move_speed = preset["speed"]
 	attack_range = preset["range"]
 	attack_interval = preset["interval"]
+	attack_phase = randf()
+	attack_timer = attack_phase * attack_interval
 	behavior = preset["behavior"]
 	evolves = preset["evolves"]
 	base_scale = preset["scale"]
@@ -249,14 +257,17 @@ func _physics_process(delta: float) -> void:
 	var dist: float = position.distance_to(clamped_target_pos)
 	if dist > attack_range:
 		var dir: Vector2 = (clamped_target_pos - position).normalized()
-		velocity = dir * move_speed
+		velocity = dir * move_speed + _separation_vector()
 		move_and_slide()
-		attack_timer = 0.0
+		attack_timer = attack_phase * attack_interval
 		anim_sprite.flip_h = dir.x < 0
 		if _anim_state not in ["hurt"]:
 			_play_anim("walk")
 	else:
-		velocity = Vector2.ZERO
+		# 정지 대신 약한 분리만 — 같은 적을 둘러싸며 때려 '여럿이 친다'는 그림을 만든다
+		velocity = _separation_vector()
+		if velocity != Vector2.ZERO:
+			move_and_slide()
 		if _anim_state not in ["slash", "hurt"]:
 			_play_anim("idle")
 		attack_timer += delta
@@ -301,7 +312,13 @@ func _physics_process_bomber(delta: float) -> void:
 
 # 적이 필드에 남아 있을 때 — 후진하지 않고 그 자리에서 사수(idle)
 func _hold_position() -> void:
-	velocity = Vector2.ZERO
+	# 적이 필드에 남아 있을 때 — 후진은 않되 분리 밀어내기는 적용(겹침 방지)
+	velocity = _separation_vector()
+	if velocity != Vector2.ZERO:
+		move_and_slide()
+		position.y = max(position.y, _forward_limit())
+		position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
+		position.y = clamp(position.y, BOUNDS.position.y, BOUNDS.position.y + BOUNDS.size.y)
 	if _anim_state not in ["slash", "hurt"]:
 		_play_anim("idle")
 
@@ -318,13 +335,16 @@ func _move_to_wait_position(delta: float) -> void:
 	var dist: float = position.distance_to(wait_pos)
 	if dist > 8.0:
 		var dir: Vector2 = (wait_pos - position).normalized()
-		velocity = dir * move_speed * 0.7
+		velocity = dir * move_speed * 0.7 + _separation_vector()
 		move_and_slide()
 		anim_sprite.flip_h = dir.x < 0
 		if _anim_state not in ["hurt"]:
 			_play_anim("walk")
 	else:
-		velocity = Vector2.ZERO
+		# 정착선 도달 — 같은 종이 같은 x오프셋을 공유해도 분리로 벌어지게
+		velocity = _separation_vector()
+		if velocity != Vector2.ZERO:
+			move_and_slide()
 		if _anim_state not in ["slash", "hurt"]:
 			_play_anim("idle")
 	position.x = clamp(position.x, BOUNDS.position.x, BOUNDS.position.x + BOUNDS.size.x)
@@ -492,6 +512,27 @@ func _forward_limit() -> float:
 		"tank":    return FORWARD_LIMIT_TANK
 		"warrior": return FORWARD_LIMIT_WARRIOR
 		_:         return BAND_TOP
+
+# 인근 아군에게서 밀려나는 약한 분리 벡터(velocity, px/s). 겹침 방지·공격 분산용.
+func _separation_vector() -> Vector2:
+	var push: Vector2 = Vector2.ZERO
+	for other in get_tree().get_nodes_in_group("minions"):
+		if other == self or not is_instance_valid(other):
+			continue
+		# 같은 종끼리만 분리 — 역할별 앞뒤 층(탱크 앞·전사 뒤)을 분리력이 무너뜨려
+		# 전사가 탱크에게 뒤로 밀려 적을 못 때리던 문제 방지.
+		if other.minion_type != minion_type:
+			continue
+		var diff: Vector2 = position - other.position
+		var d: float = diff.length()
+		if d >= SEPARATION_RADIUS:
+			continue
+		if d > 0.0:
+			push += (diff / d) * (1.0 - d / SEPARATION_RADIUS)   # 가까울수록 강하게
+		else:
+			# 완전히 겹침 — instance_id 기반 결정적 방향으로 분리
+			push += Vector2.RIGHT.rotated(float(get_instance_id() % 8) * (PI / 4.0))
+	return push * SEPARATION_STRENGTH
 
 func _heal(amount: float) -> void:
 	if amount <= 0.0:

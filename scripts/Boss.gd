@@ -67,6 +67,7 @@ var boss_type: String = "mid_boss"
 
 var game = null
 var _anim_state: String = ""
+var vulnerable_timer: float = 0.0
 
 # 알바생 - 페이즈
 var overtime_triggered: bool = false
@@ -183,6 +184,9 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		move_and_slide()
 		return
+
+	if vulnerable_timer > 0.0:
+		vulnerable_timer -= delta
 
 	if boss_type == "mid_boss":
 		_pattern_intern(delta)
@@ -410,6 +414,8 @@ func _spawn_stun_stars() -> Node2D:
 func take_damage(dmg: float, tier: String = "normal") -> void:
 	if _anim_state == "die":
 		return
+	if vulnerable_timer > 0.0 and game:
+		dmg *= (1.0 + game.vulnerability_amount)
 	hp -= dmg
 	hp_bar.value = (hp / max_hp) * 100.0
 	_hit_flash()
@@ -564,6 +570,15 @@ func apply_knockback(_from_pos: Vector2, _force: float) -> void:
 
 func apply_slow(_duration: float) -> void:
 	pass  # 보스는 슬로우 면역
+
+func apply_vulnerable(duration: float) -> void:
+	vulnerable_timer = duration
+	anim_sprite.modulate = Color(1.5, 0.45, 1.6, 1.0)  # 취약 자주/보라 — Enemy.gd VULN_TINT와 일치
+	var t: SceneTreeTimer = get_tree().create_timer(duration)
+	t.timeout.connect(func() -> void:
+		if is_instance_valid(self) and not is_charging_rage:
+			_restore_phase_modulate()
+	)
 
 func _die() -> void:
 	_play_anim("die")

@@ -88,6 +88,10 @@ var ability_radius_mult: float = 1.0     # 마법 확산 (상점)
 var ability_radius_card_mult: float = 1.0  # 마법 반경 (연료 카드 area+)
 var ability_cooldown_card_mult: float = 1.0  # 마법 쿨다운 (키스톤 쇄도, 상점 ability_cooldown_mult와 분리)
 var chain_lightning_targets: int = 0   # 연쇄 낙뢰: 공격형 마법 적중 시 추가 연쇄 대상 수
+var suppress_duration: float = 0.0     # 제압: 나팔 적중 적 정지 지속(초·누적, 0.0=무효)
+var vulnerability_amount: float = 0.0    # 취약: 추가 피해 비율(0.0=무효). 표식된 적 take_damage서 (1+이값) 곱
+var vulnerability_duration: float = 3.0  # 취약 표식 지속(초, 가제)
+var execution_threshold: float = 0.0     # 처형: HP비율 문턱(0.0=무효, 예 0.15)
 
 # 영혼 자원
 var souls: int = 0
@@ -103,7 +107,7 @@ var power_card_count: int = 0
 var army_card_count: int = 0
 var magic_card_count: int = 0
 var keystone1: String = ""   # "" | "legion"([군대]) | "surge"([마법] 쇄도)
-var keystone2: String = ""   # "" | "horde" | "echo"
+var keystone2: String = ""   # "" | "horde" | "echo" | "vulnerable" | "execute"
 # 파생값(_recompute_keystones에서 재계산)
 var keystone_lord_atk_mult: float = 1.0
 var keystone_minion_atk_mult: float = 1.0
@@ -151,6 +155,7 @@ const STAT_CARDS = [
 	{"id": "minion_lifesteal"},
 	{"id": "area"},
 	{"id": "chain_lightning"},
+	{"id": "suppress"},
 ]
 
 var available_skill_cards: Array = []
@@ -175,6 +180,7 @@ const CARD_CATEGORY_MAP = {
 	"decay_curse":   "skill",
 	"area":          "range",
 	"chain_lightning": "range",
+	"suppress":      "range",
 }
 
 # 카드 → 축 분류
@@ -186,6 +192,7 @@ const CARD_AXIS = {
 	"minion_range": "army", "minion_lifesteal": "army",
 	"area": "magic",
 	"chain_lightning": "magic",
+	"suppress": "magic",
 	"wall": "neutral", "graveyard": "neutral",
 }
 
@@ -744,11 +751,14 @@ func end_wave() -> void:
 	if not _is_tutorial():
 		var wtype: String = WaveData.get_wave(current_chapter, current_stage, current_wave).get("type", "normal")
 		if current_wave == 0 and keystone1 == "":
-			# [군대] 축 단일 — legion 1종 + filler
-			_show_keystones(["legion", "surge"])
+			# W1 축 선언 — 전용 「전투 전략」 화면
+			_show_keystones(["legion", "surge"], true)
 			return
 		elif wtype == "mid_boss" and keystone2 == "" and keystone1 == "legion":
 			_show_keystones(["horde", "echo"])
+			return
+		elif wtype == "mid_boss" and keystone2 == "" and keystone1 == "surge":
+			_show_keystones(["vulnerable", "execute"])
 			return
 	_show_cards()
 
@@ -840,11 +850,18 @@ func _recompute_keystones() -> void:
 	keystone_sacrifice_radius_mult = 1.0
 	keystone_sacrifice_refill = false
 	ability_cooldown_card_mult = 1.0
+	vulnerability_amount = 0.0
+	execution_threshold = 0.0
 	# keystone1: legion만 활성 (kingdom 제거됨)
 	# keystone2: echo만 스케일 설정 (horde 환급은 minion_died에서 실시간 계산)
+	#            vulnerable/execute는 여기서 파생 수치 계산
 	match keystone2:
 		"echo":
 			keystone_echo_dmg = 20.0 * (1.0 + 0.10 * float(army_card_count))
+		"vulnerable":
+			vulnerability_amount = min(0.25 + 0.05 * float(magic_card_count), 0.50)
+		"execute":
+			execution_threshold = min(0.15 + 0.03 * float(magic_card_count), 0.25)
 	# keystone1: 쇄도 = [마법] 카드 수에 비례한 쿨다운 감소 (echo처럼 파생 곱으로 재계산)
 	if keystone1 == "surge":
 		var reduction: float = min(0.35 + 0.05 * float(magic_card_count), 0.60)
@@ -863,32 +880,61 @@ func _apply_keystone(id: String) -> void:
 			keystone2 = "horde"
 		"echo":
 			keystone2 = "echo"
+		"vulnerable":
+			keystone2 = "vulnerable"
+		"execute":
+			keystone2 = "execute"
 	_recompute_keystones()
 
-func _show_keystones(ids: Array) -> void:
+## 키스톤 선택 화면.
+## axis_pick=true(W1 축 선언) → 전용 「전투 전략」 2열 갈림 화면.
+## axis_pick=false(중간보스 #2 심화) → 일반 카드 UI(키스톤 2장 + 필러 1장, 3개중 1택).
+func _show_keystones(ids: Array, axis_pick: bool = false) -> void:
 	for n: Node in _card_rows:
 		if is_instance_valid(n):
 			n.queue_free()
 	_card_rows.clear()
 
-	card_title.text = Loc.t("keystone_select_title")
-	card_subtitle.text = Loc.t("keystone_select_subtitle")
+	if axis_pick:
+		# W1 축 선언 — 전용 2열 갈림 화면
+		card_title.text = Loc.t("keystone_select_title")
+		card_subtitle.text = Loc.t("keystone_select_subtitle")
+		current_cards = []
+		for id: String in ids:
+			current_cards.append({"id": id, "rare": true, "keystone": true})
+		var col_w: float = 218.0
+		var gap: float = 16.0
+		var card_y: float = 250.0
+		var total: float = col_w * float(current_cards.size()) + gap * float(current_cards.size() - 1)
+		var x0: float = (480.0 - total) * 0.5
+		for i: int in current_cards.size():
+			var x: float = x0 + float(i) * (col_w + gap)
+			var row: Control = _build_keystone_card(current_cards[i], i, x, card_y, col_w)
+			card_panel.add_child(row)
+			_card_rows.append(row)
+			_flash_card_glow(row)
+		card_panel.visible = true
+		return
 
+	# 중간보스 #2 — 일반 카드 UI(키스톤 2장 + 필러 스탯 1장)
+	card_title.text = Loc.t("card_select_title")
+	card_subtitle.text = Loc.t("card_select_subtitle")
 	current_cards = []
 	for id: String in ids:
 		current_cards.append({"id": id, "rare": true, "keystone": true})
+	var stat_pool: Array = STAT_CARDS.duplicate()
+	stat_pool.shuffle()
+	current_cards.append({"id": stat_pool[0]["id"], "rare": false})
 
-	var col_w: float = 218.0
-	var gap: float = 16.0
-	var card_y: float = 250.0
-	var total: float = col_w * float(current_cards.size()) + gap * float(current_cards.size() - 1)
-	var x0: float = (480.0 - total) * 0.5
+	var card_h: float = 120.0
+	var gap2: float = 10.0
+	var start_y: float = 250.0
 	for i: int in current_cards.size():
-		var x: float = x0 + float(i) * (col_w + gap)
-		var row: Control = _build_keystone_card(current_cards[i], i, x, card_y, col_w)
+		var row: Control = _build_card_row(current_cards[i], i, start_y + float(i) * (card_h + gap2))
 		card_panel.add_child(row)
 		_card_rows.append(row)
-		_flash_card_glow(row)
+		if current_cards[i].get("rare", false):
+			_flash_card_glow(row)
 
 	card_panel.visible = true
 
@@ -1019,7 +1065,7 @@ func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
 
 func _build_keystone_card(card: Dictionary, index: int, x_pos: float, y_pos: float, col_w: float) -> Control:
 	var id: String = card["id"]
-	var axis: String = "magic" if id == "surge" else "army"
+	var axis: String = "magic" if id in ["surge", "vulnerable", "execute"] else "army"
 	var axis_label: String = "마법" if axis == "magic" else "군대"
 	var axis_col: Color = Color("#7b4fc9") if axis == "magic" else Color("#0a7d6b")
 
@@ -1188,6 +1234,8 @@ func _apply_card(id: String, mult: float = 1.0) -> void:
 			ability_radius_card_mult += 0.25 * mult
 		"chain_lightning":
 			chain_lightning_targets += 1
+		"suppress":
+			suppress_duration = minf(suppress_duration + 0.5, 2.0)
 
 ## 웨이브 트래커 — 카피바라고 스타일 캡슐형 노드 스트립
 ## 아이콘은 NotoEmoji placeholder (아트 입고 후 교체)

@@ -27,6 +27,7 @@ static var _strings: Dictionary = {
 	"card_range_all":     "마법 범위 증가\n[마법] 마법 범위 +25%",
 	"card_area":         "넓은 마법\n[마법] 마법 적중 반경 +25%. 모을수록 마법 범위가 커져 더 많은 적을 덮친다",
 	"card_chain_lightning": "연쇄 낙뢰\n[마법] 맞은 적과 가까운 적 1명을 감전 (피해 50%). 모을수록 감전이 사슬처럼 이어진다",
+	"card_suppress":       "제압\n[마법] 나팔에 밀린 적을 잠깐 정지시킨다. 모을수록 정지가 길어진다",
 	"card_minion_count":  "소환 한도 증가\n[군대] 최대 소환 수 +1",
 	"card_summon_cost":       "소환 비용 감소\n[군대] 소환 비용 -5 골드",
 	"card_minion_range":      "하인 사거리 증가\n[군대] 하인 공격 사거리 +40",
@@ -38,6 +39,8 @@ static var _strings: Dictionary = {
 	"card_horde":         "골드 환급\n하인 전사 시 고용비 50% 환급\n[군대] 카드를 모을수록 환급 증가",
 	"card_echo":          "사망 폭발\n하인이 죽으면 폭발\n[군대] 카드를 모을수록 폭발 강화",
 	"card_surge":         "쇄도\n모든 마법 쿨다운 -35%\n[마법] 카드를 모을수록 쿨다운 감소",
+	"card_vulnerable":    "취약\n마법에 맞은 적은 약해져 더 큰 피해를 입는다 ↑\n[마법] 카드를 모을수록 적이 받는 피해량 ↑",
+	"card_execute":       "처형\n마법으로 직접 맞힌 체력 15% 이하의 적을 즉시 처치한다\n[마법] 카드를 모을수록 더 튼튼한 적도 처치 ↑",
 
 	# MD12 하단 readout + MAX 배지
 	"minion_readout":         "%d / %d",  # active_minions / max_minions

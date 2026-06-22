@@ -2,6 +2,7 @@ extends CharacterBody2D
 
 const ArrowScene = preload("res://scenes/Arrow.tscn")
 const RangeIndicatorScript = preload("res://scripts/RangeIndicator.gd")
+const VulnIconScript = preload("res://scripts/VulnIcon.gd")
 
 const TYPE_PRESETS: Dictionary = {
 	"normal": {"hp_mult": 1.0, "speed_mult": 1.0, "damage_mult": 1.0, "scale": 1.0,
@@ -33,6 +34,10 @@ const BODY_FEET_OFFSET: float = 80.0  # 성벽 정지·범위원 중심 앵커(�
 # 나팔 넉백이 적을 화면 밖으로 날려보내 "안 보이는 적이 성을 때리는" 버그 방지.
 const PLAY_BOUNDS: Rect2 = Rect2(0.0, 150.0, 480.0, 750.0)  # x:0~480, y:150~900
 const MAX_KNOCKBACK: float = 600.0  # 넉백 속도 상한 (px/s) — 나팔 연타 누적 폭주 방지
+const HIT_TINT:  Color = Color(1.5, 0.4, 0.4, 1.0)    # 피격 순간 플래시(빨강)
+const SLOW_TINT: Color = Color(0.5, 0.5, 1.5, 1.0)    # 둔화(파랑)
+const VULN_TINT: Color = Color(1.5, 0.45, 1.6, 1.0)   # 취약(자주/보라) — 마법 축 색, 피격 빨강과 구별
+const STUN_TINT: Color = Color(0.45, 1.25, 1.95, 1.0) # 제압(stun) 전용 틴트 — 둔화 파랑(0.5,0.5,1.5)보다 훨씬 밝고 시안
 
 static var _cached_frames: Dictionary = {}
 
@@ -44,6 +49,9 @@ var damage: int = 10
 var attack_cooldown: float = 1.5
 var attack_timer: float = 0.0
 var slow_timer: float = 0.0
+var vulnerable_timer: float = 0.0
+var stun_timer: float = 0.0
+var _flash_timer: float = 0.0  # 피격 플래시 지속 카운트다운 (중앙 틴트 계산용)
 var knockback_vel: Vector2 = Vector2.ZERO
 var knockback_resist: float = 1.0  # 질량 대용(hp_mult). 클수록 덜 밀림
 var _sprite_base_scale: Vector2 = Vector2.ONE
@@ -55,8 +63,10 @@ var is_ranged: bool = false
 var _attack_anim: String = "slash"
 var _anim_state: String = ""
 var _last_valid_pos: Vector2 = Vector2.ZERO  # move_and_slide NaN 복구용 (겹친 바디 충돌 해소 가드)
+var _is_execute: bool = false  # 처형 경로 플래그 — _die()에서 일반 death effect 스킵용
 
 var game = null
+var _vuln_icon: Node2D = null
 
 @onready var hp_bar: ProgressBar = $HPBar
 @onready var anim_sprite: AnimatedSprite2D = $AnimSprite
@@ -92,6 +102,11 @@ func _ready() -> void:
 		add_child(indicator)
 		# 범위원 중심 = 발끝(_foot_offset) = 공격 판정 기준점. 원이 성에 닿을 때 실제로 공격 들어가도록 일치.
 		indicator.setup(castle_attack_range, Color(0.3, 0.6, 1.0), _foot_offset)
+	# 취약 상태 아이콘: HP바(offset_top=-50) 위 -64 에 배치. 평소 숨김, visible만 토글.
+	_vuln_icon = VulnIconScript.new()
+	add_child(_vuln_icon)
+	_vuln_icon.setup(-64.0)
+	_vuln_icon.visible = false
 	_play_anim("idle")
 
 static func _get_sprite_frames(folder: String, attack_folder: String) -> SpriteFrames:
@@ -154,15 +169,45 @@ func _physics_process(delta: float) -> void:
 	_last_valid_pos = global_position
 
 	# 넉백: 직접 위치 이동 + 선형 감쇠 (이동 로직과 독립적으로 누적)
+	# 제압(stun) 중에도 넉백은 계속 적용 — 설계: 나팔에 밀린 뒤 그 자리에 멈춤.
+	# stun이 막는 건 자력 이동(걷기)과 공격이지 넉백 물리가 아님.
 	if knockback_vel.length_squared() > 1.0:
 		global_position += knockback_vel * delta
 		knockback_vel = knockback_vel.move_toward(Vector2.ZERO, KNOCKBACK_DECAY * delta)
 
-	if slow_timer > 0:
+	# 상태 타이머 감소
+	if _flash_timer > 0.0:
+		_flash_timer -= delta
+	if stun_timer > 0.0:
+		stun_timer -= delta
+	if slow_timer > 0.0:
 		slow_timer -= delta
 		speed = base_speed * 0.4
 	else:
 		speed = base_speed
+	if vulnerable_timer > 0.0:
+		vulnerable_timer -= delta
+
+	# 상태 틴트 중앙 계산 — 우선순위: 피격(순간) > 제압 > 취약 > 둔화 > 없음
+	# 넉백 처리 뒤·stun 이동 게이트 전에 두어 정지 중인 적도 갱신됨.
+	var tint: Color = Color.WHITE
+	if _flash_timer > 0.0:
+		tint = HIT_TINT
+	elif stun_timer > 0.0:
+		tint = STUN_TINT
+	elif vulnerable_timer > 0.0:
+		tint = VULN_TINT
+	elif slow_timer > 0.0:
+		tint = SLOW_TINT
+	anim_sprite.modulate = tint
+	# 취약 아이콘: 취약 상태이고 살아 있을 때만 표시
+	if is_instance_valid(_vuln_icon):
+		_vuln_icon.visible = vulnerable_timer > 0.0
+
+	# 제압 중: 자력 이동·공격 차단 (넉백은 위에서 이미 처리됨)
+	if stun_timer > 0.0:
+		velocity = Vector2.ZERO
+		return
 
 	var minion_target = _find_nearby_minion()
 	var effective_target = minion_target
@@ -293,6 +338,8 @@ func _find_nearby_minion():
 func take_damage(dmg: float) -> void:
 	if _anim_state == "die":
 		return
+	if vulnerable_timer > 0.0 and game:
+		dmg *= (1.0 + game.vulnerability_amount)
 	hp -= dmg
 	hp_bar.value = (hp / max_hp) * 100.0
 	_hit_flash()
@@ -311,29 +358,50 @@ func apply_knockback(from_pos: Vector2, force: float) -> void:
 	knockback_vel = knockback_vel.limit_length(MAX_KNOCKBACK)
 
 func _hit_flash() -> void:
-	anim_sprite.modulate = Color(1.5, 0.4, 0.4, 1.0)
+	# modulate는 _physics_process 중앙 계산이 담당. 스케일 팝 tween만 처리.
+	_flash_timer = 0.1
 	anim_sprite.scale = _sprite_base_scale * 1.18
 	var tw: Tween = create_tween()
 	tw.tween_property(anim_sprite, "scale", _sprite_base_scale, 0.13) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	var t: SceneTreeTimer = get_tree().create_timer(0.1)
-	t.timeout.connect(func() -> void:
-		if is_instance_valid(self):
-			anim_sprite.modulate = Color.WHITE
-	)
 
 func apply_slow(duration: float) -> void:
+	# modulate·SceneTreeTimer 제거 — _physics_process 중앙 틴트 계산이 담당.
 	slow_timer = duration
-	anim_sprite.modulate = Color(0.5, 0.5, 1.5, 1.0)
-	var t: SceneTreeTimer = get_tree().create_timer(duration)
-	t.timeout.connect(func() -> void:
-		if is_instance_valid(self):
-			anim_sprite.modulate = Color.WHITE
-	)
+
+func apply_vulnerable(duration: float) -> void:
+	# modulate·SceneTreeTimer 제거 — _physics_process 중앙 틴트 계산이 담당.
+	vulnerable_timer = duration
+
+func apply_stun(duration: float) -> void:
+	# modulate는 _physics_process 중앙 계산이 담당.
+	stun_timer = duration
+
+## 처형용 즉시 사망 — 소울·골드·enemy_died 정상 발동. 이미 사망 중이면 무시.
+## 연출: 흰금 섬광 → scale implode(~0.1s) → ExecuteEffect 스폰 → _die() 직결.
+## 일반 피격(빨강 팝)과 확연히 구별. _die()의 일반 death effect는 플래그로 스킵.
+func execute_kill() -> void:
+	if _anim_state == "die":
+		return
+	_is_execute = true  # _die()에서 일반 death effect 스킵하도록 마킹
+	# 처형 폭발 이펙트 — *즉시* 스폰(implode tween과 독립, 항상 표시).
+	# 부모(월드 레이어)에 추가해 액터가 _die()로 사라져도 잔류.
+	var fx: Node2D = preload("res://scripts/ExecuteEffect.gd").new()
+	get_parent().add_child(fx)
+	fx.global_position = global_position
+	fx.z_index = 10  # 잡몹 위로
+	# 처형 전용 섬광: 빨강-흰(밝기 2.0 초과) 순간 점등 + scale implode → _die
+	anim_sprite.modulate = Color(2.6, 0.8, 0.7, 1.0)
+	var tw: Tween = create_tween()
+	tw.tween_property(anim_sprite, "scale", Vector2.ZERO, 0.10) \
+		.set_trans(Tween.TRANS_QUINT).set_ease(Tween.EASE_IN)
+	tw.tween_callback(_die)
 
 func _die() -> void:
 	_play_anim("die")
 	if game:
-		game.spawn_death_effect(global_position, Color.WHITE)
+		# 처형 경로: ExecuteEffect가 이미 스폰됐으므로 일반 death effect 스킵
+		if not _is_execute:
+			game.spawn_death_effect(global_position, Color.WHITE)
 		game.add_souls(randi_range(12, 20))
 		game.enemy_died()

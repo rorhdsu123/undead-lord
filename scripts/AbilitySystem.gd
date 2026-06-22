@@ -477,10 +477,22 @@ func _fire_lightning(world_pos: Vector2) -> void:
 				var dmg: float = player.attack_damage * LIGHTNING_DMG_BOSS_NORMAL \
 					* game.attack_bonus * game.keystone_lord_atk_mult
 				e.take_damage(dmg, "resist")
+			# 취약 표식 — 보스 포함(강적 증폭이 정체성)
+			if game.keystone2 == "vulnerable" and e.has_method("apply_vulnerable"):
+				e.apply_vulnerable(game.vulnerability_duration)
 		else:  # 잡몹
+			# 처형 (직격만·잡몹만): 피해 *전에* 판정 — 이미 빈사면 피해 대신 즉살+전용 이펙트
+			# (피해 후 체크는 낙뢰가 한 방에 죽여 _die가 먼저 떠 execute_kill이 무효화됨)
+			if game.keystone2 == "execute" and e.has_method("execute_kill") \
+				and e.hp / e.max_hp <= game.execution_threshold:
+				e.execute_kill()
+				continue
 			var dmg: float = player.attack_damage * LIGHTNING_DMG_MINION \
 				* game.attack_bonus * game.keystone_lord_atk_mult
 			e.take_damage(dmg)
+			# 취약 표식 (잡몹 직격)
+			if game.keystone2 == "vulnerable" and e.has_method("apply_vulnerable"):
+				e.apply_vulnerable(game.vulnerability_duration)
 
 	# VFX — 착탄점 낙뢰 임팩트 (반경 mult 반영)
 	_spawn_lightning_impact(world_pos, impact_r)
@@ -593,6 +605,18 @@ func _fire_trumpet(world_pos: Vector2) -> void:
 		e.apply_knockback(push_origin, TRUMPET_KNOCKBACK)
 		if e.has_method("apply_slow"):
 			e.apply_slow(TRUMPET_SLOW_DURATION)
+
+		# 처형 (직격만·잡몹만·보스 제외)
+		if game.keystone2 == "execute" and not e.is_in_group("boss") and e.has_method("execute_kill"):
+			if is_instance_valid(e) and e.hp / e.max_hp <= game.execution_threshold:
+				e.execute_kill()
+				continue
+		# 취약 표식 (보스 포함)
+		if game.keystone2 == "vulnerable" and e.has_method("apply_vulnerable"):
+			e.apply_vulnerable(game.vulnerability_duration)
+		# 제압 (통제형 카드·나팔 전용·보스 제외): 밀린 적 정지
+		if game.suppress_duration > 0.0 and not e.is_in_group("boss") and e.has_method("apply_stun"):
+			e.apply_stun(game.suppress_duration)
 
 	# VFX — 상방 스윕 음파
 	_spawn_trumpet_sweep(world_pos, pulse_r)

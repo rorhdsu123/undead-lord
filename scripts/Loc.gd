@@ -11,6 +11,8 @@ static var _strings: Dictionary = {
 	# 카드 선택 오버레이
 	"card_select_title":    "카드 선택",
 	"card_select_subtitle": "카드 1장 선택",
+	"keystone_select_title":    "전투 전략",
+	"keystone_select_subtitle": "둘 중 하나 — 이후 카드가 이 전략을 강화한다",
 
 	# 상점 오버레이
 	"shop_title":    "골드 상점",
@@ -32,10 +34,10 @@ static var _strings: Dictionary = {
 	"card_death_aura":    "죽음의 오라\n[마법] 주변 적 지속 피해",
 	"card_skull_throw":   "저주 해골 던지기\n[마법] 관통 투사체 발사",
 	"card_decay_curse":   "부패의 저주\n[마법] 범위 내 적 슬로우",
-	"card_legion":        "소환 증원\n소환 슬롯 +2. [군대] 카드를 모을수록 슬롯이 늘어난다",
-	"card_horde":         "골드 환급\n하인 전사 시 고용비 50%를 골드로 환급. [군대] 카드를 모을수록 환급이 커진다",
-	"card_echo":          "사망 폭발\n하인이 죽으면 폭발. [군대] 카드를 모을수록 폭발이 강해진다",
-	"card_surge":         "쇄도\n모든 마법 쿨다운 -35%. [마법] 카드를 모을수록 쿨다운이 짧아진다",
+	"card_legion":        "소환 증원\n소환 슬롯 +2\n[군대] 카드를 모을수록 슬롯 추가",
+	"card_horde":         "골드 환급\n하인 전사 시 고용비 50% 환급\n[군대] 카드를 모을수록 환급 증가",
+	"card_echo":          "사망 폭발\n하인이 죽으면 폭발\n[군대] 카드를 모을수록 폭발 강화",
+	"card_surge":         "쇄도\n모든 마법 쿨다운 -35%\n[마법] 카드를 모을수록 쿨다운 감소",
 
 	# MD12 하단 readout + MAX 배지
 	"minion_readout":         "%d / %d",  # active_minions / max_minions

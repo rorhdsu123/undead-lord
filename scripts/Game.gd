@@ -758,6 +758,9 @@ func _show_cards() -> void:
 			n.queue_free()
 	_card_rows.clear()
 
+	card_title.text = Loc.t("card_select_title")
+	card_subtitle.text = Loc.t("card_select_subtitle")
+
 	var pool: Array = available_skill_cards.duplicate()
 	for stat_card: Dictionary in STAT_CARDS:
 		pool.append(stat_card)
@@ -868,23 +871,24 @@ func _show_keystones(ids: Array) -> void:
 			n.queue_free()
 	_card_rows.clear()
 
+	card_title.text = Loc.t("keystone_select_title")
+	card_subtitle.text = Loc.t("keystone_select_subtitle")
+
 	current_cards = []
 	for id: String in ids:
 		current_cards.append({"id": id, "rare": true, "keystone": true})
-	var stat_pool: Array = STAT_CARDS.duplicate()
-	stat_pool.shuffle()
-	var filler_id: String = stat_pool[0]["id"]
-	current_cards.append({"id": filler_id, "rare": false})
 
-	var card_h: float = 120.0
-	var gap: float = 10.0
-	var start_y: float = 250.0
+	var col_w: float = 218.0
+	var gap: float = 16.0
+	var card_y: float = 250.0
+	var total: float = col_w * float(current_cards.size()) + gap * float(current_cards.size() - 1)
+	var x0: float = (480.0 - total) * 0.5
 	for i: int in current_cards.size():
-		var row: Control = _build_card_row(current_cards[i], i, start_y + float(i) * (card_h + gap))
+		var x: float = x0 + float(i) * (col_w + gap)
+		var row: Control = _build_keystone_card(current_cards[i], i, x, card_y, col_w)
 		card_panel.add_child(row)
 		_card_rows.append(row)
-		if current_cards[i].get("rare", false):
-			_flash_card_glow(row)
+		_flash_card_glow(row)
 
 	card_panel.visible = true
 
@@ -1000,6 +1004,118 @@ func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
 
 	var btn: Button = Button.new()
 	btn.size = Vector2(card_w, card_h)
+	btn.flat = true
+	btn.focus_mode = Control.FOCUS_NONE
+	var empty: StyleBoxEmpty = StyleBoxEmpty.new()
+	btn.add_theme_stylebox_override("normal", empty)
+	btn.add_theme_stylebox_override("hover", empty)
+	btn.add_theme_stylebox_override("pressed", empty)
+	btn.add_theme_stylebox_override("focus", empty)
+	var idx: int = index
+	btn.pressed.connect(func(): _pick_card(idx))
+	root.add_child(btn)
+
+	return root
+
+func _build_keystone_card(card: Dictionary, index: int, x_pos: float, y_pos: float, col_w: float) -> Control:
+	var id: String = card["id"]
+	var axis: String = "magic" if id == "surge" else "army"
+	var axis_label: String = "마법" if axis == "magic" else "군대"
+	var axis_col: Color = Color("#7b4fc9") if axis == "magic" else Color("#0a7d6b")
+
+	var parts: PackedStringArray = Loc.t("card_%s" % id).split("\n")
+	var card_name: String = parts[0] if parts.size() > 0 else id
+	var card_effect: String = parts[1] if parts.size() > 1 else ""
+	var card_synergy: String = parts[2] if parts.size() > 2 else ""
+
+	var card_h: float = 300.0
+
+	var root: Control = Control.new()
+	root.position = Vector2(x_pos, y_pos)
+	root.size = Vector2(col_w, card_h)
+
+	# 배경 패널 — 축 색 틴트
+	var bg: Panel = Panel.new()
+	bg.size = Vector2(col_w, card_h)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bg_style: StyleBoxFlat = StyleBoxFlat.new()
+	bg_style.bg_color = axis_col.lerp(Color.WHITE, 0.86)
+	bg_style.set_border_width_all(3)
+	bg_style.border_color = axis_col
+	bg_style.set_corner_radius_all(10)
+	bg.add_theme_stylebox_override("panel", bg_style)
+	root.add_child(bg)
+
+	# 축 배지 (pill)
+	var pill_w: float = 74.0
+	var pill_h: float = 28.0
+	var pill_x: float = (col_w - pill_w) * 0.5
+	var pill_y: float = 16.0
+	var pill_bg: Panel = Panel.new()
+	pill_bg.position = Vector2(pill_x, pill_y)
+	pill_bg.size = Vector2(pill_w, pill_h)
+	pill_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var pill_style: StyleBoxFlat = StyleBoxFlat.new()
+	pill_style.bg_color = axis_col
+	pill_style.set_corner_radius_all(13)
+	pill_bg.add_theme_stylebox_override("panel", pill_style)
+	root.add_child(pill_bg)
+
+	var pill_lbl: Label = Label.new()
+	pill_lbl.text = axis_label
+	pill_lbl.position = Vector2(pill_x, pill_y)
+	pill_lbl.size = Vector2(pill_w, pill_h)
+	pill_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pill_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	pill_lbl.add_theme_font_size_override("font_size", 15)
+	pill_lbl.add_theme_color_override("font_color", Color.WHITE)
+	pill_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(pill_lbl)
+
+	# 이름 라벨
+	var name_lbl: Label = Label.new()
+	name_lbl.text = card_name
+	name_lbl.position = Vector2(0.0, 58.0)
+	name_lbl.size = Vector2(col_w, 36.0)
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_lbl.add_theme_font_size_override("font_size", 23)
+	name_lbl.add_theme_color_override("font_color", Color(0.13, 0.08, 0.05))
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(name_lbl)
+
+	# 핵심효과 라벨
+	var effect_lbl: Label = Label.new()
+	effect_lbl.text = card_effect
+	effect_lbl.position = Vector2(8.0, 110.0)
+	effect_lbl.size = Vector2(col_w - 16.0, 50.0)
+	effect_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	effect_lbl.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	effect_lbl.add_theme_font_size_override("font_size", 16)
+	effect_lbl.add_theme_color_override("font_color", Color(0.30, 0.26, 0.24))
+	effect_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	effect_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(effect_lbl)
+
+	# 시너지 RichTextLabel
+	if card_synergy != "":
+		var synergy_col: Color = axis_col.lerp(Color.BLACK, 0.25)
+		var syn_lbl: RichTextLabel = RichTextLabel.new()
+		syn_lbl.bbcode_enabled = true
+		syn_lbl.fit_content = true
+		syn_lbl.scroll_active = false
+		syn_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		syn_lbl.position = Vector2(8.0, 200.0)
+		syn_lbl.size = Vector2(col_w - 16.0, 80.0)
+		syn_lbl.add_theme_font_size_override("normal_font_size", 14)
+		syn_lbl.add_theme_color_override("default_color", synergy_col)
+		syn_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		syn_lbl.text = _format_axis_tags(card_synergy)
+		root.add_child(syn_lbl)
+
+	# 투명 버튼 (탭 입력 수신)
+	var btn: Button = Button.new()
+	btn.size = Vector2(col_w, card_h)
 	btn.flat = true
 	btn.focus_mode = Control.FOCUS_NONE
 	var empty: StyleBoxEmpty = StyleBoxEmpty.new()

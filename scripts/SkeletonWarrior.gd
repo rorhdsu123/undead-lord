@@ -397,6 +397,7 @@ func _shoot_arrow() -> void:
 	var aim_vec: Vector2 = (current_target.position + current_target.velocity * flight_time) - position
 	arrow.position = position
 	arrow.direction = aim_vec.normalized()
+	arrow.target_node = current_target  # 보스 몸통 통과 판정용(조준 대상이 보스일 때만 보스 피격)
 	arrow.speed = ARCHER_ARROW_SPEED  # 적 사수보다 빠른 직선 볼트 (스냅·추적오차↓)
 	# 빗나가도 화면을 가로질러 날아가지 않게 조준점 부근서 소멸(직선 볼트라 통과 노이즈 방지).
 	arrow.max_distance = aim_vec.length() + 60.0

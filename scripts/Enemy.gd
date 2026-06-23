@@ -35,6 +35,9 @@ const BODY_FEET_OFFSET: float = 80.0  # 성벽 정지·범위원 중심 앵커(�
 # 나팔 넉백이 적을 화면 밖으로 날려보내 "안 보이는 적이 성을 때리는" 버그 방지.
 const PLAY_BOUNDS: Rect2 = Rect2(0.0, 150.0, 480.0, 750.0)  # x:0~480, y:150~900
 const MAX_KNOCKBACK: float = 600.0  # 넉백 속도 상한 (px/s) — 나팔 연타 누적 폭주 방지
+# 넉백 전용 천장 — 스폰선(y150)·HP바(하단 y142)보다 아래에 둬 밀려난 적이 HUD에 붙지 않게.
+# 스폰 클램프(PLAY_BOUNDS y150)와 별개: 등장 위치는 그대로, *밀려난* 적만 여기서 멈춘다. 노브.
+const KNOCKBACK_CEILING_Y: float = 185.0
 const HIT_TINT:  Color = Color(1.5, 0.4, 0.4, 1.0)    # 피격 순간 플래시(빨강)
 const SLOW_TINT: Color = Color(0.5, 0.5, 1.5, 1.0)    # 둔화(파랑)
 const VULN_TINT: Color = Color(1.5, 0.45, 1.6, 1.0)   # 취약(자주/보라) — 마법 축 색, 피격 빨강과 구별
@@ -175,6 +178,11 @@ func _physics_process(delta: float) -> void:
 	if knockback_vel.length_squared() > 1.0:
 		global_position += knockback_vel * delta
 		knockback_vel = knockback_vel.move_toward(Vector2.ZERO, KNOCKBACK_DECAY * delta)
+		# 상방 넉백은 스폰선보다 아래(KNOCKBACK_CEILING_Y)에서 멈춘다 — HP바 아래 여백 확보.
+		# 천장에 닿으면 위쪽 속도를 죽여 벽에 갈리지 않고 부드럽게 정지(딱딱한 클램프 제거).
+		if knockback_vel.y < 0.0 and global_position.y < KNOCKBACK_CEILING_Y:
+			global_position.y = KNOCKBACK_CEILING_Y
+			knockback_vel.y = 0.0
 
 	# 상태 타이머 감소
 	if _flash_timer > 0.0:
@@ -205,51 +213,54 @@ func _physics_process(delta: float) -> void:
 	if is_instance_valid(_vuln_icon):
 		_vuln_icon.visible = vulnerable_timer > 0.0
 
-	# 제압 중: 자력 이동·공격 차단 (넉백은 위에서 이미 처리됨)
+	# 제압 중: 자력 이동·공격만 차단 (넉백은 위에서 이미 처리됨).
+	# ⚠️ early return 금지 — 여기서 빠져나가면 아래 경계 클램프/성벽 키프아웃을 건너뛴다.
+	# 나팔은 넉백과 제압(stun)을 함께 걸기 때문에, return하면 stun 동안 넉백이 적을
+	# 상단 HP바 밖으로 무제한 날려보낸 뒤, stun 해제 프레임에 클램프가 작동해 적이
+	# "HP바 아래로 순간이동"하는 버그가 난다. 정지 시엔 이동·타게팅만 건너뛴다.
 	if stun_timer > 0.0:
 		velocity = Vector2.ZERO
-		return
-
-	var minion_target = _find_nearby_minion()
-	var effective_target = minion_target
-
-	var target_pos: Vector2
-	if is_instance_valid(effective_target):
-		target_pos = effective_target.global_position
 	else:
-		target_pos = game.get_node("Castle").global_position
+		var minion_target = _find_nearby_minion()
+		var effective_target = minion_target
 
-	var dist: float
-	var attack_range: float
-	if is_instance_valid(effective_target):
-		dist = global_position.distance_to(target_pos)
-		# 사수(ranged): 하인 타겟이어도 자기 사격 반경 유지(standoff 거리에서 저격, 50까지 붙지 않음)
-		# 근접적: 기존대로 50 근접 교전 유지
-		attack_range = (castle_attack_range if is_ranged else 50.0) if is_instance_valid(minion_target) else castle_attack_range
-	else:
-		# 성벽 판정은 발끝 기준(원점 아님) — 몸이 성에 안 잠기고 발끝=타워 윗선 정렬.
-		var feet: Vector2 = global_position + Vector2(0.0, _foot_offset)
-		var rel: Vector2 = feet - target_pos
-		var dx: float = max(0.0, absf(rel.x) - CASTLE_HALF)
-		var dy: float = max(0.0, absf(rel.y) - CASTLE_HALF)
-		dist = sqrt(dx * dx + dy * dy)
-		attack_range = castle_attack_range
-	if dist < attack_range:
-		velocity = Vector2.ZERO
-		if _anim_state not in ["attack", "hurt"]:
-			_play_anim("idle")
-		attack_timer += delta
-		if attack_timer >= attack_cooldown:
+		var target_pos: Vector2
+		if is_instance_valid(effective_target):
+			target_pos = effective_target.global_position
+		else:
+			target_pos = game.get_node("Castle").global_position
+
+		var dist: float
+		var attack_range: float
+		if is_instance_valid(effective_target):
+			dist = global_position.distance_to(target_pos)
+			# 사수(ranged): 하인 타겟이어도 자기 사격 반경 유지(standoff 거리에서 저격, 50까지 붙지 않음)
+			# 근접적: 기존대로 50 근접 교전 유지
+			attack_range = (castle_attack_range if is_ranged else 50.0) if is_instance_valid(minion_target) else castle_attack_range
+		else:
+			# 성벽 판정은 발끝 기준(원점 아님) — 몸이 성에 안 잠기고 발끝=타워 윗선 정렬.
+			var feet: Vector2 = global_position + Vector2(0.0, _foot_offset)
+			var rel: Vector2 = feet - target_pos
+			var dx: float = max(0.0, absf(rel.x) - CASTLE_HALF)
+			var dy: float = max(0.0, absf(rel.y) - CASTLE_HALF)
+			dist = sqrt(dx * dx + dy * dy)
+			attack_range = castle_attack_range
+		if dist < attack_range:
+			velocity = Vector2.ZERO
+			if _anim_state not in ["attack", "hurt"]:
+				_play_anim("idle")
+			attack_timer += delta
+			if attack_timer >= attack_cooldown:
+				attack_timer = 0.0
+				_do_attack(effective_target)
+		else:
+			var dir: Vector2 = (target_pos - global_position).normalized()
+			velocity = dir * speed
+			move_and_slide()
 			attack_timer = 0.0
-			_do_attack(effective_target)
-	else:
-		var dir: Vector2 = (target_pos - global_position).normalized()
-		velocity = dir * speed
-		move_and_slide()
-		attack_timer = 0.0
-		anim_sprite.flip_h = dir.x < 0
-		if _anim_state not in ["hurt"]:
-			_play_anim("walk")
+			anim_sprite.flip_h = dir.x < 0
+			if _anim_state not in ["hurt"]:
+				_play_anim("walk")
 	# move_and_slide/넉백이 완전히 겹친 바디의 충돌 해소 중 NaN을 낼 수 있음(0 길이 법선 나눗셈).
 	# NaN 좌표는 렌더 불가 → "안 보이는데 성 때리는 적 + 웨이브 소프트락"의 원인. 직전 유효 위치로 복구.
 	if not is_finite(global_position.x) or not is_finite(global_position.y):

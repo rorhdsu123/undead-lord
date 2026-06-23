@@ -31,6 +31,8 @@ const TYPE_TARGET_PX: Dictionary = {
 	"tank": 49.4,      # 슬라임 (38 × 1.3, ×base_scale 1.45 = ~72px)
 }
 const BOUNDS: Rect2 = Rect2(0, -230, 480, 930)  # x:0~480(화면 폭). 보스 추격 시 화면 밖 이탈 방지
+const HIT_FLASH: Color = Color(2.2, 2.2, 2.2, 1.0)  # 피격 순간 흰 플래시(적의 빨강 HIT_TINT와 구분·아군 임팩트). 밝기 노브
+const HIT_POP_SCALE: float = 1.10                   # 피격 스케일 팝 배율(적 1.18보다 절제). 노브
 
 # ── 수비 밴드 상수 (RD13) ─ 실제 성 노드 기준 정렬 (성 1.8배 확대 대응) ──────
 # 성 노드 = Game.tscn (240, 570). 적은 y<0 스폰, 아래(+y)로 하강해 윗벽서 멈춤.
@@ -101,6 +103,7 @@ var game = null
 var _anim_state: String = ""
 var lifesteal: float = 0.0
 var _died_reported: bool = false
+var _flash_tween: Tween  # 피격 플래시 tween 참조(연속 피격 시 중첩 가드)
 
 @onready var anim_sprite: AnimatedSprite2D = $AnimSprite
 
@@ -505,6 +508,18 @@ func _separation_vector() -> Vector2:
 			push += Vector2.RIGHT.rotated(float(get_instance_id() % 8) * (PI / 4.0))
 	return push * SEPARATION_STRENGTH
 
+## 피격 순간: 흰 플래시 + 약한 스케일 팝. 적의 _hit_flash와 같은 형태(색·강도만 절제).
+func _hit_flash() -> void:
+	if _flash_tween and _flash_tween.is_valid():
+		_flash_tween.kill()
+	var base: Vector2 = Vector2.ONE * sprite_base_scale
+	anim_sprite.modulate = HIT_FLASH
+	anim_sprite.scale = base * HIT_POP_SCALE
+	_flash_tween = create_tween()
+	_flash_tween.parallel().tween_property(anim_sprite, "modulate", Color.WHITE, 0.12)
+	_flash_tween.parallel().tween_property(anim_sprite, "scale", base, 0.12) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
 func _heal(amount: float) -> void:
 	if amount <= 0.0:
 		return
@@ -517,7 +532,7 @@ func take_damage(dmg: float) -> void:
 	if hp <= 0:
 		_die()
 		return
-	_play_anim("hurt")
+	_hit_flash()
 
 func _die() -> void:
 	_play_anim("die")

@@ -133,6 +133,15 @@ func _ready() -> void:
 	anim_sprite.scale = Vector2.ONE * sprite_base_scale
 	anim_sprite.animation_finished.connect(_on_animation_finished)
 	_play_anim("idle")
+	# 소환 등장(materialize): 발치 마법진 위로 솟아나듯 — 절제된 페이드 + 약한 스케일(팝 아님).
+	# _flash_tween 공유 — 등장 중 피격 시 _hit_flash가 kill하고 피격 팝으로 인계.
+	var spawn_base: Vector2 = Vector2.ONE * sprite_base_scale
+	anim_sprite.scale = spawn_base * 0.85
+	anim_sprite.modulate.a = 0.0
+	_flash_tween = create_tween()
+	_flash_tween.parallel().tween_property(anim_sprite, "scale", spawn_base, 0.26) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_flash_tween.parallel().tween_property(anim_sprite, "modulate:a", 1.0, 0.22)
 
 static func _get_sprite_frames(type: String, variant: int) -> SpriteFrames:
 	if type in _cached_frames:
@@ -240,7 +249,12 @@ func _physics_process(delta: float) -> void:
 	if not is_instance_valid(current_target):
 		if _any_enemy_on_field():
 			no_enemy_timer = 0.0
-			_hold_position()
+			# 갓 스폰돼 정착선보다 아래(성 쪽)면 라인까지 올라가 합류 — 올라가는 건 후진이 아니므로
+			# 적이 있어도 허용. (앞으로 나가 교전 후 타깃을 잃은 경우는 라인 위라 _hold_position으로 전방 사수)
+			if position.y > _get_wait_position().y + 8.0:
+				_move_to_wait_position(delta)
+			else:
+				_hold_position()
 		else:
 			no_enemy_timer += delta
 			if no_enemy_timer >= RETREAT_GRACE:

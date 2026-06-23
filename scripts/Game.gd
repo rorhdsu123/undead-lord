@@ -263,6 +263,7 @@ var sacrifice_button: Button = null
 @onready var summon_container: HBoxContainer = $UI/SummonContainer
 @onready var minion_slot_label: Label = $UI/MinionSlotLabel
 @onready var minions_node = $Minions
+var _summon_fx: Node2D = null  # 소환 마법진 전용 레이어(트리상 Minions 앞 = 성 위·아군 아래)
 @onready var souls_label = $UI/SoulsLabel
 var souls_icon: Label = null
 var slot_icon: Label = null
@@ -302,6 +303,11 @@ var demon_portrait: Control = null
 var _last_demon_bark_msec: int = 0
 
 func _ready() -> void:
+	# 소환 마법진 FX 레이어 — 트리상 Minions 앞에 삽입(성·적보다 위, 아군보다 아래로 렌더).
+	_summon_fx = Node2D.new()
+	_summon_fx.name = "SummonFX"
+	add_child(_summon_fx)
+	move_child(_summon_fx, minions_node.get_index())
 	available_skill_cards = SKILL_CARDS.duplicate()
 	card_title.text = Loc.t("card_select_title")
 	card_subtitle.text = Loc.t("card_select_subtitle")
@@ -3506,19 +3512,46 @@ func _spawn_pulse_ring(pos: Vector2, max_radius: float, color: Color, _line_widt
 	tween.tween_callback(n.queue_free)
 
 func spawn_summon_effect(pos: Vector2) -> void:
-	for i in 8:
-		var dot: ColorRect = ColorRect.new()
-		dot.size = Vector2(6, 6)
-		dot.color = Color(0.6, 0.2, 0.9, 0.9)
-		var angle: float = randf_range(0, TAU)
-		var distance: float = randf_range(40, 70)
-		var start_pos: Vector2 = pos + Vector2(cos(angle), sin(angle)) * distance - Vector2(3, 3)
-		dot.position = start_pos
-		add_child(dot)
-		var tween: Tween = create_tween()
-		tween.parallel().tween_property(dot, "position", pos - Vector2(3, 3), 0.3)
-		tween.parallel().tween_property(dot, "modulate:a", 0.0, 0.3)
-		tween.tween_callback(dot.queue_free)
+	# 발치 별무늬 마법진(펜타그램). 스폰 지점(월드)에 정적으로 깔리고 아군은 거기서 등장해 걸어 나간다
+	# (아군을 따라가지 않음). 전용 FX 레이어에 담겨 성 위·아군 아래로 렌더. 회전 없음.
+	var purple: Color = Color(0.66, 0.32, 0.98, 1.0)
+	var rx: float = 40.0
+	var ry: float = 20.0   # 납작(바닥 원근)
+
+	var circle: Node2D = Node2D.new()
+	circle.position = pos + Vector2(0.0, 26.0)  # 스폰 지점 원점 아래 = 발치
+	var layer: Node = _summon_fx if is_instance_valid(_summon_fx) else self
+	layer.add_child(circle)
+
+	# 외곽 원
+	var outer: Line2D = Line2D.new()
+	outer.width = 2.5
+	outer.default_color = purple
+	outer.closed = true
+	for i in 32:
+		var a: float = TAU * float(i) / 32.0
+		outer.add_point(Vector2(cos(a) * rx, sin(a) * ry))
+	circle.add_child(outer)
+
+	# 내부 5각 별(펜타그램) — 점 0-2-4-1-3 순으로 이어 별무늬
+	var star: Line2D = Line2D.new()
+	star.width = 2.0
+	star.default_color = purple
+	star.closed = true
+	for idx in [0, 2, 4, 1, 3]:
+		var a: float = -PI / 2.0 + TAU * float(idx) / 5.0
+		star.add_point(Vector2(cos(a) * rx * 0.82, sin(a) * ry * 0.82))
+	circle.add_child(star)
+
+	# 등장(살짝 커지며 페이드 인) → 유지(아군 솟는 동안) → 페이드 아웃. 회전 없음.
+	circle.scale = Vector2(0.7, 0.7)
+	circle.modulate.a = 0.0
+	var tw: Tween = circle.create_tween()  # circle에 바인딩 → 미니언 사망 시 함께 정리
+	tw.tween_property(circle, "scale", Vector2.ONE, 0.14).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(circle, "modulate:a", 1.0, 0.12)
+	tw.tween_interval(0.16)
+	tw.tween_property(circle, "modulate:a", 0.0, 0.26)
+	tw.tween_callback(circle.queue_free)
 
 # ── 튜토리얼 가이드 시스템 ───────────────────────────────────
 

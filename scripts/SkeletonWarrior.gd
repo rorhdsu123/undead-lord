@@ -22,6 +22,9 @@ const TYPE_PRESETS: Dictionary = {
 }
 
 const BOMB_RADIUS: float = 80.0
+# 아군 궁수 화살 속도(px/s). Arrow 기본 420(=적 사수, 텔레그래프용)보다 빠른 직선 볼트로
+# "쏜 게 꽂힌다"는 손맛·이동 표적 추적 오차↓. 진영 차별화 위해 인스턴스 단위로 덮어씀. 플테 노브(600~1000).
+const ARCHER_ARROW_SPEED: float = 800.0
 const BASE_SPRITE_SCALE: float = 0.246      # 측정 실패 시 폴백 배율
 const TARGET_CONTENT_PX: float = 85.0       # base_scale 1.0 기준 화면 콘텐츠 높이 (에셋 여백 무관 정규화)
 # 역할별 목표 높이 오버라이드 (실루엣 질량이 달라 bbox 높이만으론 안 맞는 경우 미세조정).
@@ -386,9 +389,17 @@ func _shoot_arrow() -> void:
 	if not game:
 		return
 	var arrow = ArrowScene.instantiate()
-	var dir: Vector2 = (current_target.position - position).normalized()
+	# 예측 조준(lead): 표적이 화살 비행시간 동안 이동할 위치를 겨눠, "쏜 자리를 적이 떠나
+	# 화살이 뒤로 흘러 날아가는" 추적 오차 해소. 1패스(현 거리 기준)로 충분(적이 느림).
+	# 정지·교전 중 적은 velocity≈0이라 자동으로 현 위치 조준.
+	var to_target: Vector2 = current_target.position - position
+	var flight_time: float = to_target.length() / ARCHER_ARROW_SPEED
+	var aim_vec: Vector2 = (current_target.position + current_target.velocity * flight_time) - position
 	arrow.position = position
-	arrow.direction = dir
+	arrow.direction = aim_vec.normalized()
+	arrow.speed = ARCHER_ARROW_SPEED  # 적 사수보다 빠른 직선 볼트 (스냅·추적오차↓)
+	# 빗나가도 화면을 가로질러 날아가지 않게 조준점 부근서 소멸(직선 볼트라 통과 노이즈 방지).
+	arrow.max_distance = aim_vec.length() + 60.0
 	arrow.damage = attack_damage
 	arrow.source = self
 	arrow.lifesteal = lifesteal

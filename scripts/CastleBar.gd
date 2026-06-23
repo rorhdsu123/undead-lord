@@ -4,8 +4,6 @@ extends Control
 var _ratio: float = 1.0
 var _phase: float = 0.0
 var _pulse_brightness: float = 1.0
-var _vignette_rect: ColorRect = null
-var _vignette_mat: ShaderMaterial = null
 var _hp_label: Label = null
 
 # ─── 레이아웃 상수 ────────────────────────────────────────────────────
@@ -28,34 +26,7 @@ const C_CROWN:      Color = Color(0.95, 0.78, 0.20, 1.00)   # 왕관 (골드)
 const C_CROWN_OUT:  Color = Color(0.20, 0.10, 0.04, 1.00)   # 왕관 외곽선
 const C_GLOSS:      Color = Color(1.0,  1.0,  1.0,  0.22)   # 광택 하이라이트
 
-# ─── 비네트 셰이더 ────────────────────────────────────────────────────
-const _VIGNETTE_SHADER: String = """
-shader_type canvas_item;
-uniform float intensity = 0.0;
-void fragment() {
-	vec2 uv = UV - vec2(0.5);
-	float d = length(uv) * 1.45;
-	float edge = smoothstep(0.35, 0.9, d);
-	COLOR = vec4(0.85, 0.05, 0.05, edge * intensity);
-}
-"""
-
 func _ready() -> void:
-	# ── 전체 화면 비네트 ColorRect 부모($UI)에 추가 ──────────────────
-	# _ready 는 자식→부모 순 실행 → Game._ready modal 재정렬 이전 삽입
-	# → 비네트는 모달 아래 (의도된 동작)
-	var sh := Shader.new()
-	sh.code = _VIGNETTE_SHADER
-	_vignette_mat = ShaderMaterial.new()
-	_vignette_mat.shader = sh
-
-	_vignette_rect = ColorRect.new()
-	_vignette_rect.size = Vector2(480, 960)
-	_vignette_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_vignette_rect.material = _vignette_mat
-	# 부모($UI)가 _ready 중 자식 셋업으로 busy → 지연 추가
-	get_parent().add_child.call_deferred(_vignette_rect)
-
 	# ── HP 수치 라벨 생성 ────────────────────────────────────────────
 	_hp_label = Label.new()
 	_hp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -79,18 +50,16 @@ func set_hp(hp: int, max_hp: int) -> void:
 		_hp_label.text = "%d / %d" % [hp, max_hp]
 	queue_redraw()
 
-# ─── 맥동 + 비네트 드라이브 ───────────────────────────────────────────
+# ─── 맥동 드라이브 ───────────────────────────────────────────────────
 func _process(delta: float) -> void:
-	if _ratio > 0.5:
-		# 정상: 맥동 없음, 비네트 꺼짐
+	if _ratio > 2.0/3.0:
+		# 정상: 맥동 없음
 		_pulse_brightness = 1.0
 		modulate = Color.WHITE
-		if _vignette_mat:
-			_vignette_mat.set_shader_parameter("intensity", 0.0)
 		return
 
 	# 경고/위급에서 위상 누적
-	var speed: float = 1.8 if _ratio >= 0.25 else 3.5
+	var speed: float = 1.8 if _ratio >= 1.0/3.0 else 3.5
 	_phase += delta * speed
 	var pulse: float = sin(_phase) * 0.5 + 0.5  # 0..1
 
@@ -99,13 +68,6 @@ func _process(delta: float) -> void:
 	modulate = Color.WHITE
 	queue_redraw()
 
-	# 비네트
-	if _vignette_mat:
-		if _ratio >= 0.25:
-			_vignette_mat.set_shader_parameter("intensity", 0.0)
-		else:
-			_vignette_mat.set_shader_parameter("intensity", pulse * 0.55)
-
 # ─── 그리기 ───────────────────────────────────────────────────────────
 func _draw() -> void:
 	var w: float = size.x
@@ -113,9 +75,9 @@ func _draw() -> void:
 
 	# ── 위험 단계 색상 결정 + 맥동 밝기 적용 ─────────────────────────
 	var base_color: Color
-	if _ratio > 0.5:
+	if _ratio > 2.0/3.0:
 		base_color = C_NORMAL
-	elif _ratio >= 0.25:
+	elif _ratio >= 1.0/3.0:
 		base_color = C_WARN
 	else:
 		base_color = C_DANGER

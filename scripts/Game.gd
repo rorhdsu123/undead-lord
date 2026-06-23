@@ -73,6 +73,8 @@ var castle_hp: int = 500
 var castle_max_hp: int = 500
 var wave_active: bool = false
 var enemies_alive: int = 0
+var _pulse_armed_t2: bool = true  # 2/3 임계 펄스 무장 상태
+var _pulse_armed_t1: bool = true  # 1/3 임계 펄스 무장 상태
 
 # 펄스 스폰 스케줄러
 var _spawn_schedule: Array[Dictionary] = []  # 각 {t, enemy, hp, spd, dmg}
@@ -222,6 +224,10 @@ const DANGER_LINES = [
 const POWER_BARK_CHANCE: float = 0.2   # 마법 발동 시 바크 확률 (스팸 방지)
 const DEMON_BARK_MIN_GAP_MSEC: int = 2800   # 마왕 바크 최소 간격(ms). 위급 바크는 무시(우선권).
 const CASTLE_DANGER_RATIO: float = 0.25
+const CASTLE_PULSE_T2: float = 2.0/3.0          # 넉백 펄스 1단계 임계값 (2/3)
+const CASTLE_PULSE_T1: float = 1.0/3.0          # 넉백 펄스 2단계 임계값 (1/3)
+const CASTLE_PULSE_FORCE: float = 350.0         # 펄스 기본 넉백 세기
+const CASTLE_PULSE_REARM_MARGIN: float = 0.06   # 히스테리시스 마진 (회복 시 재무장)
 const BOSS_INTRO_DIALOGUES = {
 	"사관후보생":          "이, 이건 훈련 아닌가요...?",
 	"수습 용사 인턴":      "저, 저는 아직 수습 기간이라서요...!",
@@ -700,6 +706,7 @@ func castle_take_damage(dmg: int, from_pos: Vector2 = Vector2.INF, big: bool = f
 	castle_bar.set_hp(castle_hp, castle_max_hp)
 	castle_vis.set_hp_ratio(float(castle_hp) / float(castle_max_hp))
 	_update_demon_danger()
+	_update_castle_pulse()
 	# 공격자 위치를 외벽 사각형에 투영한 접촉점에 임팩트 표시(어느 쪽이 맞고 있는지 가독).
 	if not is_inf(from_pos.x):
 		var cc: Vector2 = $Castle.global_position
@@ -711,6 +718,41 @@ func castle_take_damage(dmg: int, from_pos: Vector2 = Vector2.INF, big: bool = f
 		castle_hp = 0
 		castle_bar.set_hp(castle_hp, castle_max_hp)
 		game_over()
+
+## 성 HP가 1/3·2/3 임계값을 아래로 통과하는 순간 넉백 펄스를 1회 발동한다.
+## 히스테리시스(+margin)로 회복 시 재무장 → 진동 연발 방지, 진짜 회복→재하락은 재발동.
+func _update_castle_pulse() -> void:
+	if castle_hp <= 0:
+		return
+	var ratio: float = float(castle_hp) / float(castle_max_hp)
+	# 회복 시 재무장
+	if ratio > CASTLE_PULSE_T2 + CASTLE_PULSE_REARM_MARGIN:
+		_pulse_armed_t2 = true
+	if ratio > CASTLE_PULSE_T1 + CASTLE_PULSE_REARM_MARGIN:
+		_pulse_armed_t1 = true
+	# 하향 통과 발동 — 깊은 임계값 우선, 한 번에 둘 다 지나면 강한 것만
+	if ratio <= CASTLE_PULSE_T1 and _pulse_armed_t1:
+		_pulse_armed_t1 = false
+		_pulse_armed_t2 = false
+		_fire_castle_pulse(2)
+	elif ratio <= CASTLE_PULSE_T2 and _pulse_armed_t2:
+		_pulse_armed_t2 = false
+		_fire_castle_pulse(1)
+
+## 성 중심에서 충격파 — 모든 적을 바깥으로 넉백(보스는 apply_knockback 면역)·링 VFX·화면 흔들림.
+func _fire_castle_pulse(stage: int) -> void:
+	var cc: Vector2 = $Castle.global_position
+	var force: float = CASTLE_PULSE_FORCE if stage == 1 else CASTLE_PULSE_FORCE * 1.3
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(e):
+			e.apply_knockback(cc, force)
+	var radius: float = 200.0 if stage == 1 else 260.0
+	_spawn_pulse_ring(cc, radius, Color(0.85, 0.55, 1.0, 0.85), 7.0)
+	if stage == 1:
+		_screen_shake(5.0, 0.25)
+	else:
+		_screen_shake(9.0, 0.4)
+		hit_stop(0.05)
 
 ## 마법 발동 시 AbilitySystem이 호출하는 마왕 바크 (POWER_BARK_CHANCE 확률).
 func demon_bark_power() -> void:
@@ -730,6 +772,7 @@ func end_wave() -> void:
 	if graveyard_heal > 0:
 		castle_hp = min(castle_hp + graveyard_heal, castle_max_hp)
 		castle_bar.set_hp(castle_hp, castle_max_hp)
+		castle_vis.set_hp_ratio(float(castle_hp) / float(castle_max_hp))
 		_update_demon_danger()
 
 	if current_wave >= WaveData.stage_wave_count(current_chapter, current_stage) - 1:
@@ -1209,6 +1252,7 @@ func _apply_card(id: String, mult: float = 1.0) -> void:
 			castle_max_hp += hp_gain
 			castle_hp += hp_gain
 			castle_bar.set_hp(castle_hp, castle_max_hp)
+			castle_vis.set_hp_ratio(float(castle_hp) / float(castle_max_hp))
 			_update_demon_danger()
 		"graveyard":
 			graveyard_heal += int(20 * mult)
@@ -1658,10 +1702,12 @@ func _apply_shop_item(id: String) -> void:
 			castle_max_hp += 120
 			castle_hp += 120
 			castle_bar.set_hp(castle_hp, castle_max_hp)
+			castle_vis.set_hp_ratio(float(castle_hp) / float(castle_max_hp))
 			_update_demon_danger()
 		"restore":
 			castle_hp = castle_max_hp
 			castle_bar.set_hp(castle_hp, castle_max_hp)
+			castle_vis.set_hp_ratio(float(castle_hp) / float(castle_max_hp))
 			_update_demon_danger()
 			for m in minions_node.get_children():
 				if is_instance_valid(m):
@@ -2287,6 +2333,7 @@ func _apply_facility_bonuses() -> void:
 	castle_max_hp += wall_hp
 	castle_hp += wall_hp
 	castle_bar.set_hp(castle_hp, castle_max_hp)
+	castle_vis.set_hp_ratio(float(castle_hp) / float(castle_max_hp))
 	_update_demon_danger()
 
 	var graveyard_bonus: int = [0, 15, 30, 50][fl.get("graveyard", 0)]

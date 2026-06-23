@@ -33,17 +33,17 @@ const TYPE_TARGET_PX: Dictionary = {
 const BOUNDS: Rect2 = Rect2(0, -230, 480, 930)  # x:0~480(화면 폭). 보스 추격 시 화면 밖 이탈 방지
 
 # ── 수비 밴드 상수 (RD13) ─ 실제 성 노드 기준 정렬 (성 1.8배 확대 대응) ──────
-# 성 노드 = Game.tscn (240, 620). 적은 y<0 스폰, 아래(+y)로 하강해 윗벽서 멈춤.
-# 적은 윗벽(CASTLE_TOP_WALL) 바깥에서 정지하고 origin은 발끝보다 위라 y≈414~434에 선다.
+# 성 노드 = Game.tscn (240, 570). 적은 y<0 스폰, 아래(+y)로 하강해 윗벽서 멈춤.
+# 적은 윗벽(CASTLE_TOP_WALL) 바깥에서 정지하고 origin은 발끝보다 위라 y≈364~384에 선다.
 # 밴드/전진상한은 이 적 정지선을 포함하도록 윗벽 기준으로 잡는다.
 const CASTLE_POS: Vector2 = Vector2(240.0, 570.0)   # 실제 성 위치(Game.tscn). 성 1.8배 확대로 바닥이 하단 UI와 겹쳐 620→570 상향
 const CASTLE_HALF: float = 169.2                     # Enemy/Boss CASTLE_HALF와 동일(성 scale 1.8). ⚠️성 크기 바꾸면 같이 수정
-const CASTLE_TOP_WALL: float = CASTLE_POS.y - CASTLE_HALF   # = 450.8, 적이 멈추는 윗벽 라인
-const BAND_TOP: float = CASTLE_TOP_WALL - 50.0      # = 400.8. 적 정지 origin(~414~434)을 밴드에 포함
+const CASTLE_TOP_WALL: float = CASTLE_POS.y - CASTLE_HALF   # = 400.8, 적이 멈추는 윗벽 라인
+const BAND_TOP: float = CASTLE_TOP_WALL - 50.0      # = 350.8. 적 정지 origin(~364~384)을 밴드에 포함
 # 역할별 대기 y 위치 (성 윗벽 안쪽 상단에 포진)
-const WAIT_Y_TANK: float    = CASTLE_POS.y - 160.0  # 최전방 (= 460, 윗벽 바로 안쪽)
-const WAIT_Y_WARRIOR: float = CASTLE_POS.y - 110.0  # 중간    (= 510)
-const WAIT_Y_ARCHER: float  = CASTLE_POS.y - 60.0   # 후방    (= 560)
+const WAIT_Y_TANK: float    = CASTLE_POS.y - 160.0  # 최전방 (= 410, 윗벽 바로 안쪽)
+const WAIT_Y_WARRIOR: float = CASTLE_POS.y - 110.0  # 중간    (= 460)
+const WAIT_Y_ARCHER: float  = CASTLE_POS.y - 60.0   # 후방    (= 510)
 # 역할별 대기 x (겹침 방지용 분산)
 const WAIT_X_OFFSETS: Dictionary = {
 	"tank":    [200.0, 280.0],

@@ -28,16 +28,16 @@ static var _strings: Dictionary = {
 	"card_area":         "넓은 마법\n[마법] 마법 적중 반경 +25%. 모을수록 마법 범위가 커져 더 많은 적을 덮친다",
 	"card_chain_lightning": "연쇄 낙뢰\n[마법] 맞은 적과 가까운 적 1명을 감전 (피해 50%). 모을수록 감전이 사슬처럼 이어진다",
 	"card_suppress":       "제압\n[마법] 나팔에 밀린 적을 잠깐 정지시킨다. 모을수록 정지가 길어진다",
-	"card_minion_count":  "소환 한도 증가\n[군대] 최대 소환 수 +1",
-	"card_summon_cost":       "소환 비용 감소\n[군대] 소환 비용 -5 골드",
-	"card_minion_range":      "하인 사거리 증가\n[군대] 하인 공격 사거리 +40",
-	"card_minion_lifesteal":  "생명 흡수\n[군대] 하인 공격의 20% 흡혈",
+	"card_minion_count":  "소환 한도 증가\n[마물] 최대 소환 수 +1",
+	"card_summon_cost":       "소환 비용 감소\n[마물] 소환 비용 -5 골드",
+	"card_minion_range":      "마물 사거리 증가\n[마물] 마물 공격 사거리 +40",
+	"card_minion_lifesteal":  "생명 흡수\n[마물] 마물 공격의 20% 흡혈",
 	"card_death_aura":    "죽음의 오라\n[마법] 주변 적 지속 피해",
 	"card_skull_throw":   "저주 해골 던지기\n[마법] 관통 투사체 발사",
 	"card_decay_curse":   "부패의 저주\n[마법] 범위 내 적 슬로우",
-	"card_legion":        "소환 증원\n소환 슬롯 +2\n[군대] 카드를 모을수록 슬롯 추가",
-	"card_horde":         "골드 환급\n하인 전사 시 고용비 50% 환급\n[군대] 카드를 모을수록 환급 증가",
-	"card_echo":          "사망 폭발\n하인이 죽으면 폭발\n[군대] 카드를 모을수록 폭발 강화",
+	"card_legion":        "소환 증원\n소환 슬롯 +2\n[마물] 카드를 모을수록 슬롯 추가",
+	"card_horde":         "골드 환급\n마물 전사 시 소환 비용 50% 환급\n[마물] 카드를 모을수록 환급 증가",
+	"card_echo":          "사망 폭발\n마물이 죽으면 폭발\n[마물] 카드를 모을수록 폭발 강화",
 	"card_surge":         "쇄도\n모든 마법 쿨다운 -35%\n[마법] 카드를 모을수록 쿨다운 감소",
 	"card_vulnerable":    "취약\n마법에 맞은 적은 약해져 더 큰 피해를 입는다 ↑\n[마법] 카드를 모을수록 적이 받는 피해량 ↑",
 	"card_execute":       "처형\n마법으로 직접 맞힌 체력 15% 이하의 적을 즉시 처치한다\n[마법] 카드를 모을수록 더 튼튼한 적도 처치 ↑",
@@ -77,10 +77,10 @@ static var _strings: Dictionary = {
 	"doctrine_category_death":  "죽음의 율법",
 	"doctrine_category_war":    "전쟁의 율법",
 	"doctrine_category_soul":   "골드의 율법",
-	"doctrine_category_minion": "부하의 율법",
+	"doctrine_category_minion": "마물의 율법",
 	"doctrine_category_rule":   "지배의 율법",
 
-	# ── RD16 하인 강화 시스템 ────────────────────────────────────
+	# ── RD16 마물 강화 시스템 ────────────────────────────────────
 	"upgrade_btn_label":      "강화",
 	"upgrade_popup_title":    "강화",
 	"upgrade_icon":           "▲",   # 강화 버튼 아이콘 플레이스홀더 (아트 입고 전)
@@ -124,7 +124,7 @@ static var _strings: Dictionary = {
 	"doctrine_soul_B_name":   "골드 폭주",
 	"doctrine_soul_B_desc":   "마법 발동 후 5초 골드 드롭 ×2",
 
-	# 부하의 율법
+	# 마물의 율법
 	"doctrine_minion_A_name": "명예",
 	"doctrine_minion_A_desc": "해골 사망 시 유령으로 5초 잔존",
 	"doctrine_minion_B_name": "소모",
@@ -132,7 +132,7 @@ static var _strings: Dictionary = {
 
 	# 지배의 율법
 	"doctrine_rule_A_name":   "카리스마",
-	"doctrine_rule_A_desc":   "시야 내 하인 공격속도 ×2",
+	"doctrine_rule_A_desc":   "시야 내 마물 공격속도 ×2",
 	"doctrine_rule_B_name":   "공포",
 	"doctrine_rule_B_desc":   "보스 제외 적 패닉 (무작위 정지)",
 }

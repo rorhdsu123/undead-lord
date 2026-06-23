@@ -108,7 +108,7 @@ var active_minions: int = 0
 var power_card_count: int = 0
 var army_card_count: int = 0
 var magic_card_count: int = 0
-var keystone1: String = ""   # "" | "legion"([군대]) | "surge"([마법] 쇄도)
+var keystone1: String = ""   # "" | "legion"([마물]) | "surge"([마법] 쇄도)
 var keystone2: String = ""   # "" | "horde" | "echo" | "vulnerable" | "execute"
 # 파생값(_recompute_keystones에서 재계산)
 var keystone_lord_atk_mult: float = 1.0
@@ -231,14 +231,14 @@ const CASTLE_PULSE_REARM_MARGIN: float = 0.06   # 히스테리시스 마진 (회
 const BOSS_INTRO_DIALOGUES = {
 	"사관후보생":          "이, 이건 훈련 아닌가요...?",
 	"수습 용사 인턴":      "저, 저는 아직 수습 기간이라서요...!",
-	"용사 대리":           "부하들이 다 쓰러졌군요. 제가 직접 처리하겠습니다.",
+	"용사 대리":           "마물들이 다 쓰러졌군요. 제가 직접 처리하겠습니다.",
 	"정의의 용사 알바생":  "의뢰받은 일은 끝내고 가겠습니다.",
 	"정의의 용사 과장":    "내가 직접 나설 줄은 몰랐겠지?",
 }
 
 const SHOP_ITEMS = [
 	{"id": "castle_max",      "label": "성벽 증축",  "desc": "성 최대 HP +120",   "cost": 120},
-	{"id": "restore",         "label": "긴급 수복",  "desc": "성·하인 즉시 완전 회복", "cost": 70},
+	{"id": "restore",         "label": "긴급 수복",  "desc": "성·마물 즉시 완전 회복", "cost": 70},
 	{"id": "lightning_dmg",   "label": "낙뢰 증폭",  "desc": "낙뢰 피해 +20%",    "cost": 110},
 	{"id": "ability_cd",      "label": "마법 가속",  "desc": "마법 쿨다운 −15%",  "cost": 130},
 	{"id": "ability_radius",  "label": "마법 확산",  "desc": "마법 반경 +25%",    "cost": 90},
@@ -869,7 +869,7 @@ func _pick_card(index: int) -> void:
 		power_card_count += 1
 	elif axis == "army":
 		army_card_count += 1
-		# legion 캡 스케일: [군대] 카드 획득마다 소환 슬롯 +1
+		# legion 캡 스케일: [마물] 카드 획득마다 소환 슬롯 +1
 		if keystone1 == "legion":
 			max_minions += 1
 			_update_minion_readout()
@@ -993,7 +993,7 @@ func _card_desc(id: String) -> String:
 
 func _format_axis_tags(s: String) -> String:
 	s = s.replace("[마법]", "[color=#7b4fc9][lb]마법[rb][/color]")
-	s = s.replace("[군대]", "[color=#0a7d6b][lb]군대[rb][/color]")
+	s = s.replace("[마물]", "[color=#0a7d6b][lb]마물[rb][/color]")
 	return s
 
 func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
@@ -1109,7 +1109,7 @@ func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
 func _build_keystone_card(card: Dictionary, index: int, x_pos: float, y_pos: float, col_w: float) -> Control:
 	var id: String = card["id"]
 	var axis: String = "magic" if id in ["surge", "vulnerable", "execute"] else "army"
-	var axis_label: String = "마법" if axis == "magic" else "군대"
+	var axis_label: String = "마법" if axis == "magic" else "마물"
 	var axis_col: Color = Color("#7b4fc9") if axis == "magic" else Color("#0a7d6b")
 
 	var parts: PackedStringArray = Loc.t("card_%s" % id).split("\n")
@@ -3187,7 +3187,7 @@ func minion_died(pos = null, type_id: String = "") -> void:
 	# hire_levels는 유지 — 레벨은 죽어도 안 날아감 (_hire_alive 종류별 추적 제거됨 — MD12)
 	_update_minion_readout()
 	_refresh_summon_buttons()
-	# 영원한 군세(horde): 전사 시 고용비 50%+[군대]카드당 5% 골드 환급
+	# 영원한 군세(horde): 전사 시 소환 비용 50%+[마물]카드당 5% 골드 환급
 	if keystone2 == "horde" and type_id != "":
 		var base_cost: int = 0
 		for entry: Dictionary in MINION_TYPES:

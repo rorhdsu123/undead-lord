@@ -5,24 +5,22 @@ const ArrowScene = preload("res://scenes/Arrow.tscn")
 const TYPE_PRESETS: Dictionary = {
 	"warrior": {
 		"hp": 100, "speed": 105, "damage": 10, "range": 30, "interval": 1.0,
-		"scale": 1.0, "behavior": "melee", "evolves": true, "variant": 1,
+		"scale": 1.0, "behavior": "melee", "variant": 1,
 	},
 	"archer": {
 		"hp": 60, "speed": 90, "damage": 8, "range": 260, "interval": 1.2,
-		"scale": 0.85, "behavior": "ranged", "evolves": true, "variant": 2,
+		"scale": 0.85, "behavior": "ranged", "variant": 2,
 	},
 	"tank": {
 		"hp": 250, "speed": 65, "damage": 14, "range": 30, "interval": 1.3,
-		"scale": 1.45, "behavior": "melee", "evolves": true, "variant": 3,
+		"scale": 1.45, "behavior": "melee", "variant": 3,
 	},
 	"bomber": {
 		"hp": 50, "speed": 125, "damage": 60, "range": 25, "interval": 999.0,
-		"scale": 0.85, "behavior": "bomber", "evolves": false, "variant": 1,
+		"scale": 0.85, "behavior": "bomber", "variant": 1,
 	},
 }
 
-const EVOLUTION_THRESHOLDS: Array = [5, 10]
-const EVOLUTION_MULTS: Array = [1.0, 1.25, 1.6]
 const BOMB_RADIUS: float = 80.0
 const BASE_SPRITE_SCALE: float = 0.246      # 측정 실패 시 폴백 배율
 const TARGET_CONTENT_PX: float = 85.0       # base_scale 1.0 기준 화면 콘텐츠 높이 (에셋 여백 무관 정규화)
@@ -84,18 +82,16 @@ var minion_type: String = "warrior"
 var hp: float = 100.0
 var max_hp: float = 100.0
 var attack_damage: float = 10.0
-var base_damage: float = 10.0
+var base_damage: float = 10.0       # 프리셋 기준 공격력 (카드보너스·강화 재계산 기준)
 var move_speed: float = 90.0
 var attack_range: float = 30.0
 var attack_interval: float = 1.0
 var behavior: String = "melee"
-var evolves: bool = true
-var base_max_hp: float = 100.0
+var base_max_hp: float = 100.0      # 프리셋 기준 최대 HP (강화 재계산 기준)
 var base_scale: float = 1.0
 var sprite_base_scale: float = BASE_SPRITE_SCALE  # 자동맞춤×base_scale, _ready에서 확정
 
-var kill_count: int = 0
-var level: int = 1
+var level: int = 1                  # 종류별 글로벌 강화 레벨 (RD16)
 var attack_timer: float = 0.0
 var retarget_timer: float = 0.0
 var attack_phase: float = 0.0   # 같은 종 일제 타격 방지용 위상 오프셋(_ready에서 randf)
@@ -125,7 +121,6 @@ func _ready() -> void:
 	attack_phase = randf()
 	attack_timer = attack_phase * attack_interval
 	behavior = preset["behavior"]
-	evolves = preset["evolves"]
 	base_scale = preset["scale"]
 
 	anim_sprite.sprite_frames = _get_sprite_frames(minion_type, preset["variant"])
@@ -384,8 +379,6 @@ func _melee_strike() -> void:
 	var prev_hp: float = current_target.hp
 	current_target.take_damage(attack_damage)
 	_heal(attack_damage * lifesteal)
-	if prev_hp > 0 and prev_hp <= attack_damage:
-		_on_kill()
 
 func _shoot_arrow() -> void:
 	if not game:
@@ -413,27 +406,6 @@ func _explode() -> void:
 		game.spawn_explosion_effect(position)
 	_report_died()
 	queue_free()
-
-func _on_kill() -> void:
-	if not evolves:
-		return
-	kill_count += 1
-	if level < 3 and kill_count >= EVOLUTION_THRESHOLDS[level - 1]:
-		_evolve()
-
-func _evolve() -> void:
-	level += 1
-	var prev_max: float = max_hp
-	var mult: float = EVOLUTION_MULTS[level - 1]
-	max_hp = base_max_hp * mult
-	hp += max_hp - prev_max
-	hp = min(hp, max_hp)
-	attack_damage = base_damage * mult
-	anim_sprite.scale = Vector2.ONE * sprite_base_scale * (1.0 + 0.15 * (level - 1))
-	anim_sprite.modulate = Color.WHITE.lerp(Color(1.3, 1.1, 0.5, 1.0), 0.35 * (level - 1))
-	hp_bar.value = (hp / max_hp) * 100.0
-	if game and game.has_method("spawn_evolve_effect"):
-		game.spawn_evolve_effect(global_position)
 
 # 폭탄병 전용: 가장 가까운 적 (돌격형)
 func _find_nearest_enemy():

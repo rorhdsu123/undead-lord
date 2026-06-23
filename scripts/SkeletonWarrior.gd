@@ -102,7 +102,6 @@ var _anim_state: String = ""
 var lifesteal: float = 0.0
 var _died_reported: bool = false
 
-@onready var hp_bar: ProgressBar = $HPBar
 @onready var anim_sprite: AnimatedSprite2D = $AnimSprite
 
 func _ready() -> void:
@@ -510,13 +509,11 @@ func _heal(amount: float) -> void:
 	if amount <= 0.0:
 		return
 	hp = min(hp + amount, max_hp)
-	hp_bar.value = (hp / max_hp) * 100.0
 
 func take_damage(dmg: float) -> void:
 	if _anim_state == "die":
 		return
 	hp -= dmg
-	hp_bar.value = (hp / max_hp) * 100.0
 	if hp <= 0:
 		_die()
 		return

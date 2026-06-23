@@ -87,9 +87,10 @@ var summon_count: int = 2
 
 var _sprite_base_scale: Vector2 = Vector2.ONE  # 피격 scale 팝 복귀 기준(스프라이트 크기 반영)
 var _hit_tween: Tween = null  # 직전 피격 팝 tween 참조(연속 피격 시 중첩 방지)
+var _ghost_tween: Tween = null  # 고스트 트레일 tween(연속 피격 시 중첩 방지)
 
 @onready var hp_bar: ProgressBar = $HPBar
-@onready var name_label: Label = $NameLabel
+@onready var hp_ghost: ProgressBar = $HPGhost
 @onready var anim_sprite: AnimatedSprite2D = $AnimSprite
 
 func _ready() -> void:
@@ -97,7 +98,6 @@ func _ready() -> void:
 	add_to_group("boss")  # 하인 타겟팅이 보스를 origin 대신 at_wall 기준으로 판정
 	base_speed = speed
 	base_damage = damage
-	name_label.text = boss_name
 	collision_mask = 4  # 영주(레이어 3)하고만 충돌 — 겹침 방지. 잡몹(레이어1)·하인(레이어2) 무리엔 안 낌
 	if boss_type == "mid_boss":
 		rage_interval = 6.0
@@ -275,7 +275,6 @@ func _enter_overtime() -> void:
 	damage = base_damage * 2
 	attack_cooldown = 0.7
 	anim_sprite.modulate = COLOR_OVERTIME
-	name_label.text = boss_name + "\n[야근 모드]"
 	summon_interval = 10.0
 	summon_count = 3
 	summon_timer = summon_interval * 0.5
@@ -288,7 +287,6 @@ func _enter_phase3() -> void:
 	damage = base_damage * 3
 	attack_cooldown = 0.5
 	anim_sprite.modulate = COLOR_PHASE3
-	name_label.text = boss_name + "\n[초과 야근]"
 	summon_interval = 7.0
 	summon_count = 3
 	rage_timer = rage_interval * 0.5
@@ -417,7 +415,9 @@ func take_damage(dmg: float, tier: String = "normal") -> void:
 	if vulnerable_timer > 0.0 and game:
 		dmg *= (1.0 + game.vulnerability_amount)
 	hp -= dmg
-	hp_bar.value = (hp / max_hp) * 100.0
+	var new_hp_value: float = (hp / max_hp) * 100.0
+	hp_bar.value = new_hp_value
+	_animate_ghost_trail(new_hp_value)
 	_hit_flash()
 	if game:
 		game.spawn_damage_number(global_position, dmg, tier)
@@ -426,6 +426,14 @@ func take_damage(dmg: float, tier: String = "normal") -> void:
 		return
 	# 피격 시 hurt 애니 미재생 — 공격·이동 모션을 끊어 어색했고, 빨강 플래시(_hit_flash)만으로
 	# 타격 피드백. 보스는 자기 행동(성 공격·접근) 유지한 채 번쩍이기만 함(잡몹과 동일 방식).
+
+func _animate_ghost_trail(target_value: float) -> void:
+	if _ghost_tween:
+		_ghost_tween.kill()
+	_ghost_tween = create_tween()
+	_ghost_tween.tween_interval(0.1)
+	_ghost_tween.tween_property(hp_ghost, "value", target_value, 0.35) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func _hit_flash() -> void:
 	if is_charging_rage:
@@ -581,6 +589,10 @@ func apply_vulnerable(duration: float) -> void:
 	)
 
 func _die() -> void:
+	if _ghost_tween:
+		_ghost_tween.kill()
+		_ghost_tween = null
+	hp_ghost.value = 0.0
 	_play_anim("die")
 	if game:
 		game.spawn_death_effect(global_position, Color.WHITE)

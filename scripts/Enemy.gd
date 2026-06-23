@@ -22,6 +22,7 @@ const TYPE_PRESETS: Dictionary = {
 		"cooldown": 1.2, "castle_range": 2.0, "ignore_minions": true, "ranged": false},
 }
 
+const HP_BAR_SHOW_RATIO: float = 0.5  # HP가 이 비율 미만일 때만 HP바 표시 (빈사·처치우선 신호). 튜닝 노브.
 const BASE_HP: float = 50.0
 const BASE_SPEED: float = 60.0
 const BASE_DAMAGE: int = 10
@@ -342,6 +343,7 @@ func take_damage(dmg: float) -> void:
 		dmg *= (1.0 + game.vulnerability_amount)
 	hp -= dmg
 	hp_bar.value = (hp / max_hp) * 100.0
+	hp_bar.visible = (hp / max_hp) < HP_BAR_SHOW_RATIO
 	_hit_flash()
 	if game:
 		game.spawn_damage_number(global_position, dmg)

@@ -1712,7 +1712,6 @@ func _apply_shop_item(id: String) -> void:
 			for m in minions_node.get_children():
 				if is_instance_valid(m):
 					m.hp = m.max_hp
-					m.hp_bar.value = 100.0
 		"lightning_dmg":
 			attack_bonus *= 1.20
 		"ability_cd":

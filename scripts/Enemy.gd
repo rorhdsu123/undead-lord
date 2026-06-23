@@ -8,7 +8,9 @@ const TYPE_PRESETS: Dictionary = {
 	"normal": {"hp_mult": 1.0, "speed_mult": 1.0, "damage_mult": 1.0, "scale": 1.0,
 		"folder": "enemy_normal", "attack_anim": "Slashing",
 		"cooldown": 1.5, "castle_range": 2.0, "ignore_minions": false, "ranged": false},
-	"scout":  {"hp_mult": 0.5, "speed_mult": 1.0, "damage_mult": 0.6, "scale": 0.8,
+	# 사수=글래스 캐논(2026-06-23 튜닝): 무시하면 성을 아프게 깎되 궁수가 시원하게 지움.
+	# hp 0.5→0.38(물몸·궁수 처치↑) · dmg 0.6→0.9(한 방 무게↑). 위협치 플테 노브.
+	"scout":  {"hp_mult": 0.38, "speed_mult": 1.0, "damage_mult": 0.9, "scale": 0.8,
 		"folder": "enemy_scout",  "attack_anim": "Shooting",
 		"cooldown": 2.0, "castle_range": 120.0, "ignore_minions": false, "ranged": true},
 	"brute":  {"hp_mult": 3.5, "speed_mult": 0.5, "damage_mult": 1.5, "scale": 1.45,

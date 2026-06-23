@@ -313,11 +313,20 @@ func _do_attack(minion_target) -> void:
 				var contact: Vector2 = Vector2(
 					clamp(global_position.x, cc.x - CASTLE_HALF, cc.x + CASTLE_HALF),
 					clamp(global_position.y, cc.y - CASTLE_HALF, cc.y + CASTLE_HALF))
-				_shoot_arrow(contact)
-		game.castle_take_damage(damage, global_position)
+				var arrow: Node = _shoot_arrow(contact)
+				# 데미지·이펙트는 화살 착탄 순간에 발동 (공중 즉시 발동 버그 수정).
+				# 발사 시점의 damage·위치를 지역변수로 캡처해 람다에 넘김.
+				var dmg: int = damage
+				var from: Vector2 = global_position
+				arrow.arrival_callback = func() -> void:
+					game.castle_take_damage(dmg, from)
+		else:
+			# 근접 적: 기존대로 즉시 데미지 발동.
+			game.castle_take_damage(damage, global_position)
 
 ## 원거리 적(사수): 대상 방향으로 시각용 화살 발사. 실제 피해는 take_damage/castle_take_damage가 처리(화살 damage=0).
-func _shoot_arrow(target_pos: Vector2) -> void:
+## 성 타격 시 arrival_callback을 설정하면 착탄 순간에 데미지·이펙트를 발동할 수 있음.
+func _shoot_arrow(target_pos: Vector2) -> Node:
 	var arrow = ArrowScene.instantiate()
 	arrow.position = global_position
 	arrow.direction = (target_pos - global_position).normalized()
@@ -326,6 +335,7 @@ func _shoot_arrow(target_pos: Vector2) -> void:
 	arrow.max_distance = global_position.distance_to(target_pos)  # 대상 지점에서 멈춤(통과 방지)
 	game.add_child(arrow)
 	arrow.monitoring = false  # 시각용 — 충돌/피해 없음 (자기·아군 적 오적중 방지, "-0" 버그)
+	return arrow
 
 func _find_nearby_minion():
 	if ignore_minions:

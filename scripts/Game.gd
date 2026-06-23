@@ -223,6 +223,7 @@ const DANGER_LINES = [
 ]
 const POWER_BARK_CHANCE: float = 0.2   # 마법 발동 시 바크 확률 (스팸 방지)
 const DEMON_BARK_MIN_GAP_MSEC: int = 2800   # 마왕 바크 최소 간격(ms). 위급 바크는 무시(우선권).
+const CASTLE_HALF: float = 169.2       # 외벽+코너타워 외곽 (Enemy/Boss/SkeletonWarrior와 동일·성 scale 1.8). ⚠️성 크기 바꾸면 같이 수정
 const CASTLE_DANGER_RATIO: float = 0.25
 const CASTLE_PULSE_T2: float = 2.0/3.0          # 넉백 펄스 1단계 임계값 (2/3)
 const CASTLE_PULSE_T1: float = 1.0/3.0          # 넉백 펄스 2단계 임계값 (1/3)
@@ -711,8 +712,8 @@ func castle_take_damage(dmg: int, from_pos: Vector2 = Vector2.INF, big: bool = f
 	if not is_inf(from_pos.x):
 		var cc: Vector2 = $Castle.global_position
 		var contact: Vector2 = Vector2(
-			clamp(from_pos.x, cc.x - 94.0, cc.x + 94.0),
-			clamp(from_pos.y, cc.y - 94.0, cc.y + 94.0))
+			clamp(from_pos.x, cc.x - CASTLE_HALF, cc.x + CASTLE_HALF),
+			clamp(from_pos.y, cc.y - CASTLE_HALF, cc.y + CASTLE_HALF))
 		spawn_castle_hit_effect(contact, big)
 	if castle_hp <= 0:
 		castle_hp = 0

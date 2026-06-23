@@ -269,7 +269,11 @@ var souls_icon: Label = null
 var slot_icon: Label = null
 # MD12 — 하인 카운트 readout (active_minions / max_minions 표시)
 var _minion_icon: Label = null   # 하인 아이콘 플레이스홀더 (■, 하인 아트 입고 후 교체 예정)
+var _minion_group: HBoxContainer = null  # 👤 아이콘 + N/M 래퍼 (흔들림 연출 단위)
+var _minion_group_base_pos: Vector2 = Vector2.ZERO  # 흔들림 원복용 레이아웃 기준 위치
 var _minion_readout: Label = null
+var _minion_flash_tween: Tween = null  # 캡 도달 소환 시도 시 N/M 빨강 펄스
+var _minion_shake_tween: Tween = null  # 캡 도달 소환 시도 시 아이콘+N/M 좌우 흔들림
 var _max_badge: Label = null     # 전역 소환 캡 도달 시 캡슐 우상단 "MAX" 배지
 # RD19 — 자원 readout 캡슐 (골드/하인을 알약 영역 하나로 묶음)
 var _resource_capsule: Panel = null
@@ -378,6 +382,11 @@ func _ready() -> void:
 
 	# 하인: ■ (플레이스홀더 색 아이콘) + N/M(흰색)
 	# MD12 — 하인 카운트 readout (■ 플레이스홀더, 하인 아트 입고 후 교체 예정)
+	# 아이콘+N/M을 묶는 래퍼(흔들림 연출 단위). 외부 HBox와 분리돼 position 흔들기가 레이아웃과 안 싸움.
+	_minion_group = HBoxContainer.new()
+	_minion_group.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_minion_group.add_theme_constant_override("separation", 5)  # 아이콘↔숫자 간격 (외부 HBox와 동일)
+	_resource_hbox.add_child(_minion_group)
 	_minion_icon = Label.new()
 	_minion_icon.text = "👤"  # 사람(하인 수) — NotoEmoji 모노크롬 글리프. 하인 아트 입고 후 교체 가능
 	if capsule_emoji_font != null:
@@ -386,13 +395,13 @@ func _ready() -> void:
 	_minion_icon.add_theme_color_override("font_color", Color(0.72, 0.68, 0.86, 1.0))
 	_minion_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_minion_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_resource_hbox.add_child(_minion_icon)
+	_minion_group.add_child(_minion_icon)
 	_minion_readout = Label.new()
 	_minion_readout.add_theme_font_size_override("font_size", 16)   # 골드 숫자와 동일 크기
 	_minion_readout.add_theme_color_override("font_color", Color(0.96, 0.95, 1.0, 1.0))
 	_minion_readout.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_minion_readout.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_resource_hbox.add_child(_minion_readout)
+	_minion_group.add_child(_minion_readout)
 
 	# slot_icon — 구 캡 라벨 아이콘(Phase C 미사용). 호환 위해 노드만 유지·숨김.
 	slot_icon = Label.new()
@@ -422,6 +431,9 @@ func _ready() -> void:
 	_max_badge.add_theme_stylebox_override("normal", badge_sb)
 	_max_badge.visible = false
 	_resource_capsule.add_child(_max_badge)
+	# 마물 카운트(👤 N/M)가 HBox 중앙정렬이라 숫자 자릿수에 따라 좌우로 움직임
+	# → 레이아웃 갱신(sort_children)마다 배지를 카운트 바로 위 중앙으로 재배치
+	_resource_hbox.sort_children.connect(_position_max_badge)
 	# (3) 하단 트레이 패널 — 모든 하단 컨트롤 뒤에 깔리는 다크보라 반투명 밴드
 	_bottom_tray = Panel.new()
 	_bottom_tray.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 입력 가로채지 않음
@@ -2378,6 +2390,55 @@ func _update_minion_readout() -> void:
 		var cap_vis: bool = is_instance_valid(_resource_capsule) and _resource_capsule.visible
 		_max_badge.visible = at_cap and cap_vis
 
+## MAX 배지를 마물 카운트(👤 N/M)의 최대 수(우측 숫자) 우측 상단 모서리에 배치.
+## HBox 중앙정렬이라 숫자 자릿수에 따라 우측 끝 x가 바뀌므로 sort_children마다 재호출됨.
+func _position_max_badge() -> void:
+	if not (is_instance_valid(_max_badge) and is_instance_valid(_resource_capsule)):
+		return
+	if not is_instance_valid(_minion_readout):
+		return
+	const BADGE_W: float = 30.0
+	const BADGE_H: float = 14.0
+	_max_badge.size = Vector2(BADGE_W, BADGE_H)
+	# N/M 우단(최대 수 오른쪽 끝)을 캡슐 로컬 좌표로 환산 → 그 위 우측에 살짝 걸치게
+	var right_edge: float = _minion_readout.global_position.x + _minion_readout.size.x - _resource_capsule.global_position.x
+	_max_badge.position = Vector2(right_edge - BADGE_W * 0.45, -BADGE_H * 0.7)
+	# 흔들림 원복 기준 — sort 직후엔 그룹이 레이아웃 제자리에 있으므로 여기서 권위 있는 값 캡처
+	if is_instance_valid(_minion_group) and not (_minion_shake_tween and _minion_shake_tween.is_valid()):
+		_minion_group_base_pos = _minion_group.position
+
+## 캡 도달 상태에서 소환 시도 → 마물 카운트(N/M)를 빨강으로 1회 펄스 + 좌우 흔들림으로 거부 피드백.
+## 연타하면 매번 재시작되어 깜빡임/떨림처럼 보임.
+func _flash_minion_cap() -> void:
+	if not is_instance_valid(_minion_readout):
+		return
+	if _minion_flash_tween and _minion_flash_tween.is_valid():
+		_minion_flash_tween.kill()
+	const NORMAL: Color = Color(0.96, 0.95, 1.0, 1.0)  # 평소 흰보라 (생성 시와 동일)
+	const FLASH: Color = Color(1.0, 0.28, 0.28, 1.0)   # MAX 배지와 같은 계열 빨강
+	_set_minion_readout_color(FLASH)
+	_minion_flash_tween = create_tween()
+	_minion_flash_tween.tween_method(_set_minion_readout_color, FLASH, NORMAL, 0.22) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_shake_minion_group()
+
+func _set_minion_readout_color(c: Color) -> void:
+	if is_instance_valid(_minion_readout):
+		_minion_readout.add_theme_color_override("font_color", c)
+
+## 아이콘+N/M 그룹을 좌우로 짧게 흔듦 (감쇠). HBox 레이아웃 제자리(_minion_group_base_pos) 기준 오프셋.
+func _shake_minion_group() -> void:
+	if not is_instance_valid(_minion_group):
+		return
+	if _minion_shake_tween and _minion_shake_tween.is_valid():
+		_minion_shake_tween.kill()
+	var base: Vector2 = _minion_group_base_pos
+	_minion_group.position = base
+	_minion_shake_tween = create_tween()
+	# 레퍼런스 측정: native ±1px 미세 잔떨림(~30ms/스윙, ~150ms). 480 논리폭 최소 렌더치인 ±1px로.
+	for off: float in [1.0, -1.0, 1.0, -1.0, 0.5, 0.0]:  # 빠른 ±1px 버즈 (감쇠)
+		_minion_shake_tween.tween_property(_minion_group, "position", base + Vector2(off, 0.0), 0.03)
+
 func _update_souls_ui() -> void:
 	if _souls_roll_tween and _souls_roll_tween.is_valid():
 		_souls_roll_tween.kill()
@@ -3079,12 +3140,8 @@ func _layout_bottom_ui_phase_c() -> void:
 	if is_instance_valid(_resource_capsule):
 		_resource_capsule.position = Vector2(MX, gold_y)
 		_resource_capsule.size = Vector2(SUM_W, cap_h)
-	# MAX 배지: 캡슐 우상단 모서리에 걸침 (캡슐 자식이므로 로컬 좌표)
-	const BADGE_W: float = 30.0
-	const BADGE_H: float = 14.0
-	if is_instance_valid(_max_badge):
-		_max_badge.position = Vector2(SUM_W - BADGE_W - 2.0, -BADGE_H * 0.5)
-		_max_badge.size = Vector2(BADGE_W, BADGE_H)
+	# MAX 배지: 마물 카운트(👤 N/M) 바로 위 중앙에 배치 (실제 위치는 _position_max_badge)
+	_position_max_badge()
 
 	# 팝업 캐처는 전체화면 앵커이므로 별도 배치 불필요
 
@@ -3149,8 +3206,9 @@ func _on_summon_pressed(index: int, btn: Button = null) -> void:
 	var cost: int = max(5, entry["cost"] - minion_cost_reduction)
 	if souls < cost:
 		return
-	# MD12 — 전역 총량 캡 초과 시 거부
+	# MD12 — 전역 총량 캡 초과 시 거부 (N/M 빨강 펄스로 피드백 — 누를 때마다 깜빡)
 	if active_minions >= max_minions:
+		_flash_minion_cap()
 		return
 	# 모든 게이트 통과 — 성공 시에만 눌림 피드백
 	_play_button_bounce(btn)

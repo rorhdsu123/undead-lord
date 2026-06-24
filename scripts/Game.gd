@@ -824,6 +824,13 @@ func end_wave() -> void:
 			return
 	_show_cards()
 
+func _set_modal_dim(on: bool) -> void:
+	# 카드/키스톤 선택 모달 — 배경(월드·상단 HUD·성HP바·트래커)을 딤으로 덮어 선택에 집중시킨다.
+	# z순서상 modal_dim은 HUD 위·모달 패널 아래라, 켜면 캐릭터 비침과 타이틀↔HUD 겹침이 함께 해소된다.
+	if on:
+		modal_dim.modulate.a = _shop_dim_alpha
+	modal_dim.visible = on
+
 func _show_cards() -> void:
 	for n: Node in _card_rows:
 		if is_instance_valid(n):
@@ -860,6 +867,7 @@ func _show_cards() -> void:
 		if current_cards[i]["rare"]:
 			_flash_card_glow(row)
 
+	_set_modal_dim(true)
 	card_panel.visible = true
 	if _is_tutorial() and current_wave == 0:
 		_show_card_guide.call_deferred()
@@ -870,6 +878,7 @@ func _pick_card(index: int) -> void:
 	if card.get("keystone", false):
 		_apply_keystone(card["id"])
 		card_panel.visible = false
+		_set_modal_dim(false)
 		_spawn_card_pickup_effect(card["id"])
 		current_wave += 1
 		start_wave()
@@ -898,6 +907,7 @@ func _pick_card(index: int) -> void:
 	_recompute_keystones()
 
 	card_panel.visible = false
+	_set_modal_dim(false)
 	_spawn_card_pickup_effect(card["id"])
 	current_wave += 1
 	start_wave()
@@ -966,7 +976,7 @@ func _show_keystones(ids: Array, axis_pick: bool = false) -> void:
 			current_cards.append({"id": id, "rare": true, "keystone": true})
 		var col_w: float = 218.0
 		var gap: float = 16.0
-		var card_y: float = 250.0
+		var card_y: float = 340.0
 		var total: float = col_w * float(current_cards.size()) + gap * float(current_cards.size() - 1)
 		var x0: float = (480.0 - total) * 0.5
 		for i: int in current_cards.size():
@@ -975,6 +985,7 @@ func _show_keystones(ids: Array, axis_pick: bool = false) -> void:
 			card_panel.add_child(row)
 			_card_rows.append(row)
 			_flash_card_glow(row)
+		_set_modal_dim(true)
 		card_panel.visible = true
 		return
 
@@ -998,6 +1009,7 @@ func _show_keystones(ids: Array, axis_pick: bool = false) -> void:
 		if current_cards[i].get("rare", false):
 			_flash_card_glow(row)
 
+	_set_modal_dim(true)
 	card_panel.visible = true
 
 func _card_name(id: String) -> String:
@@ -1136,7 +1148,7 @@ func _build_keystone_card(card: Dictionary, index: int, x_pos: float, y_pos: flo
 	var card_effect: String = parts[1] if parts.size() > 1 else ""
 	var card_synergy: String = parts[2] if parts.size() > 2 else ""
 
-	var card_h: float = 300.0
+	var card_h: float = 280.0
 
 	var root: Control = Control.new()
 	root.position = Vector2(x_pos, y_pos)
@@ -1183,7 +1195,7 @@ func _build_keystone_card(card: Dictionary, index: int, x_pos: float, y_pos: flo
 	# 이름 라벨
 	var name_lbl: Label = Label.new()
 	name_lbl.text = card_name
-	name_lbl.position = Vector2(0.0, 58.0)
+	name_lbl.position = Vector2(0.0, 70.0)
 	name_lbl.size = Vector2(col_w, 36.0)
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1195,31 +1207,45 @@ func _build_keystone_card(card: Dictionary, index: int, x_pos: float, y_pos: flo
 	# 핵심효과 라벨
 	var effect_lbl: Label = Label.new()
 	effect_lbl.text = card_effect
-	effect_lbl.position = Vector2(8.0, 110.0)
-	effect_lbl.size = Vector2(col_w - 16.0, 50.0)
+	effect_lbl.position = Vector2(8.0, 128.0)
+	effect_lbl.size = Vector2(col_w - 16.0, 44.0)
 	effect_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	effect_lbl.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	effect_lbl.add_theme_font_size_override("font_size", 16)
-	effect_lbl.add_theme_color_override("font_color", Color(0.30, 0.26, 0.24))
+	effect_lbl.add_theme_font_size_override("font_size", 18)
+	effect_lbl.add_theme_color_override("font_color", Color(0.15, 0.12, 0.10))
 	effect_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	effect_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(effect_lbl)
 
 	# 시너지 RichTextLabel
 	if card_synergy != "":
-		var synergy_col: Color = axis_col.lerp(Color.BLACK, 0.25)
+		# "성장" 섹션 헤더 — 효과(즉시)와 시너지(성장) 구분
+		var grow_lbl: Label = Label.new()
+		grow_lbl.text = "성장"
+		grow_lbl.position = Vector2(0.0, 192.0)
+		grow_lbl.size = Vector2(col_w, 18.0)
+		grow_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		grow_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		grow_lbl.add_theme_font_size_override("font_size", 12)
+		grow_lbl.add_theme_color_override("font_color", axis_col)
+		grow_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(grow_lbl)
+
+		var synergy_col: Color = Color(0.40, 0.37, 0.35)
 		var syn_lbl: RichTextLabel = RichTextLabel.new()
 		syn_lbl.bbcode_enabled = true
 		syn_lbl.fit_content = true
 		syn_lbl.scroll_active = false
 		syn_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		syn_lbl.position = Vector2(8.0, 200.0)
-		syn_lbl.size = Vector2(col_w - 16.0, 80.0)
+		syn_lbl.position = Vector2(16.0, 220.0)
+		syn_lbl.size = Vector2(col_w - 32.0, 52.0)
 		syn_lbl.add_theme_font_size_override("normal_font_size", 14)
 		syn_lbl.add_theme_color_override("default_color", synergy_col)
 		syn_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		syn_lbl.text = _format_axis_tags(card_synergy)
+		syn_lbl.text = "[center]%s[/center]" % _format_axis_tags(card_synergy)
 		root.add_child(syn_lbl)
+		# 시너지 1줄/2줄 줄 수가 달라도 좌우 카드가 균형 잡히도록 영역 중심에 수직 정렬.
+		_vcenter_richtext.call_deferred(syn_lbl, 245.0)
 
 	# 투명 버튼 (탭 입력 수신)
 	var btn: Button = Button.new()
@@ -1236,6 +1262,11 @@ func _build_keystone_card(card: Dictionary, index: int, x_pos: float, y_pos: flo
 	root.add_child(btn)
 
 	return root
+
+func _vcenter_richtext(lbl: RichTextLabel, center_y: float) -> void:
+	# RichTextLabel은 수직 정렬 속성이 없어, 렌더된 콘텐츠 높이를 측정해 지정 중심에 맞춘다.
+	if is_instance_valid(lbl):
+		lbl.position.y = center_y - lbl.get_content_height() * 0.5
 
 func _flash_card_glow(row: Control) -> void:
 	var tween: Tween = create_tween()

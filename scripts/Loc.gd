@@ -25,8 +25,8 @@ static var _strings: Dictionary = {
 	"card_graveyard":     "묘지\n웨이브 클리어 시 HP +20 회복",
 	"card_range_basic":   "마법 사거리 증가\n[마법] 마법 사거리 +30",
 	"card_range_all":     "마법 범위 증가\n[마법] 마법 범위 +25%",
-	"card_area":         "넓은 마법\n[마법] 마법 적중 반경 +25%. 모을수록 마법 범위가 커져 더 많은 적을 덮친다",
-	"card_chain_lightning": "연쇄 낙뢰\n[마법] 맞은 적과 가까운 적 1명을 감전 (피해 50%). 모을수록 감전이 사슬처럼 이어진다",
+	"card_area":         "넓은 마법\n[마법] 더 많은 적에게 적중",
+	"card_chain_lightning": "연쇄 낙뢰\n[마법] 맞은 적과 가까운 적 1명을 감전 (피해 50%).\n모을수록 감전이 사슬처럼 이어진다",
 	"card_suppress":       "제압\n[마법] 나팔에 밀린 적을 잠깐 정지시킨다. 모을수록 정지가 길어진다",
 	"card_minion_count":  "소환 한도 증가\n[마물] 최대 소환 수 +1",
 	"card_summon_cost":       "소환 비용 감소\n[마물] 소환 비용 -5 골드",
@@ -35,12 +35,12 @@ static var _strings: Dictionary = {
 	"card_death_aura":    "죽음의 오라\n[마법] 주변 적 지속 피해",
 	"card_skull_throw":   "저주 해골 던지기\n[마법] 관통 투사체 발사",
 	"card_decay_curse":   "부패의 저주\n[마법] 범위 내 적 슬로우",
-	"card_legion":        "소환 증원\n소환 슬롯 +2\n[마물] 카드를 모을수록 슬롯 추가",
+	"card_legion":        "소환 확장\n소환 슬롯 +2\n[마물] 마물 카드 1장당 슬롯 +1",
 	"card_horde":         "골드 환급\n마물 전사 시 소환 비용 50% 환급\n[마물] 카드를 모을수록 환급 증가",
 	"card_echo":          "사망 폭발\n마물이 죽으면 폭발\n[마물] 카드를 모을수록 폭발 강화",
-	"card_surge":         "쇄도\n모든 마법 쿨다운 -35%\n[마법] 카드를 모을수록 쿨다운 감소",
-	"card_vulnerable":    "취약\n마법에 맞은 적은 약해져 더 큰 피해를 입는다 ↑\n[마법] 카드를 모을수록 적이 받는 피해량 ↑",
-	"card_execute":       "처형\n마법으로 직접 맞힌 체력 15% 이하의 적을 즉시 처치한다\n[마법] 카드를 모을수록 더 튼튼한 적도 처치 ↑",
+	"card_surge":         "마법 가속\n모든 마법 쿨타임 -35%\n[마법] 카드를 모을수록 쿨타임 감소",
+	"card_vulnerable":    "취약\n마법에 맞은 적이 일시적으로 받는 피해 증가\n[마법] 카드를 모을수록 피해 증가폭 상승",
+	"card_execute":       "처형\n마법에 직접 맞은 체력 15% 이하 적 처치\n[마법] 카드를 모을수록 더 튼튼한 적도 처치",
 
 	# MD12 하단 readout + MAX 배지
 	"minion_readout":         "%d / %d",  # active_minions / max_minions

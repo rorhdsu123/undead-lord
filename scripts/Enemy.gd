@@ -423,10 +423,15 @@ func execute_kill() -> void:
 	tw.tween_callback(_die)
 
 func _die() -> void:
-	_play_anim("die")
+	# 사망 = 별도 death effect로 연출(보스와 일관). Dying 애니 미사용 — 스프라이트 즉시 숨기고 정리.
+	# _anim_state="die"는 가드용(같은 프레임 연쇄피해의 중복 _die·이동 차단). queue_free는 프레임 끝 처리.
+	_anim_state = "die"
+	if is_instance_valid(anim_sprite):
+		anim_sprite.visible = false
 	if game:
 		# 처형 경로: ExecuteEffect가 이미 스폰됐으므로 일반 death effect 스킵
 		if not _is_execute:
 			game.spawn_death_effect(global_position, Color.WHITE)
 		game.add_souls(randi_range(12, 20))
 		game.enemy_died()
+	queue_free()

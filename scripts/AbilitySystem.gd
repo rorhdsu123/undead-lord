@@ -71,10 +71,18 @@ const BORDER_COOL_COLOR: Color    = Color(0.28, 0.26, 0.35, 0.80)  # 쿨 중 어
 const FLASH_DURATION: float       = 0.28   # 1회 깜빡임 지속 시간 (초)
 
 ## 준비 완료 외곽 글로우 맥동 (플레이테스트 조정 대상)
-const GLOW_BASE_ALPHA: float      = 0.25   # 맥동 기저 알파
+const GLOW_BASE_ALPHA: float      = 0.40   # 맥동 기저 알파 (0.25→0.40 강화, 플테 조정 대상)
 const GLOW_AMP: float             = 0.20   # 맥동 진폭
 const GLOW_SPEED: float           = 2.8    # 라디안/초, 약 2.2초 주기
 const GLOW_COLOR: Color           = Color(1.0, 1.0, 1.0, 1.0)  # 흰색(alpha는 런타임 계산)
+
+## 준비 완료 전이 순간 스케일 바운스 (플레이테스트 조정 대상)
+const READY_BOUNCE_SCALE: float   = 1.06   # 바운스 최대 스케일 (플테 조정 대상)
+const READY_BOUNCE_UP_DUR: float  = 0.08   # 확대 구간 (초, 플테 조정 대상)
+const READY_BOUNCE_DOWN_DUR: float = 0.20  # 복귀 구간 (초, ease out back, 플테 조정 대상)
+
+## 준비 완료 전이 순간 확장 링 (플레이테스트 조정 대상)
+const READY_EXPAND_RING_DIST: float = 10.0  # 링이 바깥으로 확장되는 최대 거리 (px, 플테 조정 대상)
 
 ## 취소 배지
 const BADGE_RADIUS: float     = 11.0   # 빨간 배지 반경
@@ -124,6 +132,8 @@ var _armed_slot: int = -1   # 현재 무장된 슬롯 인덱스
 var _cooldowns: Array[float] = [0.0, 0.0]         # 각 슬롯의 남은 쿨다운(초)
 var _cooldown_totals: Array[float] = [0.0, 0.0]   # 발동 시점의 실제 쿨다운(쇄도 등 반영) — 링이 0부터 꽉 차게 정규화
 var _prev_on_cooldown: Array[bool] = [false, false] # 전이 감지용: 직전 프레임 쿨 상태
+var _slot_enabled: Array[bool] = [true, true]     # 슬롯별 활성화 여부 (false = 숨김 + 발동 차단·상점용)
+var _slot_locked: Array[bool] = [false, false]    # 슬롯별 온보딩 잠금 (true = 자물쇠 표시 + 발동 차단)
 
 # ──────────────────────────────────────────────────────────────
 # 참조
@@ -152,6 +162,7 @@ class AbilityButtonDrawer extends Control:
 	var cool_ratio: float = 0.0  # 0.0(준비) ~ 1.0(방금 발동)
 	var is_armed: bool = false
 	var on_cooldown: bool = false
+	var locked: bool = false     # 온보딩 잠금: 흐린 아이콘 + 자물쇠, 발동 차단(마물 잠금과 통일)
 
 	## 준비 완료 1회 깜빡임 타이머 (>0이면 flash 진행 중)
 	var flash_timer: float = 0.0
@@ -163,6 +174,14 @@ class AbilityButtonDrawer extends Control:
 		flash_timer = AbilitySystem.FLASH_DURATION
 		set_process(true)
 		queue_redraw()
+		# 스케일 바운스: 준비 완료 전이 순간 버튼이 튀어 오르게
+		# pivot은 컨트롤 중심 (BTN_RADIUS 기준 — 배지 오버플로 포함 ctrl_size의 절반)
+		pivot_offset = size * 0.5
+		var tw: Tween = create_tween()
+		tw.tween_property(self, "scale", Vector2(AbilitySystem.READY_BOUNCE_SCALE, AbilitySystem.READY_BOUNCE_SCALE), \
+			AbilitySystem.READY_BOUNCE_UP_DUR).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.tween_property(self, "scale", Vector2.ONE, \
+			AbilitySystem.READY_BOUNCE_DOWN_DUR).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 	func _process(delta: float) -> void:
 		# 준비 완료 맥동: armed/cooldown 아닐 때 누산
@@ -183,6 +202,22 @@ class AbilityButtonDrawer extends Control:
 	func _draw() -> void:
 		var r: float = AbilitySystem.BTN_RADIUS
 		var c: Vector2 = Vector2(r, r)  # 컨트롤 내 중심
+
+		# ── 0. 잠금 상태 (온보딩) — 어두운 원 + 흐린 아이콘 + 자물쇠, 나머지 생략 ──
+		if locked:
+			draw_circle(c, r, Color(0.10, 0.09, 0.14, 0.92))
+			if slot_id == "lightning":
+				_draw_lightning_icon(c, 0.26)
+			else:
+				_draw_trumpet_icon(c, 0.26)
+			# 자물쇠 글리프 (몸통 + 반원 고리)
+			var lk: Color = Color(0.80, 0.76, 0.88, 0.95)
+			var bw: float = r * 0.50
+			var bh: float = r * 0.40
+			var by: float = c.y - bh * 0.28
+			draw_rect(Rect2(c.x - bw * 0.5, by, bw, bh), lk, true)
+			draw_arc(Vector2(c.x, by), bw * 0.34, PI, TAU, 16, lk, maxf(2.0, r * 0.07))
+			return
 
 		# ── 1. 배경 원 (어두운 석재/금속) ─────────────────────
 		var bg_color: Color = Color(0.14, 0.12, 0.20, 0.96)
@@ -230,31 +265,38 @@ class AbilityButtonDrawer extends Control:
 			if charge > 0.0:
 				_draw_ring(c, ring_r, ring_w, AbilitySystem.RING_CHARGE_COLOR, -PI * 0.5, TAU * charge)
 		else:
-			# 준비 완료: 외곽 맥동 글로우 (링 바깥, 링보다 먼저 그려서 링이 위에 오도록)
+			# 준비 완료: 슬롯 고유색 맥동 글로우 (링 바깥, 링보다 먼저 그려서 링이 위에 오도록)
+			# 낙뢰=노랑, 나팔=보라 — "흰 테두리 + 컬러 후광" 조합
+			var id_color: Color = AbilitySystem.ICON_LIGHTNING_COLOR if slot_id == "lightning" else AbilitySystem.ICON_TRUMPET_COLOR
 			var glow_alpha: float = AbilitySystem.GLOW_BASE_ALPHA \
 				+ AbilitySystem.GLOW_AMP * sin(ready_time * AbilitySystem.GLOW_SPEED)
-			var gc: Color = AbilitySystem.GLOW_COLOR
+			var gc: Color = id_color
 			gc.a = glow_alpha
-			# 안쪽 글로우 (ring_r + 1.5, 약간 진하게)
-			_draw_ring(c, ring_r + 1.5, ring_w, gc, 0.0, TAU)
-			# 바깥 글로우 (ring_r + 3, 더 옅게)
-			var gc_outer: Color = gc
+			# 안쪽 글로우 (ring_r + 2.5, 고유색 진하게)
+			_draw_ring(c, ring_r + 2.5, ring_w, gc, 0.0, TAU)
+			# 바깥 글로우 (ring_r + 4.5, 더 옅게)
+			var gc_outer: Color = id_color
 			gc_outer.a = glow_alpha * 0.5
-			_draw_ring(c, ring_r + 3.0, max(1, ring_w - 2), gc_outer, 0.0, TAU)
-			# 흰색 링 전체 (글로우 위에 올라와 선명하게)
+			_draw_ring(c, ring_r + 4.5, max(1, ring_w - 2), gc_outer, 0.0, TAU)
+			# 흰색 링 전체 (글로우 위에 올라와 선명하게 — 흰 테두리는 고유색 후광과 대비)
 			_draw_ring(c, ring_r, ring_w, AbilitySystem.RING_READY_COLOR, 0.0, TAU)
 
 		# ── 4. 준비 완료 깜빡임 오버레이 (flash_timer > 0) ────
-		# 쿨 완료 전이 순간 1회: 밝은 흰 글로우가 확 나타났다 페이드아웃
+		# 쿨 완료 전이 순간 1회: 고유색 글로우가 확 나타났다 바깥으로 확장·페이드아웃
 		if flash_timer > 0.0 and not is_armed and not on_cooldown:
 			var flash_t: float = flash_timer / AbilitySystem.FLASH_DURATION  # 1.0→0.0
-			# 원형 오버레이: 반투명 흰색, flash_t 기반 alpha 페이드
-			var flash_alpha: float = flash_t * 0.55  # 최대 55% 투명도
-			var flash_color: Color = Color(1.0, 1.0, 1.0, flash_alpha)
+			# 슬롯 고유색 사용 — 낙뢰=노랑, 나팔=보라
+			var flash_id_color: Color = AbilitySystem.ICON_LIGHTNING_COLOR if slot_id == "lightning" else AbilitySystem.ICON_TRUMPET_COLOR
+			# 원형 오버레이: 고유색 옅게, flash_t 기반 alpha 페이드
+			var flash_alpha: float = flash_t * 0.40  # 최대 40% 투명도 (과하지 않게)
+			var flash_color: Color = flash_id_color
+			flash_color.a = flash_alpha
 			draw_circle(c, r, flash_color)
-			# 링도 동시에 더 밝게 (추가 링 오버레이)
-			var ring_flash_color: Color = Color(1.0, 1.0, 1.0, flash_t * 0.80)
-			_draw_ring(c, ring_r, ring_w + 2, ring_flash_color, 0.0, TAU)
+			# 확장 링: flash_t가 1→0으로 줄며 반경이 바깥으로 퍼지고 동시에 페이드
+			var expand_r: float = ring_r + (1.0 - flash_t) * AbilitySystem.READY_EXPAND_RING_DIST
+			var expand_color: Color = flash_id_color
+			expand_color.a = flash_t * 0.80
+			_draw_ring(c, expand_r, ring_w + 2, expand_color, 0.0, TAU)
 
 		# ── 5. 취소 배지 (무장 시 우상단 빨간 원 + 흰 X) ───────
 		if is_armed:
@@ -369,6 +411,12 @@ func _is_blocked_by_shop() -> bool:
 
 ## 마법 버튼 탭 (1스텝)
 func on_ability_btn_pressed(slot: int) -> void:
+	if slot < 0 or slot >= SLOT_COUNT:
+		return
+	if is_instance_valid(game) and game._battle_over:
+		return  # 결과 화면: 마법 버튼 보이되 무반응
+	if not _slot_enabled[slot] or _slot_locked[slot]:
+		return
 	if _is_blocked_by_shop():
 		return
 	var ability: Dictionary = _get_ability(slot)
@@ -407,6 +455,8 @@ func _punch_drawer(slot: int) -> void:
 ## 필드 탭 (2스텝) — Game.gd의 _unhandled_input에서 호출
 ## world_pos: 월드 좌표 탭 위치
 func on_field_tap(world_pos: Vector2) -> void:
+	if is_instance_valid(game) and game._battle_over:
+		return  # 결과 화면: 발동 차단
 	if _is_blocked_by_shop():
 		return
 	if _arm_state != ArmState.ARMED:
@@ -418,8 +468,16 @@ func on_field_tap(world_pos: Vector2) -> void:
 	if not _in_reach(slot, world_pos):
 		return  # 헛탭: reach 밖이면 무시, 무장 유지
 
+	# 나팔(슬롯1) 최초 발동 시 taught_horn 플래그 기록
+	if slot == 1 and not GameSave.taught_horn:
+		GameSave.taught_horn = true
+		GameSave.save_data()
+
 	# 발현!
 	_fire_ability(slot, world_pos)
+	# 튜토리얼 가이드 팁이 떠 있으면 즉시 닫는다 (마법을 실제로 써본 순간 — 타이머까지 남으면 어색)
+	if is_instance_valid(game) and game.has_method("_close_guide"):
+		game._close_guide()
 	var actual_cd: float = ability["cooldown"] * _cd_mult()
 	_cooldowns[slot] = actual_cd
 	_cooldown_totals[slot] = actual_cd   # 링은 이 실제 쿨 기준으로 0→꽉 참(쇄도 시 더 빨리)
@@ -647,13 +705,16 @@ func restore_after_shop() -> void:
 	_set_field_buttons_visible(true)
 
 ## 슬롯 버튼(시각 드로어 + 투명 탭 버튼) 일괄 표시/숨김
+## 표시(v=true)는 슬롯별 게이팅(_slot_enabled)을 존중 — 온보딩서 숨긴 슬롯은 안 켜진다.
 func _set_field_buttons_visible(v: bool) -> void:
-	for d in _btn_drawers:
+	for i in range(_btn_drawers.size()):
+		var d: Node = _btn_drawers[i]
 		if is_instance_valid(d):
-			d.visible = v
-	for b in _tap_btns:
+			d.visible = v and _slot_enabled[i] if i < _slot_enabled.size() else v
+	for i in range(_tap_btns.size()):
+		var b: Node = _tap_btns[i]
 		if is_instance_valid(b):
-			b.visible = v
+			b.visible = v and _slot_enabled[i] if i < _slot_enabled.size() else v
 
 # ──────────────────────────────────────────────────────────────
 # 내부: 마법 데이터 접근
@@ -661,6 +722,49 @@ func _set_field_buttons_visible(v: bool) -> void:
 
 func _get_ability(slot: int) -> Dictionary:
 	return ABILITY_POOL[SLOT_ASSIGNMENTS[slot]]
+
+## 튜토리얼 스포트라이트용 — Game.gd에서 마법 버튼 Control 노드에 접근할 때 사용.
+## 슬롯이 범위를 벗어나면 null 반환.
+func get_field_button(slot: int) -> Control:
+	if slot < 0 or slot >= _btn_canvases.size():
+		return null
+	return _btn_canvases[slot]
+
+## 시각 원의 글로벌 사각 영역(배지 오버플로 제외) — 튜토리얼 스포트라이트 정렬용.
+## 드로어 컨트롤은 배지 여유로 BTN_DIAMETER보다 크고 원은 그 좌상단(로컬 0,0)부터
+## BTN_DIAMETER 크기로 그려지므로, get_global_rect() 대신 이 사각형으로 박스를 맞춘다.
+func get_field_button_rect(slot: int) -> Rect2:
+	if slot < 0 or slot >= _btn_canvases.size() or not is_instance_valid(_btn_canvases[slot]):
+		return Rect2()
+	return Rect2(_btn_canvases[slot].global_position, Vector2(BTN_DIAMETER, BTN_DIAMETER))
+
+## 슬롯 활성화/비활성화 — 온보딩 게이팅용.
+## enabled=false 시 버튼을 숨기고 발동을 차단한다.
+## 버튼 위치 재배치는 패스2에서 처리 — 여기서는 visible 토글만.
+func set_slot_enabled(slot: int, enabled: bool) -> void:
+	if slot < 0 or slot >= SLOT_COUNT:
+		return
+	_slot_enabled[slot] = enabled
+	if slot < _btn_canvases.size() and is_instance_valid(_btn_canvases[slot]):
+		_btn_canvases[slot].visible = enabled
+	if slot < _tap_btns.size() and is_instance_valid(_tap_btns[slot]):
+		_tap_btns[slot].visible = enabled
+	# 비활성화된 슬롯이 무장 중이었다면 해제
+	if not enabled and _arm_state == ArmState.ARMED and _armed_slot == slot:
+		_disarm()
+
+## 슬롯 잠금/해제 — 온보딩 게이팅용(숨김 아님). 잠긴 슬롯은 흐린 아이콘+자물쇠로 보이고 발동 차단.
+## (마물 잠금 표시와 통일 — 영역이 휑하지 않고 "곧 열린다"를 알림.)
+func set_slot_locked(slot: int, locked: bool) -> void:
+	if slot < 0 or slot >= SLOT_COUNT:
+		return
+	_slot_locked[slot] = locked
+	if slot < _btn_drawers.size() and is_instance_valid(_btn_drawers[slot]):
+		_btn_drawers[slot].locked = locked
+		_btn_drawers[slot].queue_redraw()
+	# 잠긴 슬롯이 무장 중이었다면 해제
+	if locked and _arm_state == ArmState.ARMED and _armed_slot == slot:
+		_disarm()
 
 ## 상점 노브: 쿨다운 배수 (기본 1.0, 상점 ability_cd 구매 시 감소)
 func _cd_mult() -> float:

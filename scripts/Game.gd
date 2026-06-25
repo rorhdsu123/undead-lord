@@ -72,6 +72,8 @@ var current_wave: int = 0
 var castle_hp: int = 500
 var castle_max_hp: int = 500
 var wave_active: bool = false
+var _battle_over: bool = false  # 결과/패배 화면 진입 후 = true. 하단 조작 버튼은 보이되 입력 차단.
+var _tutorial_teaching_minion: int = -1  # 현재 교습 중인 마물 MINION_TYPES 인덱스(-1=없음). 소환 게이트 + 한도 예외용.
 var enemies_alive: int = 0
 var _pulse_armed_t2: bool = true  # 2/3 임계 펄스 무장 상태
 var _pulse_armed_t1: bool = true  # 1/3 임계 펄스 무장 상태
@@ -155,9 +157,9 @@ const STAT_CARDS = [
 	{"id": "summon_cost"},
 	{"id": "minion_range"},
 	{"id": "minion_lifesteal"},
-	{"id": "area"},
-	{"id": "chain_lightning"},
-	{"id": "suppress"},
+	{"id": "area", "magic": true},
+	{"id": "chain_lightning", "magic": true},
+	{"id": "suppress", "alignment": "통제", "magic": true},
 ]
 
 var available_skill_cards: Array = []
@@ -489,6 +491,7 @@ func _ready() -> void:
 	ability_system = AbilitySystemScript.new()
 	add_child(ability_system)
 	ability_system.setup(self)
+	_update_ability_buttons_for_stage()  # 낙뢰(슬롯0)·나팔(슬롯1) 온보딩 게이팅
 	# 마왕 표정 컷인 노드 생성 — HUD 레이어(ModalDim보다 트리상 앞)에 배치
 	# 모달 재정렬은 위에서 이미 완료됐으므로 ModalDim 바로 앞(즉 이 시점 마지막 자식이 ModalDim)에 삽입.
 	# move_child로 ModalDim 바로 앞에 끼워 레이어 순서를 보장한다.
@@ -587,8 +590,16 @@ func start_wave() -> void:
 		b.game = self
 		enemies_node.add_child(b)
 		_on_boss_entered(b)
+	_update_ability_buttons_for_stage()  # 웨이브별 마법 버튼 노출(낙뢰는 튜토 W3부터) — 가이드 전에 갱신
 	if _is_tutorial():
 		_trigger_wave_guide(current_wave)
+	# FX13 — 1-2 강화 교습 비트는 start_wave가 아니라 '첫 소환 직후'에 띄운다(_on_summon_pressed).
+	#         (소환도 안 한 상태에서 강화부터 가르치면 어색 — 소환 → 강화 순서)
+	# FX14 — 1-3 나팔 교습 비트: 나팔 버튼 스포트라이트 (taught_horn은 첫 발동 시 AbilitySystem이 켬)
+	elif current_stage == 2 and not GameSave.taught_horn and current_wave == 0:
+		var horn_btn: Control = ability_system.get_field_button(1)
+		if is_instance_valid(horn_btn):
+			show_tutorial_tip("나팔로 적들을 밀어내세요!", horn_btn, 12.0, ability_system.get_field_button_rect(1), false)
 
 func _reveal_wave_tracker() -> void:
 	wave_tracker.visible = true
@@ -810,13 +821,16 @@ func end_wave() -> void:
 		current_wave += 1
 		start_wave()
 		return
+	# 키스톤1 축 선언: 튜토리얼=W3(낙뢰 학습 완료 후), 비튜토리얼=W0 클리어 즉시
+	var wtype: String = WaveData.get_wave(current_chapter, current_stage, current_wave).get("type", "normal")
+	var axis_wave: int = 3 if _is_tutorial() else 0
+	if current_wave == axis_wave and keystone1 == "":
+		# 전용 「전투 전략」 화면
+		_show_keystones(["legion", "surge"], true)
+		return
+	# 키스톤2 심화(중간보스 클리어 시): 비튜토리얼만 — 1-0 mid_boss는 game_clear로 빠져 여기 도달 안 함
 	if not _is_tutorial():
-		var wtype: String = WaveData.get_wave(current_chapter, current_stage, current_wave).get("type", "normal")
-		if current_wave == 0 and keystone1 == "":
-			# W1 축 선언 — 전용 「전투 전략」 화면
-			_show_keystones(["legion", "surge"], true)
-			return
-		elif wtype == "mid_boss" and keystone2 == "" and keystone1 == "legion":
+		if wtype == "mid_boss" and keystone2 == "" and keystone1 == "legion":
 			_show_keystones(["horde", "echo"])
 			return
 		elif wtype == "mid_boss" and keystone2 == "" and keystone1 == "surge":
@@ -843,6 +857,15 @@ func _show_cards() -> void:
 	var pool: Array = available_skill_cards.duplicate()
 	for stat_card: Dictionary in STAT_CARDS:
 		pool.append(stat_card)
+
+	# 온보딩 카드 풀 게이팅: taught_horn 전(1-2 이전)엔 통제형 카드 제외
+	var control_unlocked: bool = (current_stage >= 2) or GameSave.taught_horn
+	if not control_unlocked:
+		pool = pool.filter(func(c: Dictionary) -> bool: return c.get("alignment", "") != "통제")
+	# 낙뢰(마법) 학습 전(1-1 W3 이전)엔 마법 카드(연쇄낙뢰·넓은 마법·제압 등) 제외
+	if not _is_lightning_available():
+		pool = pool.filter(func(c: Dictionary) -> bool: return not c.get("magic", false))
+
 	pool.shuffle()
 
 	var skill_ids: Array = SKILL_CARDS.map(func(c: Dictionary) -> String: return c["id"])
@@ -869,8 +892,6 @@ func _show_cards() -> void:
 
 	_set_modal_dim(true)
 	card_panel.visible = true
-	if _is_tutorial() and current_wave == 0:
-		_show_card_guide.call_deferred()
 
 func _pick_card(index: int) -> void:
 	_close_guide()
@@ -1881,12 +1902,11 @@ func _format_time(seconds: float) -> String:
 
 func game_over() -> void:
 	wave_active = false
+	_battle_over = true  # 하단 조작 UI는 그대로 두되 입력만 차단 (숨기면 어색)
 	_spawn_schedule.clear()
 	_close_guide()
 	card_panel.visible = false
 	shop_panel.visible = false
-	summon_container.visible = false
-	minion_slot_label.visible = false
 
 	# 적·하인 처리 정지
 	for e in enemies_node.get_children():
@@ -1936,10 +1956,9 @@ func game_over() -> void:
 
 func game_clear() -> void:
 	wave_active = false
+	_battle_over = true  # 하단 조작 UI는 그대로 두되 입력만 차단 (숨기면 어색)
 	_close_guide()
 	card_panel.visible = false
-	summon_container.visible = false
-	minion_slot_label.visible = false
 
 	# 금빛 오버레이 페이드인 → 패널 등장
 	var overlay: ColorRect = ColorRect.new()
@@ -2477,6 +2496,7 @@ func add_souls(n: int) -> void:
 	_update_souls_ui()
 	if gained > 0:
 		_spawn_gold_floater(gained)
+	_try_show_enhance_tip()  # 골드가 강화비용 이상 차오르면 1-2 강화 교습 팁
 
 ## RD19 — 자원 캡슐(골드+하인) 가시성 토글 (단일 지점 관리)
 ## 캡슐 자식(souls_icon/souls_label/_minion_icon/_minion_readout/_max_badge)이 함께 표시/숨김됨.
@@ -3037,6 +3057,8 @@ func _set_upgrade_btn_visible(v: bool) -> void:
 		_upgrade_btn.visible = v
 
 func _toggle_upgrade_popup() -> void:
+	if _battle_over:
+		return  # 결과 화면: 강화 버튼 보이되 눌러도 무반응
 	if not is_instance_valid(_upgrade_popup):
 		return
 	if _upgrade_popup.visible:
@@ -3047,6 +3069,9 @@ func _toggle_upgrade_popup() -> void:
 func _open_upgrade_popup() -> void:
 	if not is_instance_valid(_upgrade_popup):
 		return
+	# 강화 튜토리얼 팁 닫기 — 팝업이 열리면 강화 버튼이 숨겨져 스포트라이트가 어긋나므로,
+	# 플레이어가 지시를 따라 팝업을 연 시점에 팁을 정리한다.
+	_close_guide()
 	_refresh_upgrade_popup()
 	# 캐처 먼저 표시 (팝업이 위에 그려짐)
 	# move_to_front으로 마법 버튼 등 다른 UI 형제 위로 올림 (캐처→팝업 순서로 팝업이 최상단)
@@ -3254,6 +3279,45 @@ func _layout_bottom_ui_phase_c() -> void:
 
 	# 팝업 캐처는 전체화면 앵커이므로 별도 배치 불필요
 
+## 튜토리얼 마물 점진 해금: W0=전사(j0), W1=+궁수(j1), W2=+탱크(j2). 비튜토리얼은 전부 해금.
+func _is_summon_unlocked(display_j: int) -> bool:
+	if not _is_tutorial():
+		return true
+	return display_j <= current_wave
+
+## 1-2(st1)에서 마물을 한 번이라도 소환했는지 (강화 교습 선행 조건)
+var _st1_summoned: bool = false
+
+## 1-2 강화 교습 팁: 소환 경험 + 강화 가능(골드 충분) + 전투 중일 때 1회.
+## 소환 시 + 골드 증가 시(add_souls) 호출 → 둘 중 조건 충족되는 시점에 뜬다.
+func _try_show_enhance_tip() -> void:
+	if GameSave.taught_enhance:
+		return
+	if current_stage != 1 or not _st1_summoned:
+		return
+	if souls < HIRE_UPGRADE_COST_BASE:
+		return
+	if not (wave_active and is_instance_valid(_upgrade_btn)):
+		return
+	GameSave.taught_enhance = true
+	GameSave.save_data()
+	show_tutorial_tip("마물을 강화해 더 강하게 만드세요!", _upgrade_btn, 12.0)
+
+## 낙뢰(마법) 가용 여부: 튜토리얼 1-1은 W3(낙뢰 학습)부터, 그 외엔 항상.
+## 버튼 노출과 마법 카드 게이팅이 같은 기준을 쓰도록 단일 지점.
+func _is_lightning_available() -> bool:
+	return (not _is_tutorial()) or current_wave >= 3
+
+## 온보딩 마법 버튼 노출: 낙뢰=슬롯0, 나팔=슬롯1.
+## 1-1 튜토리얼은 W3(낙뢰 학습)부터 낙뢰 노출 — 그 전(W0~W2)엔 순수 마물 운영에 집중.
+func _update_ability_buttons_for_stage() -> void:
+	if not is_instance_valid(ability_system):
+		return
+	# 숨김이 아니라 '잠금표시'(마물 잠금과 통일·영역이 휑하지 않게). 잠긴 버튼은 흐린 아이콘+자물쇠.
+	ability_system.set_slot_locked(0, not _is_lightning_available())
+	var horn_on: bool = (current_stage >= 2) or GameSave.taught_horn
+	ability_system.set_slot_locked(1, not horn_on)
+
 func _refresh_summon_buttons() -> void:
 	# Phase C — minion_slot_label·slot_icon 숨김 유지 (캡 없어짐)
 	# RD19 — 자원 캡슐 가시성은 _set_resource_hud_visible 단일 지점이 관리하므로
@@ -3266,7 +3330,6 @@ func _refresh_summon_buttons() -> void:
 		if wdata.get("type", "normal") == "shop":
 			wave_is_combat = false
 
-	var is_tut: bool = _is_tutorial()
 	# summon_btns[j] → HIRE_TYPE_INDICES[j]
 	for j in HIRE_TYPE_INDICES.size():
 		var type_idx: int = HIRE_TYPE_INDICES[j]
@@ -3275,8 +3338,9 @@ func _refresh_summon_buttons() -> void:
 		var btn: Button = summon_btns[j]
 		var name_lbl: Label = _summon_name_lbls[j]
 		var cost_lbl: Label = _summon_cost_lbls[j]
-		if is_tut and (current_wave < 1 or j > 0):
-			# 튜토리얼 잠금 — 이름 라벨에 잠금 표시, 비용 행(●+숫자) 숨김
+		if not _is_summon_unlocked(j):
+			# 튜토리얼 잠금 — 전사(j=0)만 처음부터 사용 가능, 궁수·탱크는 잠금
+			# 이름 라벨에 잠금 표시, 비용 행(●+숫자) 숨김
 			name_lbl.text = "🔒 %s" % [entry["label"]]
 			name_lbl.add_theme_color_override("font_color", Color(0.55, 0.50, 0.65, 0.85))
 			cost_lbl.get_parent().visible = false  # cost_box(아이콘+숫자) 숨김
@@ -3309,22 +3373,39 @@ func _on_summon_pressed(index: int, btn: Button = null) -> void:
 	var wave_data: Dictionary = WaveData.get_wave(current_chapter, current_stage, current_wave)
 	if wave_data.get("type", "normal") == "shop":
 		return
-	if _is_tutorial() and (current_wave < 1 or index > 0):
-		return
+	var disp_j: int = HIRE_TYPE_INDICES.find(index)
+	if _is_tutorial() and (disp_j == -1 or not _is_summon_unlocked(disp_j)):
+		return  # 튜토리얼: 해금된 마물만 소환 가능 (W0=전사, W1+=궁수, W2+=탱크)
 	var entry: Dictionary = MINION_TYPES[index]
 	var cost: int = max(5, entry["cost"] - minion_cost_reduction)
 	if souls < cost:
 		return
 	# MD12 — 전역 총량 캡 초과 시 거부 (N/M 빨강 펄스로 피드백 — 누를 때마다 깜빡)
 	if active_minions >= max_minions:
-		_flash_minion_cap()
-		return
+		# 튜토리얼 한도 예외: 교습 중인 종류면 '이번에만' 한도 +1 (한도 인지시키며 교습 완성)
+		if _is_tutorial() and index == _tutorial_teaching_minion:
+			max_minions += 1
+			_update_minion_readout()
+			_demon_say("victory", "한도가 찼군… 이번에만 한 자리 내주마.", true)
+		else:
+			_flash_minion_cap()
+			return
 	# 모든 게이트 통과 — 성공 시에만 눌림 피드백
 	_play_button_bounce(btn)
 	souls -= cost
 	_update_souls_ui()
-	_close_guide()
+	# 교습 중인 종류를 소환하면 그 가이드 팁을 닫고 교습 완료 (다른 종류 소환은 팁 유지=게이트)
+	if index == _tutorial_teaching_minion:
+		_tutorial_teaching_minion = -1
+		_close_guide()
 	_spawn_minion(entry["id"])
+
+	# FX13 — 1-2 강화 교습: 소환을 해봤다는 사실만 기록. 실제 팁은 골드가 강화비용 이상으로
+	# 차오르는 순간(_try_show_enhance_tip, 보통 킬 보상 add_souls 경유)에 띄운다.
+	# (소환 직후 souls 체크는 골드를 다 써버려 거의 안 떠서 폐기 — 소환→강화 순서는 플래그로 보장)
+	if current_stage == 1:
+		_st1_summoned = true
+		_try_show_enhance_tip()
 
 func _spawn_minion(type_id: String) -> void:
 	var m = SkeletonWarriorScene.instantiate()
@@ -3726,21 +3807,32 @@ func _is_tutorial() -> bool:
 	return current_chapter == 0 and current_stage == 0 and not GameSave.tutorial_completed
 
 func _trigger_wave_guide(wave_idx: int) -> void:
+	# 마물 교습(W0~2)은 '소환 게이트' — 팁이 자동으로 안 사라지고(duration 0), 해당 종류를
+	# 소환할 때까지 유지(_on_summon_pressed에서 닫음). teaching 인덱스는 한도 예외에도 쓰임.
+	_tutorial_teaching_minion = -1
 	match wave_idx:
 		0:
-			show_tutorial_tip("또 몰려오는군.\n성이 무너지면 끝이다.", castle_bar, 4.5)
+			# FX8 — 전사 학습: 첫 적이 다가올 무렵 소환 버튼 스포트라이트
+			_tutorial_teaching_minion = HIRE_TYPE_INDICES[0]  # 전사
+			get_tree().create_timer(1.5).timeout.connect(func() -> void:
+				if wave_active and summon_btns.size() > 0 and is_instance_valid(summon_btns[0]):
+					show_tutorial_tip("전사를 소환해 성을 지키세요!", summon_btns[0], 0.0)
+			)
 		1:
-			if summon_btns.size() > 0:
-				show_tutorial_tip("전사를 소환해 방어를 강화하세요!", summon_btns[0], 12.0)
-
-func _show_card_guide() -> void:
-	if _card_rows.size() < 3:
-		return
-	show_guide("카드를 선택하세요. 영주가 강해집니다.", [
-		{"rect": _card_rows[0].get_global_rect(), "callback": func() -> void: _pick_card(0), "text": _card_name(current_cards[0]["id"]), "rare": current_cards[0]["rare"]},
-		{"rect": _card_rows[1].get_global_rect(), "callback": func() -> void: _pick_card(1), "text": _card_name(current_cards[1]["id"]), "rare": current_cards[1]["rare"]},
-		{"rect": _card_rows[2].get_global_rect(), "callback": func() -> void: _pick_card(2), "text": _card_name(current_cards[2]["id"]), "rare": current_cards[2]["rare"]},
-	])
+			# FX9 — 궁수 학습: 후방 사수가 등장하는 웨이브, 궁수 버튼 스포트라이트
+			_tutorial_teaching_minion = HIRE_TYPE_INDICES[1]  # 궁수
+			if summon_btns.size() > 1 and is_instance_valid(summon_btns[1]):
+				show_tutorial_tip("궁수로 후방의 적을 노리세요!", summon_btns[1], 0.0)
+		2:
+			# FX10 — 탱크 학습: 브루트(벽)가 등장하는 웨이브, 탱크 버튼 스포트라이트
+			_tutorial_teaching_minion = HIRE_TYPE_INDICES[2]  # 탱크
+			if summon_btns.size() > 2 and is_instance_valid(summon_btns[2]):
+				show_tutorial_tip("탱크로 강한 적을 막으세요!", summon_btns[2], 0.0)
+		3:
+			# FX11 — 낙뢰 학습: 잡병 무리가 몰려오는 웨이브, 마법 버튼 스포트라이트
+			var lightning_btn: Control = ability_system.get_field_button(0)
+			if is_instance_valid(lightning_btn):
+				show_tutorial_tip("낙뢰로 몰려드는 적을 쓸어버리세요!", lightning_btn, 12.0, ability_system.get_field_button_rect(0), false)
 
 func _show_shop_guide() -> void:
 	# 타이틀을 튜토리얼 안내 문구로 교체 (부제에 힌트 표시)
@@ -3753,14 +3845,43 @@ func _show_shop_guide() -> void:
 	_shop_btn_pulse_tween.tween_property(shop_close_btn, "modulate", Color(1.6, 1.35, 0.5, 1), 0.5)
 	_shop_btn_pulse_tween.tween_property(shop_close_btn, "modulate", Color(1.0, 1.0, 1.0, 1), 0.5)
 
-func show_tutorial_tip(message: String, target: Control, duration: float = 4.0) -> void:
+func show_tutorial_tip(message: String, target: Control, duration: float = 4.0, rect_override: Rect2 = Rect2(), dim: bool = true) -> void:
 	_close_guide()
 	_guide_active = true
 	_guide_layer = CanvasLayer.new()
 	_guide_layer.layer = 80
 	add_child(_guide_layer)
 
-	var rect: Rect2 = target.get_global_rect()
+	# rect_override가 주어지면(원형 마법 버튼처럼 컨트롤 rect≠시각 영역일 때) 그걸 쓴다
+	var rect: Rect2 = rect_override if rect_override.size.x > 0.0 else target.get_global_rect()
+
+	# 배경 dim — 타깃(스포트라이트) 영역만 비우고 나머지를 어둡게. 입력은 통과(non-blocking)이라
+	# 게임이 계속 돌아가고, 골드를 못 모았어도 갇히지 않는다(freeze 폐기).
+	# dim=false: 낙뢰·나팔처럼 적을 조준해야 하는 팁은 배경 적이 어두워지면 안 되므로 생략.
+	if dim:
+		var vp: Vector2 = Vector2(480.0, 960.0)
+		var spot_pad: float = 6.0
+		var spot: Rect2 = Rect2(rect.position - Vector2(spot_pad, spot_pad), rect.size + Vector2(spot_pad, spot_pad) * 2.0)
+		var dim_color: Color = Color(0, 0, 0, 0.55)
+		var sx0: float = clampf(spot.position.x, 0.0, vp.x)
+		var sy0: float = clampf(spot.position.y, 0.0, vp.y)
+		var sx1: float = clampf(spot.position.x + spot.size.x, 0.0, vp.x)
+		var sy1: float = clampf(spot.position.y + spot.size.y, 0.0, vp.y)
+		# 사각 구멍을 만드는 4분할 스트립 (상 / 하 / 좌 / 우)
+		for sr: Rect2 in [
+			Rect2(0, 0, vp.x, sy0),                        # 상
+			Rect2(0, sy1, vp.x, vp.y - sy1),               # 하
+			Rect2(0, sy0, sx0, sy1 - sy0),                 # 좌
+			Rect2(sx1, sy0, vp.x - sx1, sy1 - sy0),        # 우
+		]:
+			if sr.size.x <= 0.0 or sr.size.y <= 0.0:
+				continue
+			var strip: ColorRect = ColorRect.new()
+			strip.color = dim_color
+			strip.position = sr.position
+			strip.size = sr.size
+			strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_guide_layer.add_child(strip)
 
 	var border: Panel = Panel.new()
 	var style: StyleBoxFlat = StyleBoxFlat.new()
@@ -3786,16 +3907,41 @@ func show_tutorial_tip(message: String, target: Control, duration: float = 4.0) 
 	var msg_y: float = arrow_base_y - 58
 	if msg_y < 5:
 		msg_y = rect.position.y + rect.size.y + 30
+	# 안내 텍스트 — 게임 위에서도 잘 읽히게 흰색 박스 + 검정 글씨 + 큰 글씨
+	var FONT_SIZE: int = 24
 	var msg: Label = Label.new()
 	msg.text = message
-	msg.add_theme_font_size_override("font_size", 18)
-	msg.add_theme_color_override("font_color", Color(1.0, 0.95, 0.8, 1))
+	msg.add_theme_font_size_override("font_size", FONT_SIZE)
+	msg.add_theme_color_override("font_color", Color(0.08, 0.08, 0.10, 1))  # 검정 텍스트
 	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	msg.size = Vector2(440, 70)
-	msg.position = Vector2(20, msg_y)
+	msg.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	msg.autowrap_mode = TextServer.AUTOWRAP_OFF
 	msg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_guide_layer.add_child(msg)
+	_guide_layer.add_child(msg)  # 폰트 해석 후 텍스트 폭 측정
+
+	var fnt: Font = msg.get_theme_font("font")
+	var text_w: float = fnt.get_string_size(message, HORIZONTAL_ALIGNMENT_LEFT, -1.0, FONT_SIZE).x
+	var PAD_X: float = 20.0
+	var PAD_Y: float = 11.0
+	var box_w: float = min(text_w + PAD_X * 2.0, 460.0)
+	var box_h: float = float(FONT_SIZE) + PAD_Y * 2.0
+	var box_x: float = 240.0 - box_w * 0.5  # 화면 가로 중앙
+
+	var box: Panel = Panel.new()
+	var box_style: StyleBoxFlat = StyleBoxFlat.new()
+	box_style.bg_color = Color(0.97, 0.97, 0.98, 0.98)  # 흰색 박스
+	box_style.set_corner_radius_all(8)
+	box_style.set_border_width_all(2)
+	box_style.border_color = Color(0.15, 0.13, 0.20, 0.9)
+	box.add_theme_stylebox_override("panel", box_style)
+	box.position = Vector2(box_x, msg_y)
+	box.size = Vector2(box_w, box_h)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_guide_layer.add_child(box)
+	_guide_layer.move_child(box, msg.get_index())  # 박스를 텍스트 뒤로
+
+	msg.position = Vector2(box_x, msg_y)
+	msg.size = Vector2(box_w, box_h)
 
 	_guide_tween = create_tween().set_loops().set_ignore_time_scale(true)
 	_guide_tween.tween_property(arrow, "position:y", arrow_base_y + 8, 0.4)

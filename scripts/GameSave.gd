@@ -23,6 +23,8 @@ var current_stage: int = 0   # 다음에 플레이할 스테이지 (저장됨)
 var intro_seen: bool = false        # 인트로 시퀀스 시청 여부
 var tutorial_completed: bool = false # 1-1 튜토리얼 클리어 여부
 var first_lobby_visit_done: bool = false # 첫 시설업 가이드 완료 여부
+var taught_enhance: bool = false         # 1-1 마물 강화 학습 완료 여부
+var taught_horn: bool = false            # 1-2 나팔(통제형 마법) 학습 완료 여부
 
 # ── 위엄(Majesty) 저장 필드 ───────────────────────────────────
 var majesty_level: int = 0          # 0~5 (MAJESTY_CAP)
@@ -125,6 +127,8 @@ func save_data():
 	config.set_value("meta", "intro_seen", intro_seen)
 	config.set_value("meta", "tutorial_completed", tutorial_completed)
 	config.set_value("meta", "first_lobby_visit_done", first_lobby_visit_done)
+	config.set_value("meta", "taught_enhance", taught_enhance)
+	config.set_value("meta", "taught_horn", taught_horn)
 	for id in facility_levels:
 		config.set_value("facilities", id, facility_levels[id])
 	# 위엄 저장
@@ -147,6 +151,8 @@ func load_data():
 		intro_seen = config.get_value("meta", "intro_seen", false)
 		tutorial_completed = config.get_value("meta", "tutorial_completed", false)
 		first_lobby_visit_done = config.get_value("meta", "first_lobby_visit_done", false)
+		taught_enhance = config.get_value("meta", "taught_enhance", false)
+		taught_horn = config.get_value("meta", "taught_horn", false)
 		for id in facility_levels:
 			facility_levels[id] = config.get_value("facilities", id, 0)
 		# 위엄 로드

@@ -19,31 +19,31 @@ const CHAPTERS = [
 		"stages": [
 			{   # 스테이지 1-1 (FTUE 튜토리얼: 시스템 점진 도입)
 				"waves": [
-					# W1: 자동 공격 학습
+					# W1(idx0): 전사 학습 — 자동 공격 체험, 약한 잡병만
 					{"type": "normal", "base_hp": 30, "base_speed": 50, "base_damage": 5,
 					 "pulses": [
 						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 3}]},
 					 ]},
 
-					# W2: 카드 선택 학습
+					# W2(idx1): 궁수 학습 — 후방 사수 등장으로 원거리 대응 동기부여
 					{"type": "normal", "base_hp": 35, "base_speed": 55, "base_damage": 6,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 3}]},
+						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 2}, {"enemy": "scout", "count": 1}]},
 						{"t": 5.0, "spawn": [{"enemy": "normal", "count": 2}]},
 					 ]},
 
-					# W3: 새 적 brute(벽) 등장
+					# W3(idx2): 탱크 학습 — brute(벽) 등장으로 방어 라인 동기부여
 					{"type": "normal", "base_hp": 40, "base_speed": 58, "base_damage": 6,
 					 "pulses": [
 						{"t": 0.0, "spawn": [{"enemy": "brute", "count": 1}, {"enemy": "normal", "count": 2}]},
 						{"t": 6.0, "spawn": [{"enemy": "normal", "count": 2}]},
 					 ]},
 
-					# W4: 하인 소환 학습 (적 강도 약함) + 사수 도입
+					# W4(idx3): 낙뢰 학습 — 잡병 무리 뭉침으로 AoE 가시화
 					{"type": "normal", "base_hp": 45, "base_speed": 60, "base_damage": 6,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 3}]},
-						{"t": 5.0, "spawn": [{"enemy": "scout",  "count": 1}]},
+						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 5}]},
+						{"t": 5.0, "spawn": [{"enemy": "normal", "count": 3}]},
 					 ]},
 
 					# W5: brute 보강

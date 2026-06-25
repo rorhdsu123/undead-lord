@@ -61,6 +61,7 @@ const ACQUIRE_TOP: float = BAND_TOP - LEASH_MARGIN   # 획득선=leash 포기선
 const RETREAT_GRACE: float = 1.5   # 필드에 적 0인 채 이 시간 지나야 대형으로 복귀
 const SPAWN_BELOW_WAIT: float = 40.0  # 스폰 시 정착선보다 이만큼 아래(짧게 한 발 올라서며 대형 합류, B안)
 const RETARGET_INTERVAL: float = 0.5  # 근접 유닛 타겟 재평가 주기 (초)
+const OVERKILL_CLAIM_MULT: float = 1.0  # 전사 1명이 예약하는 피해 = attack_damage × 이 값. 잡몹당 붙는 전사 수 튜닝 노브(플테)
 # 역할별 전진 상한(최대 전진 = 최소 y). 작을수록 더 앞(적 쪽). 탱크를 최전방으로, 전사를 그 바로 뒤로.
 # ⚠️탱크가 전사보다 앞이어야 보스가 '가장 가까운 하인'으로 물몸 전사 대신 탱크를 집중한다(역전 시 전사 학살).
 # (실측값: CASTLE_TOP_WALL=400.8 → 탱크 정지선 ~380.8, 전사 정지선 ~400.8. 정지=상한+공격사거리30)
@@ -102,6 +103,8 @@ var retarget_timer: float = 0.0
 var attack_phase: float = 0.0   # 같은 종 일제 타격 방지용 위상 오프셋(_ready에서 randf)
 var no_enemy_timer: float = 0.0
 var current_target = null
+var _claimed = null            # 전사 anti-overkill: 현재 incoming_damage를 예약해 둔 적
+var _claim_amount: float = 0.0 # 예약해 둔 양(해제 시 정확히 차감하려고 보관)
 var game = null
 var _anim_state: String = ""
 var lifesteal: float = 0.0
@@ -243,6 +246,10 @@ func _physics_process(delta: float) -> void:
 		if not is_instance_valid(current_target) or retarget_timer >= RETARGET_INTERVAL:
 			current_target = _find_nearest_enemy_in_band()
 			retarget_timer = 0.0
+
+	# 전사만 anti-overkill 예약 갱신 — 매 프레임 현재 결정에 맞춰 동기화(같으면 no-op)
+	if minion_type == "warrior":
+		_set_claim(current_target)
 
 	# 3) 타겟 없음 — 필드에 적이 남아 있으면 그 자리 사수하며 재탐색 대기(곧장 후진 금지).
 	#    필드에 적이 0일 때만 짧은 유예 후 대형으로 복귀(웨이브 소강).
@@ -488,11 +495,29 @@ func _find_ranged_target():
 		return nearest_archer
 	return _find_deepest_enemy_in_band()
 
+# 전사 anti-overkill 예약: 타겟이 바뀌면 옛 적의 incoming_damage를 빼고 새 적에 더한다.
+# 전사만 호출 — 탱크/궁수는 예약하지 않는다(탱크가 brute를 막는 걸 '포화'로 오판하지 않게).
+func _set_claim(new_target) -> void:
+	if new_target == _claimed:
+		return
+	if is_instance_valid(_claimed):
+		_claimed.incoming_damage -= _claim_amount
+	_claimed = new_target
+	if is_instance_valid(new_target):
+		_claim_amount = attack_damage * OVERKILL_CLAIM_MULT
+		new_target.incoming_damage += _claim_amount
+	else:
+		_claim_amount = 0.0
+
 # 근접 미니언 전용: 밴드 안(y >= BAND_TOP)에서 가장 가까운 적 — 스웜 분산용(RD13).
+# 전사는 추가로 anti-overkill 분산(incoming_damage < hp인 적 우선), 탱크는 plain 최근접(블로킹).
 func _find_nearest_enemy_in_band():
 	var enemies: Array = get_tree().get_nodes_in_group("enemies")
 	var nearest = null
 	var nearest_dist: float = INF
+	var nearest_unsat = null        # 전사 전용: 아직 피해가 덜 예약된(incoming<hp) 적 중 최근접
+	var nearest_unsat_dist: float = INF
+	var spread: bool = (minion_type == "warrior")
 	for e in enemies:
 		if not is_instance_valid(e):
 			continue
@@ -504,7 +529,12 @@ func _find_nearest_enemy_in_band():
 		if d < nearest_dist:
 			nearest_dist = d
 			nearest = e
-	return nearest
+		if spread and e.incoming_damage < e.hp and d < nearest_unsat_dist:
+			nearest_unsat_dist = d
+			nearest_unsat = e
+	if spread and nearest_unsat != null:
+		return nearest_unsat  # 전사: 포화되지 않은 적 우선(분산)
+	return nearest            # 폴백: 다 포화면 최근접(boss/brute는 항상 미달이라 여기 안 옴)
 
 # 역할별 전진 상한 — 탱크 최전방, 전사는 그 바로 뒤, 궁수는 사격 위치(밴드 상한)
 func _forward_limit() -> float:
@@ -570,6 +600,7 @@ func _report_died() -> void:
 	if _died_reported:
 		return
 	_died_reported = true
+	_set_claim(null)  # 죽으면 예약 해제 — 살아있는 적의 incoming_damage 원복
 	if game and game.has_method("minion_died"):
 		game.minion_died(position, minion_type)
 

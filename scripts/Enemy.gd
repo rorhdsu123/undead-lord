@@ -49,6 +49,7 @@ static var _cached_frames: Dictionary = {}
 
 var hp: float = 50.0
 var max_hp: float = 50.0
+var incoming_damage: float = 0.0  # 전사 anti-overkill: 이 적에 예약된 전사 피해 합(SkeletonWarrior가 가감)
 var speed: float = 60.0
 var base_speed: float = 60.0
 var damage: int = 10

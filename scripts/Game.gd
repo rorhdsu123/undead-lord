@@ -1017,12 +1017,70 @@ func _card_name(id: String) -> String:
 	var nl: int = full.find("\n")
 	return full.substr(0, nl) if nl >= 0 else full
 
-func _card_desc(id: String) -> String:
-	var full: String = Loc.t("card_%s" % id)
+func _card_desc(card: Dictionary) -> String:
+	# {val} 치환은 _build_card_row에서 _format_axis_tags 이후에 수행(동적 값은 코드에서 직접 빨강 칠함 → 정규식 이중처리 방지)
+	var full: String = Loc.t("card_%s" % card["id"])
 	var nl: int = full.find("\n")
 	return full.substr(nl + 1) if nl >= 0 else ""
 
+## 동적 미리보기 숫자 1개를 빨강으로 감싼다. (단위 글자·화살표는 호출부에서 밖에 두어 검정 유지)
+func _hl(s: String) -> String:
+	return "[color=#cc2222]%s[/color]" % s
+
+## 동적 미리보기: 반복 획득 스탯 카드의 "현재값 → 다음값" 표기(첫 픽=얻는 값만).
+## rare면 증가폭 ×1.5(_pick_card mult와 일치). 단 minion_count/chain은 _apply_card가 mult 무시(+1 고정).
+## 숫자는 _hl로 직접 빨강 처리(plain 정수도 강조되도록). 비대상이면 "".
+func _card_value_preview(id: String, rare: bool) -> String:
+	var mult: float = 1.5 if rare else 1.0
+	match id:
+		"minion_lifesteal":
+			var cur: int = int(round(minion_lifesteal * 100.0))
+			var nxt: int = int(round((minion_lifesteal + 0.20 * mult) * 100.0))
+			return _hl("%d%%" % nxt) if cur == 0 else _hl("%d%%" % cur) + " → " + _hl("%d%%" % nxt)
+		"minion_range":
+			var cur: int = int(round(minion_range_bonus))
+			var nxt: int = int(round(minion_range_bonus + 40.0 * mult))
+			return _hl("+%d" % nxt) if cur == 0 else _hl("+%d" % cur) + " → " + _hl("+%d" % nxt)
+		"area":
+			var cur: int = int(round((ability_radius_card_mult - 1.0) * 100.0))
+			var nxt: int = int(round((ability_radius_card_mult - 1.0 + 0.25 * mult) * 100.0))
+			return _hl("+%d%%" % nxt) if cur == 0 else _hl("+%d%%" % cur) + " → " + _hl("+%d%%" % nxt)
+		"graveyard":
+			var cur: int = graveyard_heal
+			var nxt: int = cur + int(20 * mult)
+			return _hl("%d" % nxt) if cur == 0 else _hl("%d" % cur) + " → " + _hl("%d" % nxt)
+		"chain_lightning":
+			var cur: int = chain_lightning_targets
+			var nxt: int = cur + 1
+			return _hl("%d" % nxt) if cur == 0 else _hl("%d" % cur) + " → " + _hl("%d" % nxt)
+		"summon_cost":
+			# 누적 총액이 아니라 이 카드가 깎는 양(고정 증가폭)만 표기 — 항상 "5 골드 감소"(전설 7)
+			return _hl("%d" % int(5 * mult))
+		"minion_count":
+			var cur: int = max_minions
+			return _hl("%d" % cur) + " → " + _hl("%d" % (cur + 1))
+		"wall":
+			var cur: int = castle_max_hp
+			return _hl("%d" % cur) + " → " + _hl("%d" % (cur + int(50 * mult)))
+		"suppress":
+			if suppress_duration >= 2.0:
+				return _hl("2.0") + "초 (최대)"
+			var nxt_d: float = minf(suppress_duration + 0.5, 2.0)
+			var cap: String = " (최대)" if nxt_d >= 2.0 else ""
+			if suppress_duration == 0.0:
+				return _hl("%.1f" % nxt_d) + "초" + cap
+			return _hl("%.1f" % suppress_duration) + "초 → " + _hl("%.1f" % nxt_d) + "초" + cap
+	return ""
+
+var _value_re: RegEx = null  # 카드 수치 강조용 정규식 (lazy compile)
+
 func _format_axis_tags(s: String) -> String:
+	# 수치 강조: 부호(+/-)나 % 붙은 값만 빨강. ([b] 볼드는 폰트 메트릭 차이로 baseline이 어긋나 제외 — 색만으로 강조)
+	# 축 태그 치환 *전*에 적용 — 치환이 삽입하는 색 hex(#7b4fc9 등)의 숫자가 오염되지 않도록.
+	if _value_re == null:
+		_value_re = RegEx.new()
+		_value_re.compile("([+\\-]?\\d+(?:\\.\\d+)?%|[+\\-]\\d+(?:\\.\\d+)?)")
+	s = _value_re.sub(s, "[color=#cc2222]$1[/color]", true)
 	s = s.replace("[마법]", "[color=#7b4fc9][lb]마법[rb][/color]")
 	s = s.replace("[마물]", "[color=#0a7d6b][lb]마물[rb][/color]")
 	return s
@@ -1107,7 +1165,7 @@ func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(name_lbl)
 
-	var desc: String = _card_desc(card["id"])
+	var desc: String = _card_desc(card)
 	if desc != "":
 		var desc_lbl: RichTextLabel = RichTextLabel.new()
 		desc_lbl.bbcode_enabled = true
@@ -1119,7 +1177,10 @@ func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
 		desc_lbl.add_theme_font_size_override("normal_font_size", 14)
 		desc_lbl.add_theme_color_override("default_color", desc_col)
 		desc_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		desc_lbl.text = _format_axis_tags(desc)
+		var formatted: String = _format_axis_tags(desc)
+		if formatted.find("{val}") >= 0:
+			formatted = formatted.replace("{val}", _card_value_preview(card["id"], card.get("rare", false)))
+		desc_lbl.text = formatted
 		root.add_child(desc_lbl)
 
 	var btn: Button = Button.new()
@@ -1145,10 +1206,11 @@ func _build_keystone_card(card: Dictionary, index: int, x_pos: float, y_pos: flo
 
 	var parts: PackedStringArray = Loc.t("card_%s" % id).split("\n")
 	var card_name: String = parts[0] if parts.size() > 0 else id
-	var card_effect: String = parts[1] if parts.size() > 1 else ""
-	var card_synergy: String = parts[2] if parts.size() > 2 else ""
+	# Loc는 \n을 name/effect/synergy 필드 구분자로 쓰므로, 필드 내부 수동 줄바꿈은 '|' 마커 → 여기서 \n으로 치환
+	var card_effect: String = (parts[1] if parts.size() > 1 else "").replace("|", "\n")
+	var card_synergy: String = (parts[2] if parts.size() > 2 else "").replace("|", "\n")
 
-	var card_h: float = 280.0
+	var card_h: float = 324.0
 
 	var root: Control = Control.new()
 	root.position = Vector2(x_pos, y_pos)
@@ -1170,7 +1232,7 @@ func _build_keystone_card(card: Dictionary, index: int, x_pos: float, y_pos: flo
 	var pill_w: float = 74.0
 	var pill_h: float = 28.0
 	var pill_x: float = (col_w - pill_w) * 0.5
-	var pill_y: float = 16.0
+	var pill_y: float = -pill_h * 0.5  # 카드 상단 테두리에 탭처럼 반쯤 걸침
 	var pill_bg: Panel = Panel.new()
 	pill_bg.position = Vector2(pill_x, pill_y)
 	pill_bg.size = Vector2(pill_w, pill_h)
@@ -1192,37 +1254,53 @@ func _build_keystone_card(card: Dictionary, index: int, x_pos: float, y_pos: flo
 	pill_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(pill_lbl)
 
-	# 이름 라벨
+	# 이름 라벨 (위)
 	var name_lbl: Label = Label.new()
 	name_lbl.text = card_name
-	name_lbl.position = Vector2(0.0, 70.0)
-	name_lbl.size = Vector2(col_w, 36.0)
+	name_lbl.position = Vector2(0.0, 22.0)
+	name_lbl.size = Vector2(col_w, 32.0)
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	name_lbl.add_theme_font_size_override("font_size", 23)
+	name_lbl.add_theme_font_size_override("font_size", 22)
 	name_lbl.add_theme_color_override("font_color", Color(0.13, 0.08, 0.05))
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(name_lbl)
 
-	# 핵심효과 라벨
-	var effect_lbl: Label = Label.new()
-	effect_lbl.text = card_effect
-	effect_lbl.position = Vector2(8.0, 128.0)
+	# 아이콘 네모박스 (중간) — 일반 카드 art 박스와 동일 규격(96×96), 테두리만 축 색. 임시 플레이스홀더(아트 입고 시 교체)
+	var icon_sz: float = 96.0
+	var icon_box: Panel = Panel.new()
+	icon_box.position = Vector2((col_w - icon_sz) * 0.5, 60.0)
+	icon_box.size = Vector2(icon_sz, icon_sz)
+	icon_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var icon_style: StyleBoxFlat = StyleBoxFlat.new()
+	icon_style.bg_color = Color(0.18, 0.11, 0.04, 1.0)
+	icon_style.set_border_width_all(3)
+	icon_style.border_color = axis_col
+	icon_style.set_corner_radius_all(6)
+	icon_box.add_theme_stylebox_override("panel", icon_style)
+	root.add_child(icon_box)
+
+	# 핵심효과 라벨 (아이콘 아래) — 수치 강조(빨강) 위해 RichText
+	# AUTOWRAP_WORD(공백 단위)로 한국어 단어 중간 분리 방지 — "감소" 등이 통째로 다음 줄로
+	var effect_lbl: RichTextLabel = RichTextLabel.new()
+	effect_lbl.bbcode_enabled = true
+	effect_lbl.fit_content = true
+	effect_lbl.scroll_active = false
+	effect_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	effect_lbl.position = Vector2(8.0, 166.0)
 	effect_lbl.size = Vector2(col_w - 16.0, 44.0)
-	effect_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	effect_lbl.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	effect_lbl.add_theme_font_size_override("font_size", 18)
-	effect_lbl.add_theme_color_override("font_color", Color(0.15, 0.12, 0.10))
-	effect_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	effect_lbl.add_theme_font_size_override("normal_font_size", 18)
+	effect_lbl.add_theme_color_override("default_color", Color(0.15, 0.12, 0.10))
 	effect_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	effect_lbl.text = "[center]%s[/center]" % _format_axis_tags(card_effect)
 	root.add_child(effect_lbl)
 
-	# 시너지 RichTextLabel
+	# 시너지 RichTextLabel (아래)
 	if card_synergy != "":
 		# "성장" 섹션 헤더 — 효과(즉시)와 시너지(성장) 구분
 		var grow_lbl: Label = Label.new()
 		grow_lbl.text = "성장"
-		grow_lbl.position = Vector2(0.0, 192.0)
+		grow_lbl.position = Vector2(0.0, 238.0)
 		grow_lbl.size = Vector2(col_w, 18.0)
 		grow_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		grow_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1236,16 +1314,16 @@ func _build_keystone_card(card: Dictionary, index: int, x_pos: float, y_pos: flo
 		syn_lbl.bbcode_enabled = true
 		syn_lbl.fit_content = true
 		syn_lbl.scroll_active = false
-		syn_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		syn_lbl.position = Vector2(16.0, 220.0)
-		syn_lbl.size = Vector2(col_w - 32.0, 52.0)
+		syn_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+		syn_lbl.position = Vector2(16.0, 264.0)
+		syn_lbl.size = Vector2(col_w - 32.0, 50.0)
 		syn_lbl.add_theme_font_size_override("normal_font_size", 14)
 		syn_lbl.add_theme_color_override("default_color", synergy_col)
 		syn_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		syn_lbl.text = "[center]%s[/center]" % _format_axis_tags(card_synergy)
 		root.add_child(syn_lbl)
 		# 시너지 1줄/2줄 줄 수가 달라도 좌우 카드가 균형 잡히도록 영역 중심에 수직 정렬.
-		_vcenter_richtext.call_deferred(syn_lbl, 245.0)
+		_vcenter_richtext.call_deferred(syn_lbl, 286.0)
 
 	# 투명 버튼 (탭 입력 수신)
 	var btn: Button = Button.new()

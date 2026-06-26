@@ -198,6 +198,8 @@ const ShopControllerScript = preload("res://scripts/ShopController.gd")  # 상�
 var shop: Node = null  # ShopController (build_buttons/open/close + 상점 UI·상태 소유)
 const CardSystemScript = preload("res://scripts/CardSystem.gd")  # 카드/키스톤 도메인 컨트롤러
 var card_system: Node = null  # CardSystem (_show_cards/_show_keystones/_pick_card/_apply_card + 카드 로컬상태)
+const MinionSystemScript = preload("res://scripts/MinionSystem.gd")  # 미니언 도메인 컨트롤러(소환·스폰·생애주기 슬라이스1)
+var minion_system: Node = null  # MinionSystem (상태는 Game 소유, 로직만 이동)
 
 # ── 마왕 표정 반응 컷인 ──────────────────────────────────────
 const DemonPortraitScript = preload("res://scripts/DemonPortrait.gd")
@@ -230,7 +232,11 @@ func _ready() -> void:
 	card_system = CardSystemScript.new()
 	add_child(card_system)
 	card_system.setup(self)
-	_build_summon_buttons()
+	# 미니언 도메인 컨트롤러 생성 (소환 UI·스폰·생애주기)
+	minion_system = MinionSystemScript.new()
+	add_child(minion_system)
+	minion_system.setup(self)
+	minion_system._build_summon_buttons()
 	_build_upgrade_ui()
 	# RD19 — 자원 readout 캡슐: 골드/하인을 알약 영역 하나로 묶음. 숫자 둘 다 흰색·아이콘만 색.
 	# souls_label을 캡슐 HBox로 reparent하므로, $UI 참조는 먼저 hud_parent로 캡처해 둠
@@ -1570,7 +1576,7 @@ func _sacrifice_minion(m: Node) -> void:
 	m.sacrifice()
 	# 제물의 의식: 희생 경로에서만 무료 재소환 (일반 사망 경로 제외)
 	if keystone_sacrifice_refill and active_minions < max_minions:
-		_spawn_minion(t)
+		minion_system._spawn_minion(t)
 
 func _sacrifice_explosion(pos: Vector2) -> void:
 	var radius: float = SACRIFICE_RADIUS * keystone_sacrifice_radius_mult
@@ -1806,60 +1812,6 @@ func _apply_button_styleboxes(btn: Button, normal_bg: Color = UI_BTN_BG_NORMAL,
 	btn.add_theme_stylebox_override("pressed",  normal_box)
 	btn.add_theme_stylebox_override("disabled", _make_button_stylebox(disabled_bg, border, corner, border_w))
 	btn.add_theme_stylebox_override("focus",    normal_box)
-
-func _build_summon_buttons() -> void:
-	# Phase C — 3종만 생성 (MinionData.HIRE_TYPE_INDICES: warrior/archer/tank, 폭탄병 제외)
-	# summon_btns[j] 는 MinionData.HIRE_TYPE_INDICES[j] 번째 MinionData.MINION_TYPES 항목에 대응
-	for j in MinionData.HIRE_TYPE_INDICES.size():
-		var btn: Button = Button.new()
-		btn.focus_mode = Control.FOCUS_NONE
-		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		btn.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		# 버튼 자체 텍스트는 비움 — 자식 Label 2개가 내용을 담당
-		btn.text = ""
-		# font_color override 불필요(텍스트 없음), 기존 add_theme_color_override 제거
-		_apply_button_styleboxes(btn)
-		# 눌림 바운스는 _on_summon_pressed 성공 경로에서만 재생(골드 부족·슬롯 꽉참 시 안 눌림)
-		var type_idx: int = MinionData.HIRE_TYPE_INDICES[j]
-		btn.pressed.connect(func(): _on_summon_pressed(type_idx, btn))
-		summon_container.add_child(btn)
-		summon_btns.append(btn)
-
-		# 콘텐츠 = [이름] / [● 비용] 세로 스택 (VBox 중앙정렬 → 겹침 없이 안정적 간격)
-		var content: VBoxContainer = VBoxContainer.new()
-		content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		content.alignment = BoxContainer.ALIGNMENT_CENTER
-		content.add_theme_constant_override("separation", 3)
-		content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		btn.add_child(content)
-
-		# 이름 라벨
-		var name_lbl: Label = Label.new()
-		name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		name_lbl.add_theme_font_size_override("font_size", 15)
-		content.add_child(name_lbl)
-		_summon_name_lbls.append(name_lbl)
-
-		# 비용 행: [● 노랑][숫자] — ●만 노란색이도록 아이콘/숫자 분리 (단일 라벨은 줄 전체 한 색)
-		var cost_box: HBoxContainer = HBoxContainer.new()
-		cost_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cost_box.alignment = BoxContainer.ALIGNMENT_CENTER
-		cost_box.add_theme_constant_override("separation", 3)
-		content.add_child(cost_box)
-		var cost_icon: Label = Label.new()
-		cost_icon.text = "●"  # 노란 동그라미 (항상 골드색)
-		cost_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cost_icon.add_theme_font_size_override("font_size", 13)
-		cost_icon.add_theme_color_override("font_color", Color(1.0, 0.85, 0.40))
-		cost_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		cost_box.add_child(cost_icon)
-		var cost_lbl: Label = Label.new()
-		cost_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cost_lbl.add_theme_font_size_override("font_size", 14)
-		cost_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		cost_box.add_child(cost_lbl)
-		_summon_cost_lbls.append(cost_lbl)
 
 ## RD16 — 강화 버튼 + 팝업(캐처 포함) 빌드 (운빨존많겜 레퍼런스 + 다크 보라 팔레트)
 func _build_upgrade_ui() -> void:
@@ -2389,12 +2341,6 @@ func _layout_bottom_ui_phase_c() -> void:
 
 	# 팝업 캐처는 전체화면 앵커이므로 별도 배치 불필요
 
-## 튜토리얼 마물 점진 해금: W0=전사(j0), W1=+궁수(j1), W2=+탱크(j2). 비튜토리얼은 전부 해금.
-func _is_summon_unlocked(display_j: int) -> bool:
-	if not _is_tutorial():
-		return true
-	return display_j <= current_wave
-
 ## 1-2(st1)에서 마물을 한 번이라도 소환했는지 (강화 교습 선행 조건)
 var _st1_summoned: bool = false
 
@@ -2428,156 +2374,13 @@ func _update_ability_buttons_for_stage() -> void:
 	var horn_on: bool = (current_stage >= 2) or GameSave.taught_horn
 	ability_system.set_slot_locked(1, not horn_on)
 
-func _refresh_summon_buttons() -> void:
-	# Phase C — minion_slot_label·slot_icon 숨김 유지 (캡 없어짐)
-	# RD19 — 자원 캡슐 가시성은 _set_resource_hud_visible 단일 지점이 관리하므로
-	#        여기서 개별 노드 visibility 동기화 불필요 (캡슐 자식이 함께 표시/숨김됨).
-
-	# C4: 특수(상점) 웨이브 판정
-	var wave_is_combat: bool = true
-	if current_wave < WaveData.stage_wave_count(current_chapter, current_stage):
-		var wdata: Dictionary = WaveData.get_wave(current_chapter, current_stage, current_wave)
-		if wdata.get("type", "normal") == "shop":
-			wave_is_combat = false
-
-	# summon_btns[j] → MinionData.HIRE_TYPE_INDICES[j]
-	for j in MinionData.HIRE_TYPE_INDICES.size():
-		var type_idx: int = MinionData.HIRE_TYPE_INDICES[j]
-		var entry: Dictionary = MinionData.MINION_TYPES[type_idx]
-		var cost: int = max(5, entry["cost"] - minion_cost_reduction)
-		var btn: Button = summon_btns[j]
-		var name_lbl: Label = _summon_name_lbls[j]
-		var cost_lbl: Label = _summon_cost_lbls[j]
-		if not _is_summon_unlocked(j):
-			# 튜토리얼 잠금 — 전사(j=0)만 처음부터 사용 가능, 궁수·탱크는 잠금
-			# 이름 라벨에 잠금 표시, 비용 행(●+숫자) 숨김
-			name_lbl.text = "🔒 %s" % [entry["label"]]
-			name_lbl.add_theme_color_override("font_color", Color(0.55, 0.50, 0.65, 0.85))
-			cost_lbl.get_parent().visible = false  # cost_box(아이콘+숫자) 숨김
-			btn.disabled = true
-		else:
-			var gold_short: bool = souls < cost
-			var is_blocked: bool = (not wave_active) or (not wave_is_combat)
-			# 비전투/비활성 웨이브만 비활성 — 골드 부족은 비활성 안 함(상시 활성)
-			# 누름 가드는 _on_summon_pressed 의 골드/캡 체크가 처리
-			btn.disabled = is_blocked
-			# 이름 라벨
-			name_lbl.text = entry["label"]
-			name_lbl.add_theme_color_override("font_color", Color(0.92, 0.88, 1.0, 1.0))
-			# 비용 행(●+숫자) — ●은 항상 노란색, 숫자만 색 변동
-			cost_lbl.get_parent().visible = true
-			cost_lbl.text = "%d" % cost
-			# 골드 부족 → 숫자 빨강, 아니면 평소 밝은 색
-			# is_blocked 상태에서는 빨강 표시 안 함(골드 부족 전용)
-			if gold_short and not is_blocked:
-				cost_lbl.add_theme_color_override("font_color", UI_COST_SHORT)
-			else:
-				cost_lbl.add_theme_color_override("font_color", Color(0.92, 0.88, 1.0, 1.0))
-
-func _on_summon_pressed(index: int, btn: Button = null) -> void:
-	# Phase C — 고용 가능 조건: wave_active + 비특수(비상점) 웨이브 + 골드만 게이팅
-	# MD12: 전역 총량 캡(active_minions >= max_minions) 으로 교체
-	# 차단 사유(웨이브/골드/슬롯)면 여기서 early-return → 눌림 바운스도 재생 안 됨.
-	if not wave_active:
-		return
-	var wave_data: Dictionary = WaveData.get_wave(current_chapter, current_stage, current_wave)
-	if wave_data.get("type", "normal") == "shop":
-		return
-	var disp_j: int = MinionData.HIRE_TYPE_INDICES.find(index)
-	if _is_tutorial() and (disp_j == -1 or not _is_summon_unlocked(disp_j)):
-		return  # 튜토리얼: 해금된 마물만 소환 가능 (W0=전사, W1+=궁수, W2+=탱크)
-	var entry: Dictionary = MinionData.MINION_TYPES[index]
-	var cost: int = max(5, entry["cost"] - minion_cost_reduction)
-	if souls < cost:
-		return
-	# MD12 — 전역 총량 캡 초과 시 거부 (N/M 빨강 펄스로 피드백 — 누를 때마다 깜빡)
-	if active_minions >= max_minions:
-		# 튜토리얼 한도 예외: 교습 중인 종류면 '이번에만' 한도 +1 (한도 인지시키며 교습 완성)
-		if _is_tutorial() and index == _tutorial_teaching_minion:
-			max_minions += 1
-			_update_minion_readout()
-			_demon_say("victory", "한도가 찼군… 이번에만 한 자리 내주마.", true)
-		else:
-			_flash_minion_cap()
-			return
-	# 모든 게이트 통과 — 성공 시에만 눌림 피드백
-	_play_button_bounce(btn)
-	souls -= cost
-	_update_souls_ui()
-	# 교습 중인 종류를 소환하면 그 가이드 팁을 닫고 교습 완료 (다른 종류 소환은 팁 유지=게이트)
-	if index == _tutorial_teaching_minion:
-		_tutorial_teaching_minion = -1
-		_close_guide()
-	_spawn_minion(entry["id"])
-
-	# FX13 — 1-2 강화 교습: 소환을 해봤다는 사실만 기록. 실제 팁은 골드가 강화비용 이상으로
-	# 차오르는 순간(_try_show_enhance_tip, 보통 킬 보상 add_souls 경유)에 띄운다.
-	# (소환 직후 souls 체크는 골드를 다 써버려 거의 안 떠서 폐기 — 소환→강화 순서는 플래그로 보장)
-	if current_stage == 1:
-		_st1_summoned = true
-		_try_show_enhance_tip()
-
-func _spawn_minion(type_id: String) -> void:
-	var m = SkeletonWarriorScene.instantiate()
-	m.game = self
-	m.minion_type = type_id
-	m.position = m.get_spawn_position()  # 역할별 정착선 살짝 아래에서 스폰 (B안)
-	minions_node.add_child(m)
-	# 카드 보너스 반영 (프리셋 적용 후)
-	m.base_damage *= minion_attack_bonus * keystone_minion_atk_mult
-	m.attack_damage = m.base_damage
-	m.move_speed *= minion_move_speed_bonus
-	m.max_hp *= minion_hp_bonus
-	m.base_max_hp *= minion_hp_bonus
-	m.hp = m.max_hp
-	m.attack_range += minion_range_bonus
-	m.lifesteal = minion_lifesteal
-	# RD16 — 종류별 글로벌 레벨 스탯 스케일 적용
-	if type_id in hire_levels:
-		var lv: int = hire_levels[type_id]
-		m.level = lv
-		var scale_mult: float = 1.0 + MinionData.HIRE_UPGRADE_STAT_MULT * (lv - 1)
-		m.base_damage *= scale_mult
-		m.attack_damage = m.base_damage
-		m.base_max_hp *= scale_mult
-		m.max_hp = m.base_max_hp
-		m.hp = m.max_hp
-	active_minions += 1  # MD12: 전역 총량 추적 (_hire_alive 종류별 추적 제거)
-	_update_minion_readout()
-	_refresh_summon_buttons()
-	spawn_summon_effect(m.position)
-
+# ── 미니언 도메인 facade (로직 본체 = scripts/MinionSystem.gd) ──
+# 외부 호출자(SkeletonWarrior=minion_died, CardSystem/내부=_refresh_summon_buttons) 인터페이스 보존(GS3)
 func minion_died(pos = null, type_id: String = "") -> void:
-	active_minions = max(0, active_minions - 1)
-	# hire_levels는 유지 — 레벨은 죽어도 안 날아감 (_hire_alive 종류별 추적 제거됨 — MD12)
-	_update_minion_readout()
-	_refresh_summon_buttons()
-	# 영원한 군세(horde): 전사 시 소환 비용 50%+[마물]카드당 5% 골드 환급
-	if keystone2 == "horde" and type_id != "":
-		var base_cost: int = 0
-		for entry: Dictionary in MinionData.MINION_TYPES:
-			if entry["id"] == type_id:
-				base_cost = entry["cost"]
-				break
-		if base_cost > 0:
-			var paid_cost: int = max(5, base_cost - minion_cost_reduction)
-			var refund_rate: float = min(CardData.HORDE_REFUND_BASE + CardData.HORDE_REFUND_PER_CARD * float(army_card_count), 1.0)
-			var refund: int = int(round(float(paid_cost) * refund_rate))
-			souls += refund
-			_update_souls_ui()
-			if refund > 0:
-				_spawn_gold_floater(refund)
-				if pos != null:
-					_spawn_refund_coin(pos)
-	if pos == null:
-		return
-	# 죽음의 메아리: 사망 폭발
-	if keystone_echo_dmg > 0.0:
-		for e in get_tree().get_nodes_in_group("enemies"):
-			if is_instance_valid(e) and e.position.distance_to(pos) <= CardData.KEYSTONE_ECHO_RADIUS:
-				e.take_damage(keystone_echo_dmg)
-		_spawn_echo_effect(pos)
-	# Phase C — 영구사망: 자동 재소환/리필 분기 없음 (재고용은 유저가 버튼으로)
+	minion_system.minion_died(pos, type_id)
+
+func _refresh_summon_buttons() -> void:
+	minion_system._refresh_summon_buttons()
 
 func _spawn_echo_effect(pos: Vector2) -> void:
 	var n: Node2D = Node2D.new()

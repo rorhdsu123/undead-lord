@@ -1611,6 +1611,16 @@ func _trigger_wave_guide(wave_idx: int) -> void:
 			var lightning_btn: Control = ability_system.get_field_button(0)
 			if is_instance_valid(lightning_btn):
 				show_tutorial_tip("낙뢰로 몰려드는 적을 쓸어버리세요!", lightning_btn, 12.0, ability_system.get_field_button_rect(0), false)
+	# 골드 보장: 교습 중인 마물(궁수/탱크)은 팁이 뜨는 순간 살 수 있어야 함.
+	# W0 소비로 비용 미달이면 강조 버튼을 눌러도 무반응(_on_summon_pressed early-return)
+	# → "하라는데 안 됨" 죽은 창. 시작 골드 플로어(HIRE_START_GOLD)·교습 한도 +1 예외와
+	# 동일한 튜토리얼 슈가로, 비용까지 조용히 채움(플로터 없음).
+	if _tutorial_teaching_minion >= 0:
+		var teach_entry: Dictionary = MinionData.MINION_TYPES[_tutorial_teaching_minion]
+		var teach_cost: int = max(5, teach_entry["cost"] - minion_cost_reduction)
+		if souls < teach_cost:
+			souls = teach_cost
+			_update_souls_ui()
 
 func _show_shop_guide() -> void:
 	# 타이틀을 튜토리얼 안내 문구로 교체 (부제에 힌트 표시)

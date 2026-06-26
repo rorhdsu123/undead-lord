@@ -407,7 +407,7 @@ func tick(delta: float) -> void:
 ## 상점(모달) 표시 중에는 마법 입력을 전면 차단 — 상점 팝업이 마법 버튼 위를 덮어도
 ## 버튼 탭이 별도 connect 경로로 들어오므로 여기서 막아야 한다.
 func _is_blocked_by_shop() -> bool:
-	return is_instance_valid(game) and is_instance_valid(game.shop_panel) and game.shop_panel.visible
+	return is_instance_valid(game) and is_instance_valid(game.shop) and is_instance_valid(game.shop.shop_panel) and game.shop.shop_panel.visible
 
 ## 마법 버튼 탭 (1스텝)
 func on_ability_btn_pressed(slot: int) -> void:

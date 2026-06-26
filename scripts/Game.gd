@@ -138,7 +138,7 @@ var _guide_tween: Tween = null
 # 카드/키스톤 풀·등급·축·카테고리 콘텐츠 → scripts/data/CardData.gd
 # 카드 로직·뷰·로컬상태(available_skill_cards·current_cards·_card_rows·_value_re) → scripts/CardSystem.gd (card_system)
 
-# 연출/대사 텍스트 콘텐츠 → scripts/data/DialogueData.gd (WAVE_CLEAR_LINES·POWER_LINES·DANGER_LINES·BOSS_INTRO_DIALOGUES)
+# 연출/대사 텍스트 콘텐츠 → scripts/data/DialogueData.gd (WAVE_CLEAR_LINES·POWER_LINES·DANGER_LINES)
 const POWER_BARK_CHANCE: float = 0.2   # 마법 발동 시 바크 확률 (스팸 방지)
 const DEMON_BARK_MIN_GAP_MSEC: int = 2800   # 마왕 바크 최소 간격(ms). 위급 바크는 무시(우선권).
 const CASTLE_HALF: float = 169.2       # 외벽+코너타워 외곽 (Enemy/Boss/SkeletonWarrior와 동일·성 scale 1.8). ⚠️성 크기 바꾸면 같이 수정
@@ -525,13 +525,6 @@ func start_wave() -> void:
 func _on_boss_entered(boss_node: Node) -> void:
 	_screen_shake(6.0, 0.35)
 	_show_boss_title(boss_node.boss_name)
-	# 보스 첫 대사 (보스 머리 위, 1.2초 후) - 보스가 아직 살아있고 웨이브 진행 중일 때만
-	var intro: String = DialogueData.BOSS_INTRO_DIALOGUES.get(boss_node.boss_name, "")
-	if intro != "":
-		get_tree().create_timer(1.2).timeout.connect(func() -> void:
-			if is_instance_valid(boss_node) and wave_active:
-				show_dialogue(intro, Color(1.0, 0.9, 0.35, 1), boss_node.global_position + Vector2(0, -40))
-		)
 
 func on_boss_killed(kill_pos: Vector2, shards: int, is_final: bool) -> void:
 	_screen_flash(Color(1.0, 0.85, 0.2, 0.55), 0.5)

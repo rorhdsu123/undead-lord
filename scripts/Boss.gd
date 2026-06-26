@@ -279,8 +279,6 @@ func _enter_overtime() -> void:
 	summon_interval = 10.0
 	summon_count = 3
 	summon_timer = summon_interval * 0.5
-	if game and game.has_method("show_dialogue"):
-		game.show_dialogue("야근 수당이라도 달란 말이야!!", Color(1.0, 0.6, 0.1, 1), global_position + Vector2(0, -80))
 
 func _enter_phase3() -> void:
 	phase3_triggered = true
@@ -291,8 +289,6 @@ func _enter_phase3() -> void:
 	summon_interval = 7.0
 	summon_count = 3
 	rage_timer = rage_interval * 0.5
-	if game and game.has_method("show_dialogue"):
-		game.show_dialogue("...그냥 쓰러질 때까지 달린다!!", Color(1.0, 0.2, 0.2, 1), global_position + Vector2(0, -80))
 
 # ============ 공통 액션 ============
 func _start_rage_charge(dialogue: String, color: Color) -> void:

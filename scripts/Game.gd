@@ -5,6 +5,7 @@ const Enemy = preload("res://scripts/Enemy.gd")
 const EnemyScene = preload("res://scenes/Enemy.tscn")
 const BossScene = preload("res://scenes/Boss.tscn")
 const SkeletonWarriorScene = preload("res://scenes/SkeletonWarrior.tscn")
+const DialogueData = preload("res://scripts/data/DialogueData.gd")  # 마왕 바크·보스 인트로 대사 콘텐츠
 
 # 언데드 하인
 var max_minions: int = 6  # MD12: 전역 총량 캡 (종류별 캡 → 전역 캡으로 변경)
@@ -200,29 +201,7 @@ const CARD_AXIS = {
 	"wall": "neutral", "graveyard": "neutral",
 }
 
-# 연출/대사 텍스트
-const WAVE_CLEAR_LINES = [
-	"좋아. 계속 막는다.",
-	"멈추지 마라. 다음.",
-	"에헴. 이 몸이 누군지 알겠지.",
-	"에헴. 이게 마왕의 실력이다.",
-	"이쯤이야 마왕에겐 가뿐하지. 에헴.",
-	"크흠, 어떠냐. 이게 마왕이다.",
-]
-const POWER_LINES = [
-	"이게 마왕의 힘이다.",
-	"내 성에서, 감히.",
-	"전부 쓸어주마.",
-	"한 발도 못 들인다.",
-	"여기까지다.",
-]
-const DANGER_LINES = [
-	"성벽! 조금만 버텨줘…!",
-	"마왕은… 마왕은 안 운다.",
-	"이 정도로 안 무너진다… 아마.",
-	"진정해. 마왕이잖아. 마왕.",
-	"아직… 아직 안 졌어.",
-]
+# 연출/대사 텍스트 콘텐츠 → scripts/data/DialogueData.gd (WAVE_CLEAR_LINES·POWER_LINES·DANGER_LINES·BOSS_INTRO_DIALOGUES)
 const POWER_BARK_CHANCE: float = 0.2   # 마법 발동 시 바크 확률 (스팸 방지)
 const DEMON_BARK_MIN_GAP_MSEC: int = 2800   # 마왕 바크 최소 간격(ms). 위급 바크는 무시(우선권).
 const CASTLE_HALF: float = 169.2       # 외벽+코너타워 외곽 (Enemy/Boss/SkeletonWarrior와 동일·성 scale 1.8). ⚠️성 크기 바꾸면 같이 수정
@@ -231,14 +210,6 @@ const CASTLE_PULSE_T2: float = 2.0/3.0          # 넉백 펄스 1단계 임계�
 const CASTLE_PULSE_T1: float = 1.0/3.0          # 넉백 펄스 2단계 임계값 (1/3)
 const CASTLE_PULSE_FORCE: float = 350.0         # 펄스 기본 넉백 세기
 const CASTLE_PULSE_REARM_MARGIN: float = 0.06   # 히스테리시스 마진 (회복 시 재무장)
-const BOSS_INTRO_DIALOGUES = {
-	"사관후보생":          "이, 이건 훈련 아닌가요...?",
-	"수습 용사 인턴":      "저, 저는 아직 수습 기간이라서요...!",
-	"용사 대리":           "마물들이 다 쓰러졌군요. 제가 직접 처리하겠습니다.",
-	"정의의 용사 알바생":  "의뢰받은 일은 끝내고 가겠습니다.",
-	"정의의 용사 과장":    "내가 직접 나설 줄은 몰랐겠지?",
-}
-
 const SHOP_ITEMS = [
 	{"id": "castle_max",      "label": "성벽 증축",  "desc": "성 최대 HP +120",   "cost": 120},
 	{"id": "restore",         "label": "긴급 수복",  "desc": "성·마물 즉시 완전 회복", "cost": 70},
@@ -615,7 +586,7 @@ func _on_boss_entered(boss_node: Node) -> void:
 	_screen_shake(6.0, 0.35)
 	_show_boss_title(boss_node.boss_name)
 	# 보스 첫 대사 (보스 머리 위, 1.2초 후) - 보스가 아직 살아있고 웨이브 진행 중일 때만
-	var intro: String = BOSS_INTRO_DIALOGUES.get(boss_node.boss_name, "")
+	var intro: String = DialogueData.BOSS_INTRO_DIALOGUES.get(boss_node.boss_name, "")
 	if intro != "":
 		get_tree().create_timer(1.2).timeout.connect(func() -> void:
 			if is_instance_valid(boss_node) and wave_active:
@@ -732,7 +703,7 @@ func _update_demon_danger() -> void:
 	var ratio: float = float(castle_hp) / float(castle_max_hp)
 	var now_danger: bool = castle_hp > 0 and ratio < CASTLE_DANGER_RATIO
 	if now_danger and not _castle_in_danger:
-		_demon_say("hurt", DANGER_LINES[randi() % DANGER_LINES.size()], true)
+		_demon_say("hurt", DialogueData.DANGER_LINES[randi() % DialogueData.DANGER_LINES.size()], true)
 	_castle_in_danger = now_danger
 
 func castle_take_damage(dmg: int, from_pos: Vector2 = Vector2.INF, big: bool = false) -> void:
@@ -796,7 +767,7 @@ func demon_bark_power() -> void:
 		return
 	if randf() >= POWER_BARK_CHANCE:
 		return
-	_demon_say("attack", POWER_LINES[randi() % POWER_LINES.size()])
+	_demon_say("attack", DialogueData.POWER_LINES[randi() % DialogueData.POWER_LINES.size()])
 
 func end_wave() -> void:
 	if not wave_active:
@@ -816,7 +787,7 @@ func end_wave() -> void:
 		return
 
 	if not _is_tutorial() and randf() < 0.3:
-		var line: String = WAVE_CLEAR_LINES[randi() % WAVE_CLEAR_LINES.size()]
+		var line: String = DialogueData.WAVE_CLEAR_LINES[randi() % DialogueData.WAVE_CLEAR_LINES.size()]
 		if is_instance_valid(demon_portrait):
 			_demon_say("victory", line)
 

@@ -52,8 +52,10 @@
 | `GS1` | **자식 노드 컴포넌트 + 정적 헬퍼, `Game.gd`는 허브로 잔존** | 기존 허브-앤-스포크 idiom 유지(개념 변화 최소). 명시 시그널 도입은 과잉 |
 | `GS2` | **1차는 "코드만 이동", 런상태(122 var)는 `Game.gd`가 계속 소유.** 컴포넌트는 액터처럼 `game` 역참조로 상태 읽기/쓰기 | 동작 동일·기계적 이동이라 최저위험. 상태 소유권 분산은 별개 고위험 작업(§6 Phase 4 보류) |
 | `GS3` | **액터 16-메서드 계약은 `Game.gd`에 얇은 위임(facade)으로 유지** (예: `func spawn_death_effect(...): fx.spawn_death_effect(...)`) | 액터 4파일 재배선 회피 → 1차 표면적 0. 위임 제거(액터가 `game.fx.X()` 직접 호출)는 후순위 |
-| `GS4` | **추출 순서 = 무상태 헬퍼 → 충돌 핫존(카드·튜토) → 큰 UI → (상태 분산 보류)** | §6. 저위험·고페이오프 우선, 클로버 원천부터 제거 |
-| `GS5` | **선행조건: 동시 `Game.gd` 편집 세션이 정리된 뒤 착수** | 리팩터 자체가 대규모 재작성 → 동시편집 중 진행하면 그 작업이 또 클로버로 소멸(자기 모순) |
+| ~~`GS4`~~ | ~~추출 순서 = 무상태 헬퍼 → 충돌 핫존 → 큰 UI~~ → **`GS7`로 대체**(콘텐츠 도메인·데이터 우선) | (구) 시스템 기능 단위 가정 |
+| `GS5` | **선행조건: 동시 `Game.gd` 편집 세션이 정리된 뒤 착수** | 리팩터 자체가 대규모 재작성 → 동시편집 중 진행하면 그 작업이 또 클로버로 소멸(자기 모순). ✅2026-06-26 정리 완료 |
+| `GS6` | **분리 단위 = 시스템 기능 ❌ → 「콘텐츠 도메인」 수직 슬라이스** (카드·상점·마물·적·보스·대사). 각 도메인 = 데이터+로직+뷰 자급자족 | 라이브 서비스: 가장 자주 바뀌는 건 콘텐츠 → 신규 콘텐츠 추가가 엔진 코드(god object) 안 건드리게. **선례 이미 존재**: `WaveData.gd`(웨이브)·`Enemy.gd:TYPE_PRESETS`(적 프리셋) |
+| `GS7` | **점진 경로: ① 콘텐츠 데이터 모듈 먼저(`scripts/data/*Data.gd`) → ② 도메인별 로직 이동 → ③ 뷰.** 각 단계 = 커밋 + 플테 | 데이터 추출은 저위험·즉시 라이브가치(수치/항목 추가가 한 파일). 로직 이동은 그 위에 점진. 사용자 결정 2026-06-26 |
 
 ### 3.1 컴포넌트 형태
 - **자식 노드**(stateful UI): `Game` 씬의 자식 `Node`로 추가, 각 스크립트가 `@onready var game := get_parent()` 보유. Game은 `@onready var card_system`·`var fx` 등으로 참조·위임.
@@ -86,17 +88,32 @@
 - **검증**: 추출 전후 동작 동일성. 전투계 파싱은 `Game.tscn` 직접 로드로(헤드리스 `--quit-after 5`는 로비만 부팅 → 위음성, 메모리 `project_parse_check_false_negative`).
 - **2차(보류·Phase 4)**: 컴포넌트가 자기 상태를 소유(예: `ShopController`가 상점 전용 상태). 고위험·가치 불확실 → 1차 안정화 후 재평가.
 
-## 6. 단계별 순서
+## 6. 단계별 순서 (GS6/GS7 — 콘텐츠 도메인 · 데이터 우선 점진)
 
-| Phase | 내용 | 산출 | 비고 |
+### 6.1 콘텐츠 데이터 도메인 → 데이터 모듈 (Phase 1)
+`scripts/data/*Data.gd`로 콘텐츠 데이터 테이블만 먼저 추출. `WaveData.gd` 선례 그대로(`extends Node` + `const` + 필요 시 static 접근자, `Game.gd`에서 `preload`). 각 = 1 커밋 + 플테.
+
+| 데이터 모듈(가제) | 흡수할 상수 | Game.gd 참조 갱신 | 위험 |
 |---|---|---|---|
-| **0 (선행)** | 동시 `Game.gd` 편집 세션 정리(quiesce) | — | GS5. 유실된 죽은카드 가드 재적용도 이 시점 |
-| **1** | 무상태 정적 헬퍼 추출: `UIStyle`·`BattleFX` | 2 커밋 | 최저위험. `BattleFX`는 액터 계약 → `Game`에 위임(GS3) |
-| **2** | 충돌 핫존 2개: `CardSystem`·`TutorialDirector` | 2 커밋 | **클로버 원천 제거**(두 세션이 다른 파일 편집) |
-| **3** | 큰 UI 덩어리: `BottomUI`·`ResultScreen`·`ShopController`·`WaveTracker`·`ResourceHUD` | 5 커밋 | 한 번에 하나씩 |
-| **4 (보류)** | 상태 소유권 분산 | — | 고위험. 가치 검증 후 결정 |
+| `DialogueData.gd` | `WAVE_CLEAR_LINES`·`POWER_LINES`·`DANGER_LINES`·`BOSS_INTRO_DIALOGUES`·바크 관련 상수 | 마왕 바크 함수 4곳 | 낮음(순수 문자열) |
+| `ShopData.gd` | `SHOP_ITEMS` | `_build_shop_buttons`·`_buy_item`·`_apply_shop_item` | 낮음 |
+| `MinionData.gd` | `MINION_TYPES`·`HIRE_TYPE_INDICES`·`HIRE_START_GOLD`·`HIRE_UPGRADE_*` | 소환·강화·스폰 다수 | 중(참조 많음) |
+| `CardData.gd` | `STAT_CARDS`·`SKILL_CARDS`·`RARE_CHANCE`·`ALWAYS_RARE`·`NEVER_RARE`·`CARD_CATEGORY_MAP`·`CARD_AXIS`·키스톤 상수(`KEYSTONE_ECHO_RADIUS`·`HORDE_REFUND_*`) | 카드/키스톤 로직 다수 | 중(핫존·참조 많음) |
 
-**원칙**: 한 컴포넌트 = 한 추출 = 한 커밋 + 플테. 묶음 금지.
+> 적 프리셋(`Enemy.gd:TYPE_PRESETS`)·웨이브(`WaveData.gd`)는 이미 분리됨 — 추가 작업 없음.
+
+### 6.2 도메인별 로직 이동 (Phase 2~)
+데이터 모듈 안정화 후, 도메인별로 로직(+뷰)을 자급자족 모듈로 이동. 한 도메인 = 1 커밋 + 플테.
+
+| Phase | 도메인 모듈 | 흡수 | 비고 |
+|---|---|---|---|
+| 2 | `ShopController` (+ `ShopData`) | `_show_shop`·`_buy_item`·`_apply_shop_item`·`_refresh_shop_buttons`·`_build_shop_buttons` | 작고 자기완결(`$UI/ShopPanel`)→첫 로직 슬라이스 |
+| 3 | `CardSystem` (+ `CardData`·`CardView`) | `_show_cards`·`_pick_card`·`_apply_card`·`_apply_keystone`·`_recompute_keystones`·`_show_keystones`·카드 뷰 빌더 | 핫존(클로버 원천). 강한 상태결합→`game` 역참조(GS2) |
+| 4 | `MinionSystem` (+ `MinionData`) | 소환·강화·스폰·생애주기 + 하단 소환/강화 UI | souls·캡 결합 |
+| 5 | (비콘텐츠) `BattleFX`·`UIStyle`·`ResultScreen`·`WaveTracker`·`ResourceHUD`·`TutorialDirector` | §4 표 | 엔진/공유. 콘텐츠 도메인 정리 후 |
+| 6 (보류) | 상태 소유권 분산 | — | 고위험. 가치 검증 후 |
+
+**원칙**: 한 모듈 = 한 추출 = 한 커밋 + 플테. 묶음 금지. 데이터(6.1) 먼저 → 로직(6.2).
 
 ## 7. 위험 · 전제
 
@@ -108,9 +125,9 @@
 
 ## 8. 남은 작업
 
-1. **Phase 0 선행** — 동시 Game.gd 편집 세션 정리(사용자 트리거). 선행 없이는 전 단계 보류.
-2. 본 계획 합의 → Phase 1부터 착수(구현은 Sonnet, 출시 품질).
-3. 착수 시 `아키텍처.md §3.2 책임표`·`§3.5 부채`를 분리 진행에 맞춰 갱신.
+1. ✅ **Phase 0** — 동시 세션 정리 완료(2026-06-26). 유실됐던 죽은카드 가드 재적용 커밋 `9f8b8c2`.
+2. **Phase 1 (6.1) 진행 중** — 콘텐츠 데이터 모듈 추출(`scripts/data/`). 구현 = Opus(사용자 지정, 중요 작업), 출시 품질.
+3. 각 모듈 추출 시 `아키텍처.md §3.2 책임표`·`§3.5 부채`·본 문서 진행 상태 갱신.
 
 ## 관련 문서
 - [아키텍처.md](./아키텍처.md) — 허브-앤-스포크 구조(§3.1)·책임표(§3.2)·액터 계약(§3.3)·코드 부채(§3.5)

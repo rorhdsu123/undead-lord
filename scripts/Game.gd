@@ -7,6 +7,7 @@ const BossScene = preload("res://scenes/Boss.tscn")
 const SkeletonWarriorScene = preload("res://scenes/SkeletonWarrior.tscn")
 const DialogueData = preload("res://scripts/data/DialogueData.gd")  # 마왕 바크·보스 인트로 대사 콘텐츠
 const ShopData = preload("res://scripts/data/ShopData.gd")  # 상점 항목 콘텐츠
+const MinionData = preload("res://scripts/data/MinionData.gd")  # 하인 로스터·고용 경제 콘텐츠
 
 # 언데드 하인
 var max_minions: int = 6  # MD12: 전역 총량 캡 (종류별 캡 → 전역 캡으로 변경)
@@ -17,26 +18,12 @@ var minion_hp_bonus: float = 1.0
 var minion_range_bonus: float = 0.0
 var minion_lifesteal: float = 0.0
 
-# 소환 가능 하인 타입 (영혼 비용 + UI 라벨)
-const MINION_TYPES = [
-	{"id": "warrior", "label": "전사",  "cost": 15},
-	{"id": "archer",  "label": "궁수",  "cost": 25},
-	{"id": "bomber",  "label": "폭탄병", "cost": 20},
-	{"id": "tank",    "label": "탱크",  "cost": 35},
-]
-
-# Phase C — 라이브 골드 고용 3종 (폭탄병 제외)
-# 인덱스는 MINION_TYPES 내 위치와 대응 (warrior=0, archer=1, tank=3)
-const HIRE_TYPE_INDICES: Array = [0, 1, 3]  # warrior / archer / tank
-const HIRE_START_GOLD: int = 50  # 가제 시작 골드
+# 하인 로스터·고용 경제 콘텐츠 → scripts/data/MinionData.gd
 var summon_btns: Array = []
 var _summon_name_lbls: Array = []  # 소환 버튼 자식 이름 라벨 배열
 var _summon_cost_lbls: Array = []  # 소환 버튼 자식 비용 라벨 배열
 
-# RD16 — 하인 강화 시스템
-# (HIRE_CAP_PER_TYPE·_hire_alive 제거 — MD12: 전역 총량 캡(max_minions)으로 교체)
-const HIRE_UPGRADE_STAT_MULT: float = 0.25 # 가제: 레벨당 HP/공격력 +25% (밸런싱 TBD)
-const HIRE_UPGRADE_COST_BASE: int = 30     # 가제: 강화 기본 비용 (Lv→Lv+1 = BASE × 현재레벨)
+# RD16 — 하인 강화 (수치 → MinionData.HIRE_UPGRADE_*)
 # 종류별 글로벌 레벨 (런 스코프, 리셋은 씬 reload로)
 var hire_levels: Dictionary = {"warrior": 1, "archer": 1, "tank": 1}
 # 강화 팝업 노드
@@ -75,7 +62,7 @@ var castle_hp: int = 500
 var castle_max_hp: int = 500
 var wave_active: bool = false
 var _battle_over: bool = false  # 결과/패배 화면 진입 후 = true. 하단 조작 버튼은 보이되 입력 차단.
-var _tutorial_teaching_minion: int = -1  # 현재 교습 중인 마물 MINION_TYPES 인덱스(-1=없음). 소환 게이트 + 한도 예외용.
+var _tutorial_teaching_minion: int = -1  # 현재 교습 중인 마물 MinionData.MINION_TYPES 인덱스(-1=없음). 소환 게이트 + 한도 예외용.
 var enemies_alive: int = 0
 var _pulse_armed_t2: bool = true  # 2/3 임계 펄스 무장 상태
 var _pulse_armed_t1: bool = true  # 1/3 임계 펄스 무장 상태
@@ -440,9 +427,9 @@ func _ready() -> void:
 	_apply_facility_bonuses()
 	if _is_tutorial():
 		souls += 30
-	# Phase C — 시작 골드 보장: 시설 보너스 반영 후 HIRE_START_GOLD 미만이면 채움
-	if souls < HIRE_START_GOLD:
-		souls = HIRE_START_GOLD
+	# Phase C — 시작 골드 보장: 시설 보너스 반영 후 MinionData.HIRE_START_GOLD 미만이면 채움
+	if souls < MinionData.HIRE_START_GOLD:
+		souls = MinionData.HIRE_START_GOLD
 	_update_souls_ui()
 	# Phase C — 고용 버튼 + 골드 HUD 표시
 	# summon_container: 마법 버튼(우하단)과 겹치지 않게 _layout_bottom_ui_phase_c에서 배치
@@ -832,7 +819,7 @@ func _show_cards() -> void:
 
 	# 죽은 카드 가드: 가장 비싼 하인마저 비용 바닥(5)에 닿으면 소환 비용 카드는 0 효과 → 제외
 	var max_minion_cost: int = 0
-	for mt: Dictionary in MINION_TYPES:
+	for mt: Dictionary in MinionData.MINION_TYPES:
 		max_minion_cost = max(max_minion_cost, int(mt["cost"]))
 	if minion_cost_reduction >= max_minion_cost - 5:
 		pool = pool.filter(func(c: Dictionary) -> bool: return c["id"] != "summon_cost")
@@ -2677,9 +2664,9 @@ func _apply_button_styleboxes(btn: Button, normal_bg: Color = UI_BTN_BG_NORMAL,
 	btn.add_theme_stylebox_override("focus",    normal_box)
 
 func _build_summon_buttons() -> void:
-	# Phase C — 3종만 생성 (HIRE_TYPE_INDICES: warrior/archer/tank, 폭탄병 제외)
-	# summon_btns[j] 는 HIRE_TYPE_INDICES[j] 번째 MINION_TYPES 항목에 대응
-	for j in HIRE_TYPE_INDICES.size():
+	# Phase C — 3종만 생성 (MinionData.HIRE_TYPE_INDICES: warrior/archer/tank, 폭탄병 제외)
+	# summon_btns[j] 는 MinionData.HIRE_TYPE_INDICES[j] 번째 MinionData.MINION_TYPES 항목에 대응
+	for j in MinionData.HIRE_TYPE_INDICES.size():
 		var btn: Button = Button.new()
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2689,7 +2676,7 @@ func _build_summon_buttons() -> void:
 		# font_color override 불필요(텍스트 없음), 기존 add_theme_color_override 제거
 		_apply_button_styleboxes(btn)
 		# 눌림 바운스는 _on_summon_pressed 성공 경로에서만 재생(골드 부족·슬롯 꽉참 시 안 눌림)
-		var type_idx: int = HIRE_TYPE_INDICES[j]
+		var type_idx: int = MinionData.HIRE_TYPE_INDICES[j]
 		btn.pressed.connect(func(): _on_summon_pressed(type_idx, btn))
 		summon_container.add_child(btn)
 		summon_btns.append(btn)
@@ -3117,7 +3104,7 @@ func _refresh_upgrade_popup() -> void:
 	# 카드별 갱신
 	for type_id in ["warrior", "archer", "tank"]:
 		var lv: int = hire_levels.get(type_id, 1)
-		var cost: int = HIRE_UPGRADE_COST_BASE * lv
+		var cost: int = MinionData.HIRE_UPGRADE_COST_BASE * lv
 		var lv_lbl: Label = _upgrade_popup.find_child("LvLabel_" + type_id, true, false)
 		if is_instance_valid(lv_lbl):
 			lv_lbl.text = Loc.t("upgrade_card_lv") % lv
@@ -3139,7 +3126,7 @@ func _on_upgrade_pressed(type_id: String, btn: Button = null) -> void:
 	if not type_id in hire_levels:
 		return
 	var lv: int = hire_levels[type_id]
-	var cost: int = HIRE_UPGRADE_COST_BASE * lv
+	var cost: int = MinionData.HIRE_UPGRADE_COST_BASE * lv
 	if souls < cost:
 		return  # 골드 부족 — 눌림 바운스도 재생 안 됨
 	# 게이트 통과 — 성공 시에만 눌림 피드백
@@ -3153,7 +3140,7 @@ func _on_upgrade_pressed(type_id: String, btn: Button = null) -> void:
 
 func _apply_upgrade_to_alive_minions(type_id: String, new_lv: int) -> void:
 	# 강화 시 현재 살아있는 그 종 유닛 level↑ + 스탯 재계산
-	var new_scale: float = 1.0 + HIRE_UPGRADE_STAT_MULT * (new_lv - 1)
+	var new_scale: float = 1.0 + MinionData.HIRE_UPGRADE_STAT_MULT * (new_lv - 1)
 	for m in minions_node.get_children():
 		if not is_instance_valid(m):
 			continue
@@ -3274,7 +3261,7 @@ func _try_show_enhance_tip() -> void:
 		return
 	if current_stage != 1 or not _st1_summoned:
 		return
-	if souls < HIRE_UPGRADE_COST_BASE:
+	if souls < MinionData.HIRE_UPGRADE_COST_BASE:
 		return
 	if not (wave_active and is_instance_valid(_upgrade_btn)):
 		return
@@ -3309,10 +3296,10 @@ func _refresh_summon_buttons() -> void:
 		if wdata.get("type", "normal") == "shop":
 			wave_is_combat = false
 
-	# summon_btns[j] → HIRE_TYPE_INDICES[j]
-	for j in HIRE_TYPE_INDICES.size():
-		var type_idx: int = HIRE_TYPE_INDICES[j]
-		var entry: Dictionary = MINION_TYPES[type_idx]
+	# summon_btns[j] → MinionData.HIRE_TYPE_INDICES[j]
+	for j in MinionData.HIRE_TYPE_INDICES.size():
+		var type_idx: int = MinionData.HIRE_TYPE_INDICES[j]
+		var entry: Dictionary = MinionData.MINION_TYPES[type_idx]
 		var cost: int = max(5, entry["cost"] - minion_cost_reduction)
 		var btn: Button = summon_btns[j]
 		var name_lbl: Label = _summon_name_lbls[j]
@@ -3352,10 +3339,10 @@ func _on_summon_pressed(index: int, btn: Button = null) -> void:
 	var wave_data: Dictionary = WaveData.get_wave(current_chapter, current_stage, current_wave)
 	if wave_data.get("type", "normal") == "shop":
 		return
-	var disp_j: int = HIRE_TYPE_INDICES.find(index)
+	var disp_j: int = MinionData.HIRE_TYPE_INDICES.find(index)
 	if _is_tutorial() and (disp_j == -1 or not _is_summon_unlocked(disp_j)):
 		return  # 튜토리얼: 해금된 마물만 소환 가능 (W0=전사, W1+=궁수, W2+=탱크)
-	var entry: Dictionary = MINION_TYPES[index]
+	var entry: Dictionary = MinionData.MINION_TYPES[index]
 	var cost: int = max(5, entry["cost"] - minion_cost_reduction)
 	if souls < cost:
 		return
@@ -3405,7 +3392,7 @@ func _spawn_minion(type_id: String) -> void:
 	if type_id in hire_levels:
 		var lv: int = hire_levels[type_id]
 		m.level = lv
-		var scale_mult: float = 1.0 + HIRE_UPGRADE_STAT_MULT * (lv - 1)
+		var scale_mult: float = 1.0 + MinionData.HIRE_UPGRADE_STAT_MULT * (lv - 1)
 		m.base_damage *= scale_mult
 		m.attack_damage = m.base_damage
 		m.base_max_hp *= scale_mult
@@ -3424,7 +3411,7 @@ func minion_died(pos = null, type_id: String = "") -> void:
 	# 영원한 군세(horde): 전사 시 소환 비용 50%+[마물]카드당 5% 골드 환급
 	if keystone2 == "horde" and type_id != "":
 		var base_cost: int = 0
-		for entry: Dictionary in MINION_TYPES:
+		for entry: Dictionary in MinionData.MINION_TYPES:
 			if entry["id"] == type_id:
 				base_cost = entry["cost"]
 				break
@@ -3792,19 +3779,19 @@ func _trigger_wave_guide(wave_idx: int) -> void:
 	match wave_idx:
 		0:
 			# FX8 — 전사 학습: 첫 적이 다가올 무렵 소환 버튼 스포트라이트
-			_tutorial_teaching_minion = HIRE_TYPE_INDICES[0]  # 전사
+			_tutorial_teaching_minion = MinionData.HIRE_TYPE_INDICES[0]  # 전사
 			get_tree().create_timer(1.5).timeout.connect(func() -> void:
 				if wave_active and summon_btns.size() > 0 and is_instance_valid(summon_btns[0]):
 					show_tutorial_tip("전사를 소환해 성을 지키세요!", summon_btns[0], 0.0)
 			)
 		1:
 			# FX9 — 궁수 학습: 후방 사수가 등장하는 웨이브, 궁수 버튼 스포트라이트
-			_tutorial_teaching_minion = HIRE_TYPE_INDICES[1]  # 궁수
+			_tutorial_teaching_minion = MinionData.HIRE_TYPE_INDICES[1]  # 궁수
 			if summon_btns.size() > 1 and is_instance_valid(summon_btns[1]):
 				show_tutorial_tip("궁수로 후방의 적을 노리세요!", summon_btns[1], 0.0)
 		2:
 			# FX10 — 탱크 학습: 브루트(벽)가 등장하는 웨이브, 탱크 버튼 스포트라이트
-			_tutorial_teaching_minion = HIRE_TYPE_INDICES[2]  # 탱크
+			_tutorial_teaching_minion = MinionData.HIRE_TYPE_INDICES[2]  # 탱크
 			if summon_btns.size() > 2 and is_instance_valid(summon_btns[2]):
 				show_tutorial_tip("탱크로 강한 적을 막으세요!", summon_btns[2], 0.0)
 		3:

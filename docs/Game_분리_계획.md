@@ -135,7 +135,8 @@
    - ✅ `MinionSystem.gd`(`4f9a436`, 2026-06-26) — **슬라이스1**: 소환 UI·스폰·생애주기 6함수. 상태 Game 소유·game 역참조(GS2), facade 2개(minion_died←SkeletonWarrior·_refresh_summon_buttons←CardSystem). Game 3164→2967(세션 4060→). **소환/스폰/사망 플테 대기**.
    - ✅ `UpgradeSystem.gd`(`c223b16`, 2026-06-26) — 강화 UI 8함수. Game 2967→2541(세션 4060→). facade 3(ShopController·내부). 강화 버튼/팝업 플테 대기.
    - ✅ `WaveTracker.gd`(`8b22cb2`, 2026-06-26) — 트래커 8함수+const. 외부호출0(facade불필요). Game 2541→2299(세션 4060→43%↓). 트래커 플테 대기.
-   - 다음 = Result(467줄·저결합) 또는 ResourceHUD(고결합·신중) → BattleFX → Tutorial → 정적헬퍼.
+   - ✅ `ResultScreen.gd`(`4e8b8ef`, 2026-06-26) — 결과 10함수. 외부호출0. Game 2299→1832(세션 4060→55%↓). 게임오버/클리어 플테 대기.
+   - 다음 = ResourceHUD(고결합·신중) → BattleFX → Tutorial → 정적헬퍼(UIStyle).
 4. 각 추출 시 `아키텍처.md §3.2 책임표`·`§3.5 부채` 동반 갱신.
 
 ## 관련 문서

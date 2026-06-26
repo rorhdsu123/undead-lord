@@ -6,6 +6,7 @@ const EnemyScene = preload("res://scenes/Enemy.tscn")
 const BossScene = preload("res://scenes/Boss.tscn")
 const SkeletonWarriorScene = preload("res://scenes/SkeletonWarrior.tscn")
 const DialogueData = preload("res://scripts/data/DialogueData.gd")  # 마왕 바크·보스 인트로 대사 콘텐츠
+const ShopData = preload("res://scripts/data/ShopData.gd")  # 상점 항목 콘텐츠
 
 # 언데드 하인
 var max_minions: int = 6  # MD12: 전역 총량 캡 (종류별 캡 → 전역 캡으로 변경)
@@ -210,13 +211,7 @@ const CASTLE_PULSE_T2: float = 2.0/3.0          # 넉백 펄스 1단계 임계�
 const CASTLE_PULSE_T1: float = 1.0/3.0          # 넉백 펄스 2단계 임계값 (1/3)
 const CASTLE_PULSE_FORCE: float = 350.0         # 펄스 기본 넉백 세기
 const CASTLE_PULSE_REARM_MARGIN: float = 0.06   # 히스테리시스 마진 (회복 시 재무장)
-const SHOP_ITEMS = [
-	{"id": "castle_max",      "label": "성벽 증축",  "desc": "성 최대 HP +120",   "cost": 120},
-	{"id": "restore",         "label": "긴급 수복",  "desc": "성·마물 즉시 완전 회복", "cost": 70},
-	{"id": "lightning_dmg",   "label": "낙뢰 증폭",  "desc": "낙뢰 피해 +20%",    "cost": 110},
-	{"id": "ability_cd",      "label": "마법 가속",  "desc": "마법 쿨다운 −15%",  "cost": 130},
-	{"id": "ability_radius",  "label": "마법 확산",  "desc": "마법 반경 +25%",    "cost": 90},
-]
+# 상점 항목 콘텐츠 → scripts/data/ShopData.gd (SHOP_ITEMS)
 var shop_btns: Array = []
 var shop_purchased: Array = []  # SH4: 상점 진입마다 리셋, 종류당 1회 구매
 
@@ -1661,7 +1656,7 @@ func _render_wave_tracker(disp: Dictionary, clear_existing: bool = true) -> Cont
 	return wrap
 
 func _build_shop_buttons() -> void:
-	for i in SHOP_ITEMS.size():
+	for i in ShopData.SHOP_ITEMS.size():
 		var btn: Button = Button.new()
 		btn.custom_minimum_size = Vector2(0, 58)
 		btn.add_theme_font_size_override("font_size", 16)
@@ -1724,7 +1719,7 @@ func _show_shop() -> void:
 	_shop_anim_tween = null
 
 	# SH4: 상점 진입마다 구매 상태 리셋 (웨이브당 1회 상점 → 진입 시 초기화)
-	shop_purchased.resize(SHOP_ITEMS.size())
+	shop_purchased.resize(ShopData.SHOP_ITEMS.size())
 	shop_purchased.fill(false)
 	_refresh_shop_buttons()
 	if is_instance_valid(ability_system):
@@ -1816,7 +1811,7 @@ func _buy_item(index: int, btn: Button = null) -> void:
 	# SH4: 이미 구매한 항목은 무시
 	if index < shop_purchased.size() and shop_purchased[index]:
 		return
-	var item: Dictionary = SHOP_ITEMS[index]
+	var item: Dictionary = ShopData.SHOP_ITEMS[index]
 	if souls < item["cost"]:
 		return
 	_play_button_bounce(btn)   # 구매 성공 시에만 눌림 피드백
@@ -1853,8 +1848,8 @@ func _apply_shop_item(id: String) -> void:
 			ability_radius_mult *= 1.25
 
 func _refresh_shop_buttons() -> void:
-	for i in SHOP_ITEMS.size():
-		var item: Dictionary = SHOP_ITEMS[i]
+	for i in ShopData.SHOP_ITEMS.size():
+		var item: Dictionary = ShopData.SHOP_ITEMS[i]
 		var btn: Button = shop_btns[i]
 		var purchased: bool = i < shop_purchased.size() and shop_purchased[i]
 		if purchased:

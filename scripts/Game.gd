@@ -8,6 +8,7 @@ const SkeletonWarriorScene = preload("res://scenes/SkeletonWarrior.tscn")
 const DialogueData = preload("res://scripts/data/DialogueData.gd")  # 마왕 바크·보스 인트로 대사 콘텐츠
 const ShopData = preload("res://scripts/data/ShopData.gd")  # 상점 항목 콘텐츠
 const MinionData = preload("res://scripts/data/MinionData.gd")  # 하인 로스터·고용 경제 콘텐츠
+const CardData = preload("res://scripts/data/CardData.gd")  # 카드/키스톤 풀·등급·축·키스톤 튜닝 콘텐츠
 
 # 언데드 하인
 var max_minions: int = 6  # MD12: 전역 총량 캡 (종류별 캡 → 전역 캡으로 변경)
@@ -106,9 +107,7 @@ var keystone_lord_atk_mult: float = 1.0
 var keystone_minion_atk_mult: float = 1.0
 var keystone_revive_chance: float = 0.0
 var keystone_echo_dmg: float = 0.0
-const KEYSTONE_ECHO_RADIUS: float = 90.0
-const HORDE_REFUND_BASE: float = 0.50
-const HORDE_REFUND_PER_CARD: float = 0.05
+# 키스톤 효과 튜닝(CardData.KEYSTONE_ECHO_RADIUS·HORDE_REFUND_*) → scripts/data/CardData.gd
 var keystone_sacrifice_dmg_mult: float = 1.0
 var keystone_sacrifice_radius_mult: float = 1.0
 var keystone_sacrifice_refill: bool = false
@@ -136,58 +135,9 @@ var soul_gain_mult: float = 1.0
 var _guide_layer: CanvasLayer = null
 var _guide_active: bool = false
 var _guide_tween: Tween = null
-# 카드 풀 - 스킬 카드는 획득 후 제거, 스탯 카드는 계속 등장
-const SKILL_CARDS = []  # 패시브 거취 미정 — §4.1 보류, 풀에서 제외
-# (death_aura / skull_throw / decay_curse 상수 보존, 드래프트에는 미등장)
-const STAT_CARDS = [
-	{"id": "wall"},
-	{"id": "graveyard"},
-	{"id": "minion_count"},
-	{"id": "summon_cost"},
-	{"id": "minion_range"},
-	{"id": "minion_lifesteal"},
-	{"id": "area", "magic": true},
-	{"id": "chain_lightning", "magic": true},
-	{"id": "suppress", "alignment": "통제", "magic": true},
-]
-
+# 카드/키스톤 풀·등급·축·카테고리 콘텐츠 → scripts/data/CardData.gd
 var available_skill_cards: Array = []
 var current_cards: Array = []
-const RARE_CHANCE: float = 0.3
-const ALWAYS_RARE: Array[String] = ["minion_count"]
-const NEVER_RARE: Array[String] = ["graveyard"]
-
-# 카드 픽업 시각 효과: ID → 카테고리
-# (보류/연기 카드: range_basic·range_all·death_aura·skull_throw·decay_curse — 풀에 없으나 엔트리 보존)
-const CARD_CATEGORY_MAP = {
-	"wall":          "castle",
-	"graveyard":     "castle",
-	"range_basic":   "range",
-	"range_all":     "range",
-	"minion_count":    "minion",
-	"summon_cost":     "minion",
-	"minion_range":    "minion",
-	"minion_lifesteal": "minion",
-	"death_aura":    "skill",
-	"skull_throw":   "skill",
-	"decay_curse":   "skill",
-	"area":          "range",
-	"chain_lightning": "range",
-	"suppress":      "range",
-}
-
-# 카드 → 축 분류
-# (보류/연기 카드: range_basic·range_all·death_aura·skull_throw·decay_curse — 풀에 없으나 엔트리 보존)
-const CARD_AXIS = {
-	"range_basic": "power", "range_all": "power",
-	"death_aura": "power", "skull_throw": "power", "decay_curse": "power",
-	"minion_count": "army", "summon_cost": "army",
-	"minion_range": "army", "minion_lifesteal": "army",
-	"area": "magic",
-	"chain_lightning": "magic",
-	"suppress": "magic",
-	"wall": "neutral", "graveyard": "neutral",
-}
 
 # 연출/대사 텍스트 콘텐츠 → scripts/data/DialogueData.gd (WAVE_CLEAR_LINES·POWER_LINES·DANGER_LINES·BOSS_INTRO_DIALOGUES)
 const POWER_BARK_CHANCE: float = 0.2   # 마법 발동 시 바크 확률 (스팸 방지)
@@ -267,7 +217,7 @@ func _ready() -> void:
 	_summon_fx.name = "SummonFX"
 	add_child(_summon_fx)
 	move_child(_summon_fx, minions_node.get_index())
-	available_skill_cards = SKILL_CARDS.duplicate()
+	available_skill_cards = CardData.SKILL_CARDS.duplicate()
 	card_title.text = Loc.t("card_select_title")
 	card_subtitle.text = Loc.t("card_select_subtitle")
 	result_btn1.pressed.connect(_on_result_btn1_pressed)
@@ -814,7 +764,7 @@ func _show_cards() -> void:
 	card_subtitle.text = Loc.t("card_select_subtitle")
 
 	var pool: Array = available_skill_cards.duplicate()
-	for stat_card: Dictionary in STAT_CARDS:
+	for stat_card: Dictionary in CardData.STAT_CARDS:
 		pool.append(stat_card)
 
 	# 죽은 카드 가드: 가장 비싼 하인마저 비용 바닥(5)에 닿으면 소환 비용 카드는 0 효과 → 제외
@@ -834,16 +784,16 @@ func _show_cards() -> void:
 
 	pool.shuffle()
 
-	var skill_ids: Array = SKILL_CARDS.map(func(c: Dictionary) -> String: return c["id"])
+	var skill_ids: Array = CardData.SKILL_CARDS.map(func(c: Dictionary) -> String: return c["id"])
 	current_cards = []
 	for c: Dictionary in pool.slice(0, 3):
 		var card: Dictionary = {"id": c["id"]}
-		if skill_ids.has(c["id"]) or ALWAYS_RARE.has(c["id"]):
+		if skill_ids.has(c["id"]) or CardData.ALWAYS_RARE.has(c["id"]):
 			card["rare"] = true
-		elif NEVER_RARE.has(c["id"]):
+		elif CardData.NEVER_RARE.has(c["id"]):
 			card["rare"] = false
 		else:
-			card["rare"] = randf() < RARE_CHANCE
+			card["rare"] = randf() < CardData.RARE_CHANCE
 		current_cards.append(card)
 
 	var card_h: float = 120.0
@@ -879,7 +829,7 @@ func _pick_card(index: int) -> void:
 			break
 
 	# 축 카운트 증가 (일반 카드만)
-	var axis: String = CARD_AXIS.get(card["id"], "neutral")
+	var axis: String = CardData.CARD_AXIS.get(card["id"], "neutral")
 	if axis == "power":
 		power_card_count += 1
 	elif axis == "army":
@@ -982,7 +932,7 @@ func _show_keystones(ids: Array, axis_pick: bool = false) -> void:
 	current_cards = []
 	for id: String in ids:
 		current_cards.append({"id": id, "rare": true, "keystone": true})
-	var stat_pool: Array = STAT_CARDS.duplicate()
+	var stat_pool: Array = CardData.STAT_CARDS.duplicate()
 	stat_pool.shuffle()
 	current_cards.append({"id": stat_pool[0]["id"], "rare": false})
 
@@ -3417,7 +3367,7 @@ func minion_died(pos = null, type_id: String = "") -> void:
 				break
 		if base_cost > 0:
 			var paid_cost: int = max(5, base_cost - minion_cost_reduction)
-			var refund_rate: float = min(HORDE_REFUND_BASE + HORDE_REFUND_PER_CARD * float(army_card_count), 1.0)
+			var refund_rate: float = min(CardData.HORDE_REFUND_BASE + CardData.HORDE_REFUND_PER_CARD * float(army_card_count), 1.0)
 			var refund: int = int(round(float(paid_cost) * refund_rate))
 			souls += refund
 			_update_souls_ui()
@@ -3430,7 +3380,7 @@ func minion_died(pos = null, type_id: String = "") -> void:
 	# 죽음의 메아리: 사망 폭발
 	if keystone_echo_dmg > 0.0:
 		for e in get_tree().get_nodes_in_group("enemies"):
-			if is_instance_valid(e) and e.position.distance_to(pos) <= KEYSTONE_ECHO_RADIUS:
+			if is_instance_valid(e) and e.position.distance_to(pos) <= CardData.KEYSTONE_ECHO_RADIUS:
 				e.take_damage(keystone_echo_dmg)
 		_spawn_echo_effect(pos)
 	# Phase C — 영구사망: 자동 재소환/리필 분기 없음 (재고용은 유저가 버튼으로)
@@ -3450,7 +3400,7 @@ func _spawn_echo_effect(pos: Vector2) -> void:
 	fill.color = Color(0.4, 0.8, 1.0, 0.7)
 	n.add_child(fill)
 	var tween: Tween = create_tween()
-	tween.parallel().tween_property(n, "scale", Vector2.ONE * (KEYSTONE_ECHO_RADIUS / base_r), 0.4)
+	tween.parallel().tween_property(n, "scale", Vector2.ONE * (CardData.KEYSTONE_ECHO_RADIUS / base_r), 0.4)
 	tween.parallel().tween_property(n, "modulate:a", 0.0, 0.4)
 	tween.tween_callback(n.queue_free)
 
@@ -3686,7 +3636,7 @@ func spawn_evolve_effect(pos: Vector2) -> void:
 		tween.tween_callback(ring.queue_free)
 
 func _spawn_card_pickup_effect(card_id: String) -> void:
-	var category: String = CARD_CATEGORY_MAP.get(card_id, "player")
+	var category: String = CardData.CARD_CATEGORY_MAP.get(card_id, "player")
 	var castle_pos: Vector2 = $Castle.global_position
 	match category:
 		"player":

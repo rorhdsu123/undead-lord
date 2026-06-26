@@ -23,7 +23,7 @@ static var _strings: Dictionary = {
 	# 카드 이름/설명
 	"card_wall":          "성벽 강화\n최대 HP {val}",
 	"card_graveyard":     "묘지\n웨이브 클리어 시 회복 {val}",
-	# ↓ 보류/연기 카드 — 드래프트 풀에 미등장(Game.gd STAT_CARDS 제외). 마법 축(area/chain/suppress)으로 대체. 엔트리 보존.
+	# ↓ 보류/연기 카드 — 드래프트 풀에 미등장(CardData.STAT_CARDS 제외). 마법 축(area/chain/suppress)으로 대체. 엔트리 보존.
 	"card_range_basic":   "마법 사거리 증가\n[마법] 마법 사거리 +30",
 	"card_range_all":     "마법 범위 증가\n[마법] 마법 범위 +25%",
 	"card_area":         "넓은 마법\n[마법] 마법 적중 반경 {val}",

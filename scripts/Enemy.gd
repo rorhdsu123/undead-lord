@@ -318,11 +318,15 @@ func _do_attack(minion_target) -> void:
 					clamp(global_position.y, cc.y - CASTLE_HALF, cc.y + CASTLE_HALF))
 				var arrow: Node = _shoot_arrow(contact)
 				# 데미지·이펙트는 화살 착탄 순간에 발동 (공중 즉시 발동 버그 수정).
-				# 발사 시점의 damage·위치를 지역변수로 캡처해 람다에 넘김.
+				# 발사 시점의 damage·위치·game을 지역변수로 캡처해 람다에 넘김.
+				# game을 멤버가 아닌 지역으로 캡처해야 함 — 착탄 전 사수가 죽어 free되면
+				# 멤버 참조(game)가 해제된 인스턴스를 타 "Bad address index"가 남.
 				var dmg: int = damage
 				var from: Vector2 = global_position
+				var g: Node = game
 				arrow.arrival_callback = func() -> void:
-					game.castle_take_damage(dmg, from)
+					if is_instance_valid(g):
+						g.castle_take_damage(dmg, from)
 		else:
 			# 근접 적: 기존대로 즉시 데미지 발동.
 			game.castle_take_damage(damage, global_position)

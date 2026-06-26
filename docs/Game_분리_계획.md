@@ -129,7 +129,9 @@
 2. ✅ **Phase 1 (6.1) 완료** (2026-06-26) — 콘텐츠 데이터 4모듈 추출, 각 씬 로드 검증·커밋:
    - `DialogueData.gd`(`b316aa1`) · `ShopData.gd`(`a2e1a02`) · `MinionData.gd`(`4a4e86a`) · `CardData.gd`(`eea2c7a`).
    - Game.gd 4060→3970줄. 동작 동일(데이터 이동). **플테 대기**.
-3. **다음 = Phase 2 (6.2)** — 도메인 로직 이동. `ShopController` 먼저(작고 자기완결). 플테 통과 후 착수.
+3. **Phase 2 진행 중 (6.2)** — 도메인 로직 이동:
+   - ✅ `ShopController.gd`(`7b5cdb1`, 2026-06-26) — 상점 7함수+UI노드+상태 이동, Game 3970→3742줄. game 역참조(GS2), _shop_dim_alpha만 Game 유지. **상점 플테 대기**(open/close/buy 런타임).
+   - 다음 = `CardSystem`(핫존·상태강결합) → `MinionSystem`.
 4. 각 추출 시 `아키텍처.md §3.2 책임표`·`§3.5 부채` 동반 갱신.
 
 ## 관련 문서

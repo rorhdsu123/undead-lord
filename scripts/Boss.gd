@@ -466,7 +466,7 @@ func _engage_or_approach(delta: float, castle_pos: Vector2) -> void:
 		return
 
 	var target_pos: Vector2 = minion.global_position
-	var dist: float = global_position.distance_to(target_pos)
+	var dist: float = _engage_origin().distance_to(target_pos)  # 발끝 기준 — 거구 보스 중심은 발끝보다 위라 중심 기준이면 사거리에 영영 못 듦
 	if dist <= MINION_ATTACK_RANGE:
 		velocity = Vector2.ZERO
 		move_and_slide()
@@ -489,9 +489,17 @@ func _engage_or_approach(delta: float, castle_pos: Vector2) -> void:
 		if _anim_state not in ["slash", "hurt", "die"]:
 			_play_anim("walk")
 
-# 길목 하인 탐색 — minions 그룹에서 가장 가까운 근접 하인. 궁수(ranged)는 어그로 제외(Enemy.gd와 동일).
-# 성벽 박스 안(벽 뒤) 하인은 보스가 못 들어가므로 제외 — 추격하다 벽에서 못 닿고 떠는 지터 방지(그땐 성을 때림).
+# 보스가 실제로 싸우는 지점(발끝=교전선). 거구 보스는 중심이 발끝보다 한참 위라(BODY_BOTTOM_OFFSET*scale),
+# 하인 감지·교전 사거리를 중심에서 재면 발끝을 둘러싼 벽 앞 하인을 놓쳐 성을 때린다 → 발끝 기준으로 잰다.
+func _engage_origin() -> Vector2:
+	return global_position + Vector2(0.0, BODY_BOTTOM_OFFSET * _sprite_base_scale.x)
+
+# 길목 하인 탐색 — minions 그룹에서 발끝(교전선)에 가장 가까운 근접 하인. 궁수(ranged)는 어그로 제외(Enemy.gd와 동일).
+# 발끝보다 더 깊이(남쪽) 들어간 하인만 제외 — 벽 뒤 못 닿는 하인 추격 지터 방지(그땐 성을 때림).
+# (옛 CASTLE_HALF 박스 제외는 발끝이 박스 안까지 파고드는 거구 보스에서 벽 앞 방어 하인까지 통째로 빼 성 피해 유발)
 func _find_nearby_minion(castle_pos: Vector2):
+	var origin: Vector2 = _engage_origin()
+	var feet_rel_y: float = origin.y - castle_pos.y  # 발끝의 성 기준 y = 보스가 닿는 가장 깊은 지점
 	var nearest = null
 	var nearest_dist: float = INF
 	for m in get_tree().get_nodes_in_group("minions"):
@@ -500,9 +508,9 @@ func _find_nearby_minion(castle_pos: Vector2):
 		if m.get("behavior") == "ranged":
 			continue
 		var mrel: Vector2 = m.global_position - castle_pos
-		if absf(mrel.x) < CASTLE_HALF and absf(mrel.y) < CASTLE_HALF:
+		if mrel.y > feet_rel_y and absf(mrel.x) < CASTLE_HALF:
 			continue
-		var d: float = global_position.distance_to(m.global_position)
+		var d: float = origin.distance_to(m.global_position)
 		if d < MINION_ENGAGE_RANGE and d < nearest_dist:
 			nearest_dist = d
 			nearest = m
@@ -597,4 +605,4 @@ func _die() -> void:
 		var shards: int = WaveData.get_wave(game.current_chapter, game.current_stage, game.current_wave).get("crown_shards", 0)
 		game.earn_crown_shards(shards)
 		game.on_boss_killed(global_position, shards, boss_type == "boss")
-		game.enemy_died(true)
+		game.enemy_died()

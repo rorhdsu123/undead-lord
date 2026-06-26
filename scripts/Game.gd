@@ -606,16 +606,17 @@ func boss_summon(enemy_type: String, count: int) -> void:
 		enemies_node.add_child(e)
 		enemies_alive += 1
 
-func enemy_died(is_boss: bool = false) -> void:
+func enemy_died() -> void:
 	if not wave_active:
 		return
 	enemies_alive -= 1
-
-	if is_boss and WaveData.get_wave(current_chapter, current_stage, current_wave).get("type") == "boss":
-		result_screen.game_clear()
+	if enemies_alive > 0:
 		return
 
-	if enemies_alive <= 0:
+	# 최종 보스 웨이브는 보스 포함 모든 몬스터를 제거해야 클리어 (보스만 먼저 죽고 잡몹이 남으면 계속 전투)
+	if WaveData.get_wave(current_chapter, current_stage, current_wave).get("type") == "boss":
+		result_screen.game_clear()
+	else:
 		end_wave()
 
 ## 마왕 바크 공통 게이트. force=true(위급)는 쿨다운 무시. 그 외는 DEMON_BARK_MIN_GAP_MSEC 간격 강제(연발 방지).

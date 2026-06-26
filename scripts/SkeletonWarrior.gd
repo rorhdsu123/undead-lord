@@ -233,7 +233,7 @@ func _physics_process(delta: float) -> void:
 	# ── 수비 밴드 AI (RD13) ───────────────────────────────────────────────
 	# 1) leash: 현재 타겟이 밴드 밖으로 나갔으면 포기 (단 성벽 교전 중인 보스는 예외 — origin이 발끝보다 한참 위라 항상 밴드 밖으로 보임)
 	if is_instance_valid(current_target):
-		if current_target.position.y < BAND_TOP - LEASH_MARGIN and not current_target.is_in_group("boss"):
+		if current_target.position.y < BAND_TOP - LEASH_MARGIN and not current_target.is_in_group("boss") and not current_target.get("engaging_minion"):
 			current_target = null
 
 	# 2) 타겟 갱신
@@ -466,8 +466,8 @@ func _find_deepest_enemy_in_band():
 			continue
 		# 보스는 교전 지대 진입(combat_engaged: 성벽 도달 또는 앞 하인에게 묶임) 시 origin이 밴드 위라도 포함.
 		# at_wall 단독이면 앞 하인이 보스를 벽 밖에 붙드는 동안 false라 궁수가 보스를 못 쏜다.
-		if not (e.is_in_group("boss") and e.combat_engaged) and e.position.y < ACQUIRE_TOP:
-			continue   # 밴드 위(아직 안 들어온) 적 무시
+		if not (e.is_in_group("boss") and e.combat_engaged) and not e.get("engaging_minion") and e.position.y < ACQUIRE_TOP:
+			continue   # 밴드 위(아직 안 들어온) 적 무시 — 단, 하인과 교전 중인 적은 위치 무관 포착(forward_limit 위 교착 방지)
 		if e.position.y > deepest_y:
 			deepest_y = e.position.y
 			deepest = e
@@ -523,8 +523,8 @@ func _find_nearest_enemy_in_band():
 			continue
 		# 보스는 교전 지대 진입(combat_engaged: 성벽 도달 또는 앞 하인에게 묶임) 시 origin이 밴드 위라도 포함.
 		# at_wall 단독이면 앞 하인에게 묶인 동안 false라 0.5s 재평가마다 보스를 놓쳐 surge/retreat 떨림이 났다.
-		if not (e.is_in_group("boss") and e.combat_engaged) and e.position.y < ACQUIRE_TOP:
-			continue   # 밴드 위(아직 안 들어온) 적 무시
+		if not (e.is_in_group("boss") and e.combat_engaged) and not e.get("engaging_minion") and e.position.y < ACQUIRE_TOP:
+			continue   # 밴드 위(아직 안 들어온) 적 무시 — 단, 하인과 교전 중인 적은 위치 무관 포착(forward_limit 위 교착 방지)
 		var d: float = position.distance_to(e.position)
 		if d < nearest_dist:
 			nearest_dist = d

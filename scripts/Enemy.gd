@@ -67,6 +67,7 @@ var enemy_type: String = "normal"
 var castle_attack_range: float = 2.0
 var ignore_minions: bool = false
 var is_ranged: bool = false
+var engaging_minion: bool = false  # 하인과 근접 교전 중(사거리 안) — 아군 타게팅이 ACQUIRE_TOP 무관히 포착하게 하는 신호(보스 combat_engaged의 일반 적 버전)
 var _attack_anim: String = "slash"
 var _anim_state: String = ""
 var _last_valid_pos: Vector2 = Vector2.ZERO  # move_and_slide NaN 복구용 (겹친 바디 충돌 해소 가드)
@@ -248,6 +249,8 @@ func _physics_process(delta: float) -> void:
 			var dy: float = max(0.0, absf(rel.y) - CASTLE_HALF)
 			dist = sqrt(dx * dx + dy * dy)
 			attack_range = castle_attack_range
+		# 하인과 근접 교전(사거리 안) 중이면 아군이 위치 무관히 이 적을 포착해야 한다(forward_limit 위 사각지대 교착 방지).
+		engaging_minion = is_instance_valid(minion_target) and dist < attack_range
 		if dist < attack_range:
 			velocity = Vector2.ZERO
 			if _anim_state not in ["attack", "hurt"]:

@@ -162,3 +162,27 @@ func load_data():
 		last_court_day = config.get_value("majesty", "last_court_day", "")
 		for cat: String in doctrines:
 			doctrines[cat] = config.get_value("doctrines", cat, "")
+
+# 개발용: 모든 영구 상태를 초기값으로 되돌린다.
+func reset_data() -> void:
+	crown_shards = 0
+	skeleton_count = 0
+	skeleton_count_seen = 0
+	for key: String in facility_levels:
+		facility_levels[key] = 0
+	start_chapter = 0
+	start_stage = 0
+	current_chapter = 0
+	current_stage = 0
+	intro_seen = false
+	tutorial_completed = false
+	first_lobby_visit_done = false
+	taught_enhance = false
+	taught_horn = false
+	majesty_level = 0
+	majesty_exp = 0
+	unlock_credits = 0
+	last_court_day = ""
+	for cat: String in doctrines:
+		doctrines[cat] = ""
+	save_data()

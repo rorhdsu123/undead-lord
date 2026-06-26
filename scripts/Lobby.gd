@@ -88,6 +88,10 @@ var _panel_upgrade_btn: Button = null
 var _court_overlay: CanvasLayer = null   # 중복 생성 방지용 참조
 var _throne_node: Node2D = null          # 거점 비주얼 (bounce 대상)
 
+# ── 개발용 리셋 버튼 ──────────────────────────────────────────
+var _dev_reset_btn: Button = null
+var _dev_reset_armed: bool = false
+
 func _ready() -> void:
 	for path: String in ["UI/TitleLabel", "UI/SubtitleLabel", "UI/Sep1",
 						  "UI/FacilityHeaderLabel", "UI/FacilityPanel",
@@ -116,6 +120,15 @@ func _ready() -> void:
 	start_btn.position = Vector2(40, 860)
 	start_btn.size = Vector2(400, 60)
 	start_btn.pressed.connect(_on_start_pressed)
+
+	_dev_reset_btn = Button.new()
+	_dev_reset_btn.position = Vector2(40, 824)
+	_dev_reset_btn.size = Vector2(400, 28)
+	_dev_reset_btn.add_theme_font_size_override("font_size", 13)
+	_dev_reset_btn.text = "데이터 초기화 (개발용)"
+	_dev_reset_btn.add_theme_color_override("font_color", Color(0.9, 0.5, 0.5))
+	_dev_reset_btn.pressed.connect(_on_dev_reset_pressed)
+	_ui.add_child(_dev_reset_btn)
 
 	_update_crown_label()
 	_update_skeleton_label()
@@ -1059,3 +1072,18 @@ func _build_doctrine_tree(vbox: VBoxContainer, panel_w: float) -> void:
 		row_sep.color = Color(0.30, 0.20, 0.50, 0.4)
 		row_sep.custom_minimum_size = Vector2(panel_w - INNER_PAD * 2, 1)
 		vbox.add_child(row_sep)
+
+# ── 개발용 리셋 핸들러 ────────────────────────────────────────
+
+func _on_dev_reset_pressed() -> void:
+	if _dev_reset_armed:
+		GameSave.reset_data()
+		get_tree().reload_current_scene()
+		return
+	_dev_reset_armed = true
+	_dev_reset_btn.text = "정말 초기화? 다시 탭"
+	get_tree().create_timer(2.0).timeout.connect(func() -> void:
+		if is_instance_valid(_dev_reset_btn) and _dev_reset_armed:
+			_dev_reset_armed = false
+			_dev_reset_btn.text = "데이터 초기화 (개발용)"
+	)

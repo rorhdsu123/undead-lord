@@ -864,6 +864,13 @@ func _show_cards() -> void:
 	for stat_card: Dictionary in STAT_CARDS:
 		pool.append(stat_card)
 
+	# 죽은 카드 가드: 가장 비싼 하인마저 비용 바닥(5)에 닿으면 소환 비용 카드는 0 효과 → 제외
+	var max_minion_cost: int = 0
+	for mt: Dictionary in MINION_TYPES:
+		max_minion_cost = max(max_minion_cost, int(mt["cost"]))
+	if minion_cost_reduction >= max_minion_cost - 5:
+		pool = pool.filter(func(c: Dictionary) -> bool: return c["id"] != "summon_cost")
+
 	# 온보딩 카드 풀 게이팅: taught_horn 전(1-2 이전)엔 통제형 카드 제외
 	var control_unlocked: bool = (current_stage >= 2) or GameSave.taught_horn
 	if not control_unlocked:

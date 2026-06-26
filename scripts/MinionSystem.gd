@@ -26,7 +26,7 @@ func _build_summon_buttons() -> void:
 		# 버튼 자체 텍스트는 비움 — 자식 Label 2개가 내용을 담당
 		btn.text = ""
 		# font_color override 불필요(텍스트 없음), 기존 add_theme_color_override 제거
-		_apply_button_styleboxes(btn)
+		game._apply_button_styleboxes(btn)
 		# 눌림 바운스는 _on_summon_pressed 성공 경로에서만 재생(골드 부족·슬롯 꽉참 시 안 눌림)
 		var type_idx: int = MinionData.HIRE_TYPE_INDICES[j]
 		btn.pressed.connect(func(): _on_summon_pressed(type_idx, btn))
@@ -112,7 +112,7 @@ func _refresh_summon_buttons() -> void:
 			# 골드 부족 → 숫자 빨강, 아니면 평소 밝은 색
 			# is_blocked 상태에서는 빨강 표시 안 함(골드 부족 전용)
 			if gold_short and not is_blocked:
-				cost_lbl.add_theme_color_override("font_color", UI_COST_SHORT)
+				cost_lbl.add_theme_color_override("font_color", game.UI_COST_SHORT)
 			else:
 				cost_lbl.add_theme_color_override("font_color", Color(0.92, 0.88, 1.0, 1.0))
 

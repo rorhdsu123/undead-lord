@@ -33,11 +33,14 @@ func _show_cards() -> void:
 	for stat_card: Dictionary in CardData.STAT_CARDS:
 		pool.append(stat_card)
 
-	# 죽은 카드 가드: 가장 비싼 하인마저 비용 바닥(5)에 닿으면 소환 비용 카드는 0 효과 → 제외
-	var max_minion_cost: int = 0
+	# 죽은 카드 가드: 가장 싼 하인이 비용 바닥(5)에 닿으면 소환 비용 카드 제외.
+	# 탱크 등 비싼 하인은 더 깎일 여지가 있으나, "이미 바닥인데 또 뜨네?"라는
+	# 버그 같은 오해를 막으려 보수적으로 일찍 숨긴다.
+	var min_minion_cost: int = 0
 	for mt: Dictionary in MinionData.MINION_TYPES:
-		max_minion_cost = max(max_minion_cost, int(mt["cost"]))
-	if game.minion_cost_reduction >= max_minion_cost - 5:
+		var mc: int = int(mt["cost"])
+		min_minion_cost = mc if min_minion_cost == 0 else min(min_minion_cost, mc)
+	if game.minion_cost_reduction >= min_minion_cost - 5:
 		pool = pool.filter(func(c: Dictionary) -> bool: return c["id"] != "summon_cost")
 
 	# 온보딩 카드 풀 게이팅: taught_horn 전(1-2 이전)엔 통제형 카드 제외

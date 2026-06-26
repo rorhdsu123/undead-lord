@@ -70,6 +70,8 @@ var _pulse_armed_t1: bool = true  # 1/3 임계 펄스 무장 상태
 
 # 펄스 스폰 스케줄러
 var _spawn_schedule: Array[Dictionary] = []  # 각 {t, enemy, hp, spd, dmg}
+var _threat_alerts: Array[float] = []  # 위협 텔레그래프 발동 시각(alert 펄스의 t - THREAT_WARN_LEAD), 정렬됨
+const THREAT_WARN_LEAD: float = 0.8  # 무리/러시 펄스보다 이만큼 먼저 경고 알람(브레이스 한 박자)
 var _wave_elapsed: float = 0.0
 var _wave_spawn_y_min: float = 150.0
 var _wave_spawn_y_max: float = 240.0
@@ -448,6 +450,7 @@ func start_wave() -> void:
 
 	# 펄스 스케줄 구축
 	_spawn_schedule.clear()
+	_threat_alerts.clear()
 	_wave_elapsed = 0.0
 
 	# pulses 포맷 처리 (composition fallback 포함)
@@ -455,6 +458,8 @@ func start_wave() -> void:
 		enemies_alive = 0
 		for pulse: Dictionary in data["pulses"]:
 			var pulse_t: float = float(pulse["t"])
+			if pulse.get("alert", false):  # 위협 텔레그래프: 작곡가가 찍은 무리/러시 펄스만
+				_threat_alerts.append(maxf(0.0, pulse_t - THREAT_WARN_LEAD))
 			for entry: Dictionary in pulse["spawn"]:
 				var preset: Dictionary = Enemy.TYPE_PRESETS[entry["enemy"]]
 				var e_hp: float = base_hp * preset["hp_mult"]
@@ -494,6 +499,7 @@ func start_wave() -> void:
 				enemies_alive += 1
 
 	_spawn_schedule.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["t"] < b["t"])
+	_threat_alerts.sort()
 
 	if data["type"] == "mid_boss" or data["type"] == "boss":
 		enemies_alive += 1
@@ -708,6 +714,7 @@ func end_wave() -> void:
 		return
 	wave_active = false
 	_spawn_schedule.clear()
+	_threat_alerts.clear()
 	_close_guide()
 
 	if graveyard_heal > 0:
@@ -770,10 +777,14 @@ func _process(delta: float) -> void:
 	# 펄스 스폰 드레인 — 웨이브 진행 중에만 동작
 	if wave_active and not _spawn_schedule.is_empty():
 		_wave_elapsed += delta
+		while not _threat_alerts.is_empty() and _threat_alerts[0] <= _wave_elapsed:
+			_threat_alerts.pop_front()
+			_show_threat_warning()
 		while not _spawn_schedule.is_empty() and _spawn_schedule[0]["t"] <= _wave_elapsed:
 			_spawn_scheduled_enemy(_spawn_schedule.pop_front())
 	# Phase B — 마법 시스템 쿨다운 + UI 갱신 (Phase A 가드보다 앞에 위치)
-	if is_instance_valid(ability_system):
+	# 전투 종료(클리어/패배) 후엔 쿨다운 정지 — 결과 팝업 띄운 채 마법이 차오르지 않게.
+	if is_instance_valid(ability_system) and not _battle_over:
 		ability_system.tick(delta)
 	# Phase A4/A5 — 희생·특수기 UI 갱신 비활성 (버튼 숨김 유지)
 	# Phase C — 고용 버튼은 매 프레임 갱신 (골드·웨이브 상태 반영)
@@ -1323,6 +1334,50 @@ func _screen_flash(color: Color, duration: float = 0.4) -> void:
 	var tween: Tween = create_tween()
 	tween.tween_property(rect, "modulate:a", 0.0, duration)
 	tween.tween_callback(rect.queue_free)
+
+# 위협 텔레그래프 — 무리/러시 펄스 직전 "브레이스" 알람(탕탕특공대식 저정보 경고).
+# 상단 가장자리 빨강 글로우(적이 들어오는 방향) + ⚠ 글리프 + 가벼운 흔들림. 종류·수는 안 알림(알람이지 인텔 아님).
+func _show_threat_warning() -> void:
+	var vp_w: float = get_viewport_rect().size.x
+	# 상단 빨강 그라데이션 글로우(아래로 페이드) — 적 진입 방향 신호
+	var grad: Gradient = Gradient.new()
+	grad.set_color(0, Color(1.0, 0.15, 0.1, 0.85))
+	grad.set_color(1, Color(1.0, 0.15, 0.1, 0.0))
+	var tex: GradientTexture2D = GradientTexture2D.new()
+	tex.gradient = grad
+	tex.width = 8
+	tex.height = 160
+	tex.fill_from = Vector2(0, 0)
+	tex.fill_to = Vector2(0, 1)
+	var band: TextureRect = TextureRect.new()
+	band.texture = tex
+	band.stretch_mode = TextureRect.STRETCH_SCALE
+	band.size = Vector2(vp_w, 160)
+	band.position = Vector2(0, 0)
+	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	band.modulate.a = 0.0
+	$UI.add_child(band)
+	# ⚠ 글리프 — 언어 무관 신호(글로벌 타깃, Loc 불필요)
+	var mark: Label = Label.new()
+	mark.text = "⚠"
+	mark.add_theme_font_size_override("font_size", 56)
+	mark.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3, 1.0))
+	mark.size = Vector2(vp_w, 80)
+	mark.position = Vector2(0, 24)
+	mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mark.modulate.a = 0.0
+	$UI.add_child(mark)
+	# 페이드 인 → 짧게 깜빡 → 아웃 (≈THREAT_WARN_LEAD 안에 끝나 적 등장과 맞물림)
+	var tween: Tween = create_tween()
+	tween.tween_property(band, "modulate:a", 1.0, 0.12)
+	tween.parallel().tween_property(mark, "modulate:a", 1.0, 0.12)
+	tween.tween_interval(0.2)
+	tween.tween_property(band, "modulate:a", 0.0, 0.45)
+	tween.parallel().tween_property(mark, "modulate:a", 0.0, 0.45)
+	tween.tween_callback(band.queue_free)
+	tween.parallel().tween_callback(mark.queue_free)
+	_screen_shake(3.0, 0.22)
 
 func _show_boss_title(boss_name: String) -> void:
 	var vp_w: float = get_viewport_rect().size.x

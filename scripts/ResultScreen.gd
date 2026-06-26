@@ -24,15 +24,9 @@ func _format_time(seconds: float) -> String:
 	var secs: int = int(seconds) % 60
 	return "%d분 %02d초" % [mins, secs]
 
-func game_over() -> void:
-	game.wave_active = false
-	game._battle_over = true  # 하단 조작 UI는 그대로 두되 입력만 차단 (숨기면 어색)
-	game._spawn_schedule.clear()
-	game._close_guide()
-	game.card_panel.visible = false
-	game.shop.shop_panel.visible = false
-
-	# 적·하인 처리 정지
+# 전투 종료(승/패) 시 필드 액터(적·하인) 처리를 정지 — 위치·애니·교전이 그대로 멈춘다.
+# (마법 쿨다운은 Game._process가 _battle_over로 게이트)
+func _freeze_actors() -> void:
 	for e in game.enemies_node.get_children():
 		if is_instance_valid(e):
 			e.set_physics_process(false)
@@ -41,6 +35,16 @@ func game_over() -> void:
 		if is_instance_valid(m):
 			m.set_physics_process(false)
 			m.set_process(false)
+
+func game_over() -> void:
+	game.wave_active = false
+	game._battle_over = true  # 하단 조작 UI는 그대로 두되 입력만 차단 (숨기면 어색)
+	game._spawn_schedule.clear()
+	game._close_guide()
+	game.card_panel.visible = false
+	game.shop.shop_panel.visible = false
+
+	_freeze_actors()
 
 	# 붉은 오버레이 페이드인 → 패널 등장
 	var overlay: ColorRect = ColorRect.new()
@@ -81,8 +85,11 @@ func game_over() -> void:
 func game_clear() -> void:
 	game.wave_active = false
 	game._battle_over = true  # 하단 조작 UI는 그대로 두되 입력만 차단 (숨기면 어색)
+	game._spawn_schedule.clear()
 	game._close_guide()
 	game.card_panel.visible = false
+
+	_freeze_actors()
 
 	# 금빛 오버레이 페이드인 → 패널 등장
 	var overlay: ColorRect = ColorRect.new()

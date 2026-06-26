@@ -133,7 +133,8 @@
    - ✅ `ShopController.gd`(`7b5cdb1`) — 상점 7함수+UI노드+상태. Game 3970→3742. **플테OK**(사용자 확인). +`0425be7` AbilitySystem `game.shop_panel`→`game.shop.shop_panel` 버그픽스(외부참조 누락 교훈).
    - ✅ `CardSystem.gd`(`7bb6374`, 2026-06-26) — 카드/키스톤 15함수+로컬상태. Game 3742→3164(세션시작4060→). game 역참조(GS2), 효과결과는 Enemy/Boss/AbilitySystem이 game.X 읽음(불변). **카드 화면 플테 대기**(뽑기/키스톤/효과 런타임).
    - ✅ `MinionSystem.gd`(`4f9a436`, 2026-06-26) — **슬라이스1**: 소환 UI·스폰·생애주기 6함수. 상태 Game 소유·game 역참조(GS2), facade 2개(minion_died←SkeletonWarrior·_refresh_summon_buttons←CardSystem). Game 3164→2967(세션 4060→). **소환/스폰/사망 플테 대기**.
-   - 다음 = `MinionSystem 슬라이스2`(강화 UI `_build_upgrade_ui`+팝업) → readout(ResourceHUD).
+   - ✅ `UpgradeSystem.gd`(`c223b16`, 2026-06-26) — 강화 UI 8함수. Game 2967→2541(세션 4060→). facade 3(ShopController·내부). 강화 버튼/팝업 플테 대기.
+   - 다음 = readout(ResourceHUD) → Result → WaveTracker → Tutorial → 정적헬퍼.
 4. 각 추출 시 `아키텍처.md §3.2 책임표`·`§3.5 부채` 동반 갱신.
 
 ## 관련 문서

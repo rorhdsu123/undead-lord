@@ -545,9 +545,12 @@ func start_wave() -> void:
 				var e_hp: float = base_hp * preset["hp_mult"]
 				var e_spd: float = base_speed * preset["speed_mult"]
 				var e_dmg: int = int(base_damage * preset["damage_mult"])
-				for _i: int in entry["count"]:
+				var spawn_count: int = entry["count"]
+				if not _is_tutorial():
+					spawn_count = int(ceil(spawn_count * WaveData.DENSITY_MULT.get(entry["enemy"], 1.0)))
+				for _i: int in spawn_count:
 					_spawn_schedule.append({
-						"t": pulse_t + randf_range(0.0, 0.4),
+						"t": pulse_t + randf_range(0.0, 0.25),
 						"enemy": entry["enemy"],
 						"hp": e_hp,
 						"spd": e_spd,
@@ -562,9 +565,12 @@ func start_wave() -> void:
 			var e_hp: float = base_hp * preset["hp_mult"]
 			var e_spd: float = base_speed * preset["speed_mult"]
 			var e_dmg: int = int(base_damage * preset["damage_mult"])
-			for _i: int in entry["count"]:
+			var spawn_count: int = entry["count"]
+			if not _is_tutorial():
+				spawn_count = int(ceil(spawn_count * WaveData.DENSITY_MULT.get(entry["enemy"], 1.0)))
+			for _i: int in spawn_count:
 				_spawn_schedule.append({
-					"t": randf_range(0.0, 0.4),
+					"t": randf_range(0.0, 0.25),
 					"enemy": entry["enemy"],
 					"hp": e_hp,
 					"spd": e_spd,

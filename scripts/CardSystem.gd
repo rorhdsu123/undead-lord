@@ -15,6 +15,7 @@ var available_skill_cards: Array = []
 var current_cards: Array = []
 var _card_rows: Array = []
 var _value_re: RegEx = null  # 카드 수치 강조용 정규식 (lazy compile)
+var _shown_recommend_hint: bool = false  # 런 내 추천 배지 튜토 힌트 1회 표시 여부 (영구 저장 안 함)
 
 func setup(g: Node) -> void:
 	game = g
@@ -53,6 +54,43 @@ func _show_cards() -> void:
 
 	pool.shuffle()
 
+	# 교습 화면 = 1-1 축 선택 직후 첫 카드 화면(추천 큐레이션·힌트가 뜨는 1회).
+	var teaching_screen: bool = game._is_tutorial() and game.keystone1 != "" and not _shown_recommend_hint
+
+	# 튜토리얼 교습 큐레이션 (1회): 추천 카드가 0장이면 교습이 다음 스테이지로 밀리고,
+	# 2장 이상이면 힌트가 모호해지는 문제를 "추천 1 + 반대 축 1 + 중립 1" 비교군으로 해결.
+	# 교습이 뜬 후(_shown_recommend_hint = true)엔 적용 안 함 → 순수 랜덤 복귀.
+	if teaching_screen:
+		var chosen_axis: String = "army" if game.keystone1 == "legion" else "magic"
+		var other_axis: String = "magic" if chosen_axis == "army" else "army"
+		var curated: Array = []
+		var used_ids: Array = []
+		var slot_axes: Array = [chosen_axis, other_axis, "neutral"]
+		for slot_axis in slot_axes:
+			for c: Dictionary in pool:
+				var c_axis: String = CardData.CARD_AXIS.get(c["id"], "neutral")
+				if c_axis == slot_axis and not used_ids.has(c["id"]):
+					curated.append(c)
+					used_ids.append(c["id"])
+					break
+		# 못 채운 슬롯은 남은 풀에서 임의로 채움 (방어적 폴백)
+		if curated.size() < 3:
+			for c: Dictionary in pool:
+				if curated.size() >= 3:
+					break
+				if not used_ids.has(c["id"]):
+					curated.append(c)
+					used_ids.append(c["id"])
+		# 추천 카드는 맨 위 고정(말풍선이 카드 위 제목 영역에 떠 다른 카드를 안 가림),
+		# 나머지 두 장만 순서 셔플. curated[0] = chosen_axis 슬롯 = 추천 카드.
+		if curated.size() == 3:
+			var bottom_two: Array = [curated[1], curated[2]]
+			bottom_two.shuffle()
+			curated = [curated[0], bottom_two[0], bottom_two[1]]
+		# curated 3장을 pool 앞에 재배치 → 기존 pool.slice(0, 3) 로직이 그대로 집도록
+		var remaining: Array = pool.filter(func(c: Dictionary) -> bool: return not used_ids.has(c["id"]))
+		pool = curated + remaining
+
 	var skill_ids: Array = CardData.SKILL_CARDS.map(func(c: Dictionary) -> String: return c["id"])
 	current_cards = []
 	for c: Dictionary in pool.slice(0, 3):
@@ -67,7 +105,8 @@ func _show_cards() -> void:
 
 	var card_h: float = 120.0
 	var gap: float = 10.0
-	var start_y: float = 250.0
+	# 교습 화면은 카드를 약간 아래로 — 추천 카드(맨 위) 위에 뜨는 말풍선이 타이틀과 안 겹치게
+	var start_y: float = 280.0 if teaching_screen else 250.0
 	for i: int in 3:
 		var row: Control = _build_card_row(current_cards[i], i, start_y + float(i) * (card_h + gap))
 		game.card_panel.add_child(row)
@@ -77,6 +116,20 @@ func _show_cards() -> void:
 
 	game._set_modal_dim(true)
 	game.card_panel.visible = true
+
+	# 추천 배지 튜토 힌트 (1-1 1회): _is_tutorial()(1-1 한정) + 축 선택됨 + 추천 카드 있음.
+	# current_chapter==0(Ch1 전체)로 잡으면 스테이지 전환 씬 reload로 플래그가 리셋돼 1-2에서 재노출됨
+	# → 1-1 한정 게이트로 1회 보장. (배지 _is_recommended는 Ch1 전체 유지 — 말풍선만 1-1로 분리)
+	if not _shown_recommend_hint and game._is_tutorial() and game.keystone1 != "":
+		for i: int in current_cards.size():
+			if _is_recommended(current_cards[i]["id"]) and i < _card_rows.size():
+				# 추천 카드가 맨 위(i=0)라 말풍선이 제목/부제 영역에 뜸 → 부제를 비워 텍스트 안 가리게
+				game.card_subtitle.text = ""
+				# duration 0 = 자동 사라짐 없이 카드를 고를 때까지 유지(_pick_card의 _close_guide가 닫음)
+				# dim=false = 다른 카드를 어둡게 하지 않음("추천일 뿐 강요 아님" — 3장 다 동등하게 보이게)
+				game.show_tutorial_tip(Loc.t("card_recommend_hint"), _card_rows[i], 0.0, Rect2(), false)
+				_shown_recommend_hint = true
+				break
 
 func _pick_card(index: int) -> void:
 	game._close_guide()
@@ -217,6 +270,21 @@ func _show_keystones(ids: Array, axis_pick: bool = false) -> void:
 
 	game._set_modal_dim(true)
 	game.card_panel.visible = true
+
+## 추천 판정: W1에서 고른 축(keystone1)과 카드 축이 일치하면 true.
+## neutral 카드는 어느 축과도 일치하지 않아 항상 false.
+## 튜토리얼(Ch1, current_chapter == 0) 한정 — 실전에선 빌드 결정을 온전히 플레이어에게 맡긴다.
+func _is_recommended(id: String) -> bool:
+	if game.current_chapter != 0:
+		return false
+	var chosen: String = ""
+	if game.keystone1 == "legion":
+		chosen = "army"
+	elif game.keystone1 == "surge":
+		chosen = "magic"
+	if chosen == "":
+		return false
+	return CardData.CARD_AXIS.get(id, "neutral") == chosen
 
 func _card_name(id: String) -> String:
 	var full: String = Loc.t("card_%s" % id)
@@ -361,10 +429,14 @@ func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
 	badge_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(badge_lbl)
 
+	# 추천 배지 여부 — 이름 라벨 폭 조정 + pill 표시에 사용
+	var is_rec: bool = _is_recommended(card["id"])
+
 	var name_lbl: Label = Label.new()
 	name_lbl.text = _card_name(card["id"])
 	name_lbl.position = Vector2(right_x, 16.0)
-	name_lbl.size = Vector2(right_w, 34.0)
+	# 추천 pill(폭 50 + 여백 8 + 간격 4 = 62) 공간 확보: 겹침 방지
+	name_lbl.size = Vector2(right_w - (62.0 if is_rec else 0.0), 34.0)
 	name_lbl.add_theme_font_size_override("font_size", 20)
 	name_lbl.add_theme_color_override("font_color", name_col)
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -387,6 +459,36 @@ func _build_card_row(card: Dictionary, index: int, y_pos: float) -> Control:
 			formatted = formatted.replace("{val}", _card_value_preview(card["id"], card.get("rare", false)))
 		desc_lbl.text = formatted
 		root.add_child(desc_lbl)
+
+	# 추천 리본 — 우상단 안쪽(레퍼런스 색감). 코랄 레드 + 흰 글씨 + 밝은 외곽선.
+	# 카드 밖으로 돌출시키면 튜토 노란 테두리(상위 CanvasLayer)가 가로지르므로 카드 안쪽에 둠.
+	# btn보다 먼저 add_child (btn이 맨 위 레이어 유지)
+	if is_rec:
+		var rec_pw: float = 56.0
+		var rec_ph: float = 26.0
+		var rec_px: float = card_w - rec_pw - 6.0   # 우측 안쪽 여백 6px
+		var rec_py: float = 6.0                     # 카드 안쪽 상단
+		var rec_bg: Panel = Panel.new()
+		rec_bg.position = Vector2(rec_px, rec_py)
+		rec_bg.size = Vector2(rec_pw, rec_ph)
+		rec_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var rec_style: StyleBoxFlat = StyleBoxFlat.new()
+		rec_style.bg_color = Color("#e85c52")       # 코랄 레드(레퍼런스)
+		rec_style.set_corner_radius_all(8)
+		rec_style.set_border_width_all(2)
+		rec_style.border_color = Color(1.0, 0.95, 0.92, 0.9)  # 밝은 외곽선(스티커 느낌)
+		rec_bg.add_theme_stylebox_override("panel", rec_style)
+		root.add_child(rec_bg)
+		var rec_lbl: Label = Label.new()
+		rec_lbl.text = Loc.t("card_recommend")
+		rec_lbl.position = Vector2(rec_px, rec_py)
+		rec_lbl.size = Vector2(rec_pw, rec_ph)
+		rec_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		rec_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		rec_lbl.add_theme_font_size_override("font_size", 14)
+		rec_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+		rec_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(rec_lbl)
 
 	var btn: Button = Button.new()
 	btn.size = Vector2(card_w, card_h)

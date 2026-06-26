@@ -8,6 +8,10 @@ static var _strings: Dictionary = {
 	"rarity_common":    "일반",
 	"rarity_legendary": "전설",
 
+	# 카드 추천 배지 / 힌트
+	"card_recommend":      "추천",
+	"card_recommend_hint": "고른 전략과 맞는 카드예요",
+
 	# 카드 선택 오버레이
 	"card_select_title":    "카드 선택",
 	"card_select_subtitle": "카드 1장 선택",

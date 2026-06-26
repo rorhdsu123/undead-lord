@@ -52,6 +52,10 @@ const CARD_AXIS: Dictionary = {
 	"chain_lightning": "magic",
 	"suppress": "magic",
 	"wall": "neutral", "graveyard": "neutral",
+	# 키스톤2 카드(중간보스 심화 화면) — 추천 판정용 축. 정규 풀엔 없고 _show_keystones로만 등장,
+	# _pick_card는 keystone 분기로 early-return이라 축 카운트엔 영향 없음.
+	"horde": "army", "echo": "army",
+	"vulnerable": "magic", "execute": "magic",
 }
 
 # 키스톤 효과 튜닝 (마물 축)

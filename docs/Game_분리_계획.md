@@ -130,8 +130,9 @@
    - `DialogueData.gd`(`b316aa1`) · `ShopData.gd`(`a2e1a02`) · `MinionData.gd`(`4a4e86a`) · `CardData.gd`(`eea2c7a`).
    - Game.gd 4060→3970줄. 동작 동일(데이터 이동). **플테 대기**.
 3. **Phase 2 진행 중 (6.2)** — 도메인 로직 이동:
-   - ✅ `ShopController.gd`(`7b5cdb1`, 2026-06-26) — 상점 7함수+UI노드+상태 이동, Game 3970→3742줄. game 역참조(GS2), _shop_dim_alpha만 Game 유지. **상점 플테 대기**(open/close/buy 런타임).
-   - 다음 = `CardSystem`(핫존·상태강결합) → `MinionSystem`.
+   - ✅ `ShopController.gd`(`7b5cdb1`) — 상점 7함수+UI노드+상태. Game 3970→3742. **플테OK**(사용자 확인). +`0425be7` AbilitySystem `game.shop_panel`→`game.shop.shop_panel` 버그픽스(외부참조 누락 교훈).
+   - ✅ `CardSystem.gd`(`7bb6374`, 2026-06-26) — 카드/키스톤 15함수+로컬상태. Game 3742→3164(세션시작4060→). game 역참조(GS2), 효과결과는 Enemy/Boss/AbilitySystem이 game.X 읽음(불변). **카드 화면 플테 대기**(뽑기/키스톤/효과 런타임).
+   - 다음 = `MinionSystem`(소환·강화·스폰).
 4. 각 추출 시 `아키텍처.md §3.2 책임표`·`§3.5 부채` 동반 갱신.
 
 ## 관련 문서

@@ -168,7 +168,7 @@ const CHAPTERS = [
 						{"t": 0.0, "spawn": [{"enemy": "swarm",  "count": 6}]},
 						{"t": 3.0, "spawn": [{"enemy": "swarm",  "count": 6}]},
 						{"t": 6.0, "spawn": [{"enemy": "swarm",  "count": 6}]},
-						{"t": 8.0, "spawn": [{"enemy": "runner", "count": 3}], "alert": true},  # 침투 꼬리=옆구리 러시 경고
+						{"t": 8.0, "spawn": [{"enemy": "runner", "count": 3}]},  # 침투 꼬리=옆구리 러시
 					 ]},
 
 					{"type": "normal", "base_hp": 190, "base_speed": 76, "base_damage": 18,
@@ -201,18 +201,18 @@ const CHAPTERS = [
 					 "pulses": [
 						{"t": 0.0, "spawn": [{"enemy": "brute",  "count": 3}, {"enemy": "normal", "count": 2}]},
 						{"t": 3.0, "spawn": [{"enemy": "brute",  "count": 3}]},
-						{"t": 6.0, "spawn": [{"enemy": "runner", "count": 4}], "alert": true},  # 우회 1파
-						{"t": 9.0, "spawn": [{"enemy": "runner", "count": 3}, {"enemy": "normal", "count": 2}], "alert": true},  # 우회 2파
+						{"t": 6.0, "spawn": [{"enemy": "runner", "count": 4}]},  # 우회 1파
+						{"t": 9.0, "spawn": [{"enemy": "runner", "count": 3}, {"enemy": "normal", "count": 2}]},  # 우회 2파
 					 ]},
 
 					# W9 "핀치" — swarm 미끼→runner 침투(낙뢰 쿨 중)→brute 앵커→scout 견제. 간격 2~3s=줄어든 낙뢰 쿨 아래
 					{"type": "normal", "base_hp": 240, "base_speed": 82, "base_damage": 24,
 					 "pulses": [
 						{"t":  0.0, "spawn": [{"enemy": "brute",  "count": 4}, {"enemy": "normal", "count": 2}]},
-						{"t":  3.0, "spawn": [{"enemy": "swarm",  "count": 8}], "alert": true},  # 미끼 폭주
-						{"t":  5.0, "spawn": [{"enemy": "runner", "count": 5}], "alert": true},  # 침투(낙뢰 쿨 중)
+						{"t":  3.0, "spawn": [{"enemy": "swarm",  "count": 8}], "alert": true},  # 미끼 폭주 — 1-3 유일 위협 경고(핀치 직전 1회)
+						{"t":  5.0, "spawn": [{"enemy": "runner", "count": 5}]},  # 침투(낙뢰 쿨 중)
 						{"t":  7.0, "spawn": [{"enemy": "scout",  "count": 4}]},
-						{"t":  9.0, "spawn": [{"enemy": "runner", "count": 4}], "alert": true},  # 마지막 침투
+						{"t":  9.0, "spawn": [{"enemy": "runner", "count": 4}]},  # 마지막 침투
 					 ]},
 
 					{"type": "boss", "base_hp": 220, "base_speed": 78, "base_damage": 20,

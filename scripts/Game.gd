@@ -71,7 +71,7 @@ var _pulse_armed_t1: bool = true  # 1/3 임계 펄스 무장 상태
 # 펄스 스폰 스케줄러
 var _spawn_schedule: Array[Dictionary] = []  # 각 {t, enemy, hp, spd, dmg}
 var _threat_alerts: Array[float] = []  # 위협 텔레그래프 발동 시각(alert 펄스의 t - THREAT_WARN_LEAD), 정렬됨
-const THREAT_WARN_LEAD: float = 0.8  # 무리/러시 펄스보다 이만큼 먼저 경고 알람(브레이스 한 박자)
+const THREAT_WARN_LEAD: float = 1.3  # 무리/러시 펄스보다 이만큼 먼저 경고 알람(브레이스 호흡+마법 장전 여유)
 var _wave_elapsed: float = 0.0
 var _wave_spawn_y_min: float = 150.0
 var _wave_spawn_y_max: float = 240.0
@@ -1338,46 +1338,56 @@ func _screen_flash(color: Color, duration: float = 0.4) -> void:
 # 위협 텔레그래프 — 무리/러시 펄스 직전 "브레이스" 알람(탕탕특공대식 저정보 경고).
 # 상단 가장자리 빨강 글로우(적이 들어오는 방향) + ⚠ 글리프 + 가벼운 흔들림. 종류·수는 안 알림(알람이지 인텔 아님).
 func _show_threat_warning() -> void:
+	# 중복 방지 — 배너가 이미 떠 있으면 덧대지 않음(연달아 깜빡여 거슬리는 것 차단)
+	if not get_tree().get_nodes_in_group("threat_banner").is_empty():
+		return
 	var vp_w: float = get_viewport_rect().size.x
-	# 상단 빨강 그라데이션 글로우(아래로 페이드) — 적 진입 방향 신호
-	var grad: Gradient = Gradient.new()
-	grad.set_color(0, Color(1.0, 0.15, 0.1, 0.85))
-	grad.set_color(1, Color(1.0, 0.15, 0.1, 0.0))
-	var tex: GradientTexture2D = GradientTexture2D.new()
-	tex.gradient = grad
-	tex.width = 8
-	tex.height = 160
-	tex.fill_from = Vector2(0, 0)
-	tex.fill_to = Vector2(0, 1)
-	var band: TextureRect = TextureRect.new()
-	band.texture = tex
-	band.stretch_mode = TextureRect.STRETCH_SCALE
-	band.size = Vector2(vp_w, 160)
-	band.position = Vector2(0, 0)
-	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	band.modulate.a = 0.0
-	$UI.add_child(band)
-	# ⚠ 글리프 — 언어 무관 신호(글로벌 타깃, Loc 불필요)
-	var mark: Label = Label.new()
-	mark.text = "⚠"
-	mark.add_theme_font_size_override("font_size", 56)
-	mark.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3, 1.0))
-	mark.size = Vector2(vp_w, 80)
-	mark.position = Vector2(0, 24)
-	mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	mark.modulate.a = 0.0
-	$UI.add_child(mark)
-	# 페이드 인 → 짧게 깜빡 → 아웃 (≈THREAT_WARN_LEAD 안에 끝나 적 등장과 맞물림)
+	# 빨강 리본 배너 — 전장 상단에 "여기 위험" 한 방. 종류·수는 안 알림(알람이지 인텔 아님).
+	var bw: float = vp_w * 0.52
+	var bh: float = 34.0
+	var panel: Panel = Panel.new()
+	var sb: StyleBoxFlat = StyleBoxFlat.new()
+	sb.bg_color = Color(0.74, 0.13, 0.13, 0.95)
+	sb.border_color = Color(0.34, 0.04, 0.04, 1.0)
+	sb.set_border_width_all(3)
+	sb.set_corner_radius_all(8)
+	sb.shadow_color = Color(0, 0, 0, 0.35)
+	sb.shadow_size = 6
+	panel.add_theme_stylebox_override("panel", sb)
+	panel.size = Vector2(bw, bh)
+	panel.position = Vector2((vp_w - bw) * 0.5, 300.0)
+	panel.pivot_offset = Vector2(bw * 0.5, bh * 0.5)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.modulate.a = 0.0
+	panel.scale = Vector2(0.85, 0.85)
+	panel.add_to_group("threat_banner")
+	$UI.add_child(panel)
+	# 문구 — 하드코딩 금지(Loc 경유, 글로벌 타깃)
+	var label: Label = Label.new()
+	label.text = Loc.t("threat_warning")
+	label.add_theme_font_size_override("font_size", 17)
+	label.add_theme_color_override("font_color", Color(1.0, 0.96, 0.9, 1.0))
+	label.add_theme_color_override("font_outline_color", Color(0.26, 0.02, 0.02, 1.0))
+	label.add_theme_constant_override("outline_size", 5)
+	label.size = Vector2(bw, bh)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(label)
+	# 팝 인 → 날카로운 깜빡임 ×3 → 길게 유지(위협 착지까지) → 아웃
 	var tween: Tween = create_tween()
-	tween.tween_property(band, "modulate:a", 1.0, 0.12)
-	tween.parallel().tween_property(mark, "modulate:a", 1.0, 0.12)
-	tween.tween_interval(0.2)
-	tween.tween_property(band, "modulate:a", 0.0, 0.45)
-	tween.parallel().tween_property(mark, "modulate:a", 0.0, 0.45)
-	tween.tween_callback(band.queue_free)
-	tween.parallel().tween_callback(mark.queue_free)
-	_screen_shake(3.0, 0.22)
+	tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(panel, "modulate:a", 1.0, 0.16)
+	tween.parallel().tween_property(panel, "scale", Vector2.ONE, 0.2)
+	for _i in 3:  # 깜빡임 3회 — 짧게 꺼졌다 탁 켜지는 경보 리듬
+		tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tween.tween_property(panel, "modulate:a", 0.15, 0.1)
+		tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tween.tween_property(panel, "modulate:a", 1.0, 0.12)
+	tween.tween_interval(1.0)  # 스폰~압박 구간 내내 떠 있게
+	tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.tween_property(panel, "modulate:a", 0.0, 0.35)
+	tween.tween_callback(panel.queue_free)
 
 func _show_boss_title(boss_name: String) -> void:
 	var vp_w: float = get_viewport_rect().size.x

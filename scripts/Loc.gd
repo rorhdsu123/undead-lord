@@ -4,6 +4,9 @@ static var _strings: Dictionary = {
 	# 스테이지 HUD
 	"stage_label": "스테이지 %d-%d",
 
+	# 위협 텔레그래프 — 무리/러시 펄스 직전 브레이스 배너(종류·수 비노출, 저정보 알람)
+	"threat_warning": "대규모 습격!!",
+
 	# 카드 등급
 	"rarity_common":    "일반",
 	"rarity_legendary": "전설",

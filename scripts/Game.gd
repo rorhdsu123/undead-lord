@@ -375,12 +375,7 @@ func _ready() -> void:
 	# 상단 HUD·트래커·성HP바(UI-폴리싱 자산)는 건드리지 않음
 	# 복원: 아래 블록을 제거하고 _process()의 Phase A 가드도 제거
 	_hide_bottom_ui_phase_a()
-	# 모달 입력 레이어링: Godot GUI 입력은 z_index가 아니라 트리 순서로 판정되므로
-	# HUD < ModalDim < 모달 패널 < FadeRect 순서가 되도록 끝으로 차례로 이동.
-	# (안 그러면 트리상 뒤에 있는 ModalDim(STOP)이 모달 버튼 클릭을 가로챔)
-	var ui_layer: CanvasLayer = $UI
-	for n in [modal_dim, card_panel, result_panel, shop.shop_panel, fade_rect]:
-		ui_layer.move_child(n, ui_layer.get_child_count() - 1)
+	_raise_modal_layers()
 	current_chapter = GameSave.start_chapter
 	current_stage = GameSave.start_stage
 	current_wave = 0
@@ -755,6 +750,16 @@ func end_wave() -> void:
 			card_system._show_keystones(["vulnerable", "execute"])
 			return
 	card_system._show_cards()
+
+# 모달 입력 레이어링: Godot GUI 입력은 z_index가 아니라 트리 순서로 판정되므로
+# HUD < ModalDim < 모달 패널 < FadeRect 순서가 되도록 끝으로 차례로 이동.
+# (안 그러면 트리상 뒤에 있는 ModalDim(STOP)이 모달 버튼 클릭을 가로챔)
+# 카드/키스톤 화면 진입 때도 재호출 — 강화 팝업이 캐처를 move_to_front로 최상단에
+# 올린 상태로 남으면 카드 탭을 가로채므로, 카드 패널(전화면 STOP)을 다시 끌어올린다.
+func _raise_modal_layers() -> void:
+	var ui_layer: CanvasLayer = $UI
+	for n in [modal_dim, card_panel, result_panel, shop.shop_panel, fade_rect]:
+		ui_layer.move_child(n, ui_layer.get_child_count() - 1)
 
 func _set_modal_dim(on: bool) -> void:
 	# 카드/키스톤 선택 모달 — 배경(월드·상단 HUD·성HP바·트래커)을 딤으로 덮어 선택에 집중시킨다.

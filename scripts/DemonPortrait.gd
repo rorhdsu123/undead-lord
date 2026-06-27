@@ -132,6 +132,10 @@ func say(emotion: String, text: String) -> void:
 	# 말풍선 크기 측정 → 위젯 배치
 	_reposition_widget(text)
 
+	# 강화 팝업 등 move_to_front된 UI보다 위에 그려지도록 매번 최상단으로 끌어올린다.
+	# (루트·자식 전부 MOUSE_FILTER_IGNORE라 입력은 그대로 통과 — 시각 레이어만 상승)
+	move_to_front()
+
 	# 슬라이드-업 + 페이드-인
 	_animate_in()
 

@@ -22,6 +22,10 @@ func setup(g: Node) -> void:
 	available_skill_cards = CardData.SKILL_CARDS.duplicate()
 
 func _show_cards() -> void:
+	# 강화 팝업이 열린 채 웨이브가 끝나면, 그 입력 캐처(move_to_front로 최상단)가
+	# 카드 패널 위에 남아 카드 탭을 가로챈다 → 팝업을 닫지 말고 모달 레이어를
+	# 다시 끌어올려 카드 패널이 입력 우선권을 갖게 한다(전화면 STOP 패널이라 탭 흡수).
+	game._raise_modal_layers()
 	for n: Node in _card_rows:
 		if is_instance_valid(n):
 			n.queue_free()
@@ -221,6 +225,8 @@ func _apply_keystone(id: String) -> void:
 ## axis_pick=true(W1 축 선언) → 전용 「전투 전략」 2열 갈림 화면.
 ## axis_pick=false(중간보스 #2 심화) → 일반 카드 UI(키스톤 2장 + 필러 1장, 3개중 1택).
 func _show_keystones(ids: Array, axis_pick: bool = false) -> void:
+	# 카드 화면과 동일 — 모달 레이어를 끌어올려 강화 캐처보다 카드 패널이 입력 우선.
+	game._raise_modal_layers()
 	for n: Node in _card_rows:
 		if is_instance_valid(n):
 			n.queue_free()

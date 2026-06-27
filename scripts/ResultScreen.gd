@@ -422,6 +422,10 @@ func _show_result(
 	game.result_btn2.add_theme_color_override("font_focus_color",   b2_font)
 
 	# ── 모달 + 패널 표시 ────────────────────────────────────────────────────
+	# 강화 팝업이 열린 채 결과로 진입하면 그 캐처(move_to_front 최상단)가 결과 버튼 탭을
+	# 가로채므로, 모달 레이어를 다시 끌어올려 결과 패널이 입력 우선권을 갖게 한다.
+	# (결과 패널은 중앙 패널이라 바깥 탭은 캐처에 닿지만, 캐처가 _battle_over 중엔 팝업을 닫지 않음)
+	game._raise_modal_layers()
 	game.modal_dim.visible = true
 	game.result_panel.visible = true
 

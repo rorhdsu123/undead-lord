@@ -60,6 +60,10 @@ func _build_upgrade_ui() -> void:
 	# 딤 배경 없음 — 팝업 중에도 전투 상황이 그대로 보이도록. 투명 캐처는 rect로 바깥 탭만 잡음.
 	game._upgrade_popup_catcher.gui_input.connect(func(ev: InputEvent) -> void:
 		if ev is InputEventMouseButton and ev.is_pressed() and ev.button_index == MOUSE_BUTTON_LEFT:
+			# 결과 화면 중엔 바깥 탭으로 팝업을 닫지 않는다(게임 클리어/실패 시 팝업 유지).
+			# 캐처는 STOP이라 탭을 그대로 소비 → 뒤 UI로 새지 않음.
+			if game._battle_over:
+				return
 			_close_upgrade_popup()
 	)
 	parent.add_child(game._upgrade_popup_catcher)

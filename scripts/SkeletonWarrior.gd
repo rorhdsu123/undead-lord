@@ -77,8 +77,24 @@ const SEPARATION_STRENGTH: float = 45.0   # 밀어내기 속도(px/s) — 에디
 # 추후 같은 폴더에 0_[Role]_[Motion]_###.png 프레임 입고 시 여기서 제거하고 프레임 로더로 전환.
 const STATIC_SPRITES: Dictionary = {
 	"warrior": "res://assets/characters/Warrior/Warrior.png",
-	"archer": "res://assets/characters/Archer/Archer.png",
-	"tank": "res://assets/characters/Tank/Tank.png",
+}
+
+# 부분 입고 오버라이드: base 단컷으로 전 동작을 채우되, 실제 프레임이 들어온 동작만 시퀀스로 교체.
+# 동작 키(walk/idle/slash/hurt/die) = 프레임 수. 폴더 = "<dir><Sub>/<prefix>_<Sub>_###.png".
+# 모든 동작 입고가 끝나면 STATIC/PARTIAL에서 빼고 _build_sprite_frames 경로(폴더 규칙 동일)로 전환.
+const PARTIAL_SPRITES: Dictionary = {
+	"archer": {
+		"base": "res://assets/characters/Archer/Archer.png",
+		"dir": "res://assets/characters/Archer/",
+		"prefix": "0_Archer",
+		"walk": 24,
+	},
+	"tank": {
+		"base": "res://assets/characters/Tank/Tank.png",
+		"dir": "res://assets/characters/Tank/",
+		"prefix": "0_Tank",
+		"walk": 24,
+	},
 }
 
 static var _cached_frames: Dictionary = {}  # minion_type → SpriteFrames
@@ -152,6 +168,8 @@ static func _get_sprite_frames(type: String, variant: int) -> SpriteFrames:
 	var sf: SpriteFrames
 	if type in STATIC_SPRITES:
 		sf = _build_static_frames(STATIC_SPRITES[type])
+	elif type in PARTIAL_SPRITES:
+		sf = _build_partial_frames(PARTIAL_SPRITES[type])
 	else:
 		sf = _build_sprite_frames(variant)
 	_cached_frames[type] = sf
@@ -183,6 +201,29 @@ static func _build_static_frames(path: String) -> SpriteFrames:
 		sf.set_animation_speed(anim, 15.0)
 		if tex:
 			sf.add_frame(anim, tex)
+	return sf
+
+# 부분 입고: base 단컷으로 전 동작을 채우되, cfg에 프레임 수가 있는 동작만 실제 시퀀스로 교체.
+static func _build_partial_frames(cfg: Dictionary) -> SpriteFrames:
+	var sf: SpriteFrames = SpriteFrames.new()
+	sf.remove_animation("default")
+	var tex: Texture2D = load(cfg["base"])
+	# [anim, Sub폴더, loop]
+	var motions: Array = [
+		["idle", "Idle", true], ["walk", "Walking", true],
+		["slash", "Slashing", false], ["hurt", "Hurt", false], ["die", "Dying", false],
+	]
+	for m: Array in motions:
+		var anim: String = m[0]
+		var count: int = cfg.get(anim, 0)
+		if count > 0:
+			_load_anim(sf, anim, cfg["dir"], cfg["prefix"], m[1], count, m[2])
+		else:
+			sf.add_animation(anim)
+			sf.set_animation_loop(anim, m[2])
+			sf.set_animation_speed(anim, 15.0)
+			if tex:
+				sf.add_frame(anim, tex)
 	return sf
 
 static func _load_anim(sf: SpriteFrames, anim: String, base_path: String, prefix: String, sub: String, count: int, loop: bool) -> void:

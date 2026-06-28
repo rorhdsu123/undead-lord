@@ -152,73 +152,77 @@ const CHAPTERS = [
 				"waves": [
 					{"type": "normal", "base_hp": 130, "base_speed": 70, "base_damage": 14,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 4}]},
-						{"t": 5.0, "spawn": [{"enemy": "scout",  "count": 4}]},
+						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 2}]},  # 탐색
+						{"t": 4.0, "spawn": [{"enemy": "normal", "count": 3}]},  # 빌드
+						{"t": 8.0, "spawn": [{"enemy": "scout", "count": 3}, {"enemy": "normal", "count": 2}]},  # 절정(견제)
 					 ]},
 
 					{"type": "normal", "base_hp": 150, "base_speed": 72, "base_damage": 15,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "brute", "count": 2}, {"enemy": "normal", "count": 3}]},
-						{"t": 6.0, "spawn": [{"enemy": "swarm", "count": 5}]},
+						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 2}]},  # 탐색
+						{"t": 4.0, "spawn": [{"enemy": "normal", "count": 3}]},  # 빌드
+						{"t": 8.0, "spawn": [{"enemy": "swarm", "count": 5}]},  # 절정(무리 맛보기→W3 폭주 예고)
 					 ]},
 
-					# W3 "무리 폭주+침투 꼬리" — 압축 3s(비-AoE 빌드 추월) + runner 꼬리(AoE 빌드도 누수)
+					# W3 "무리 폭주(크레셴도)+침투 꼬리" — swarm 4→6→8 점증 후 runner 꼬리 누수
 					{"type": "normal", "base_hp": 170, "base_speed": 75, "base_damage": 17,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "swarm",  "count": 6}]},
-						{"t": 3.0, "spawn": [{"enemy": "swarm",  "count": 6}]},
-						{"t": 6.0, "spawn": [{"enemy": "swarm",  "count": 6}]},
-						{"t": 8.0, "spawn": [{"enemy": "runner", "count": 3}]},  # 침투 꼬리=옆구리 러시
+						{"t": 0.0, "spawn": [{"enemy": "swarm", "count": 4}]},  # 탐색
+						{"t": 4.0, "spawn": [{"enemy": "swarm", "count": 6}]},  # 빌드
+						{"t": 8.0, "spawn": [{"enemy": "swarm", "count": 8}, {"enemy": "runner", "count": 2}]},  # 절정(무리 정점)
+						{"t": 12.0, "spawn": [{"enemy": "runner", "count": 3}]},  # 침투 꼬리=옆구리 러시
 					 ]},
 
 					{"type": "normal", "base_hp": 190, "base_speed": 76, "base_damage": 18,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "brute",  "count": 2}]},
-						{"t": 3.0, "spawn": [{"enemy": "brute",  "count": 2}]},
-						{"t": 6.0, "spawn": [{"enemy": "runner", "count": 4}]},
+						{"t": 0.0, "spawn": [{"enemy": "brute", "count": 2}]},  # 탐색(벽 전진)
+						{"t": 4.0, "spawn": [{"enemy": "brute", "count": 2}, {"enemy": "normal", "count": 2}]},  # 빌드
+						{"t": 8.0, "spawn": [{"enemy": "runner", "count": 4}]},  # 절정(돌파)
 					 ]},
 
 					{"type": "mid_boss", "base_hp": 170, "base_speed": 74, "base_damage": 15,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "scout", "count": 2}]},
-						{"t": 3.0, "spawn": [{"enemy": "scout", "count": 3}]},
+						{"t": 0.0, "spawn": [{"enemy": "scout", "count": 2}]},  # 탐색
+						{"t": 5.0, "spawn": [{"enemy": "scout", "count": 3}, {"enemy": "normal", "count": 2}]},  # 빌드(엘리트 압박)
 					 ],
 					 "boss_hp": 2000, "boss_speed": 58, "boss_damage": 22,
 					 "boss_name": "용사 대리", "crown_shards": 5},
 
 					{"type": "shop"},
 
-					# W7 "벽+견제+침투" — W8 전 단계(압축 4s·runner 4, 누수 W7<W8<W9 단조 상승)
+					# W7 "벽+견제+침투(크레셴도)" — 4펄스 점증, 후반 돌파 비중↑
 					{"type": "normal", "base_hp": 210, "base_speed": 78, "base_damage": 20,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "brute",  "count": 3}, {"enemy": "normal", "count": 2}]},
-						{"t": 4.0, "spawn": [{"enemy": "scout",  "count": 3}]},
-						{"t": 8.0, "spawn": [{"enemy": "runner", "count": 4}]},
+						{"t": 0.0, "spawn": [{"enemy": "brute", "count": 2}, {"enemy": "normal", "count": 2}]},  # 탐색
+						{"t": 4.0, "spawn": [{"enemy": "brute", "count": 2}, {"enemy": "scout", "count": 3}]},  # 빌드(견제)
+						{"t": 8.0, "spawn": [{"enemy": "runner", "count": 4}, {"enemy": "normal", "count": 2}]},  # 빌드(침투)
+						{"t": 12.0, "spawn": [{"enemy": "runner", "count": 4}, {"enemy": "scout", "count": 2}]},  # 절정
 					 ]},
 
-					# W8 "벽+우회" — AoE 내성: brute 벽(낙뢰 생존·라인 압박) + runner 2파 우회(성 타격)
+					# W8 "벽+우회(크레셴도)" — 벽으로 열고 runner 누수 점증
 					{"type": "normal", "base_hp": 225, "base_speed": 80, "base_damage": 22,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "brute",  "count": 3}, {"enemy": "normal", "count": 2}]},
-						{"t": 3.0, "spawn": [{"enemy": "brute",  "count": 3}]},
-						{"t": 6.0, "spawn": [{"enemy": "runner", "count": 4}]},  # 우회 1파
-						{"t": 9.0, "spawn": [{"enemy": "runner", "count": 3}, {"enemy": "normal", "count": 2}]},  # 우회 2파
+						{"t": 0.0, "spawn": [{"enemy": "brute", "count": 3}, {"enemy": "normal", "count": 2}]},  # 탐색(벽)
+						{"t": 4.0, "spawn": [{"enemy": "brute", "count": 3}]},  # 빌드(벽 보강)
+						{"t": 8.0, "spawn": [{"enemy": "runner", "count": 4}]},  # 우회 1파
+						{"t": 11.0, "spawn": [{"enemy": "runner", "count": 4}, {"enemy": "normal", "count": 2}]},  # 우회 2파
+						{"t": 14.0, "spawn": [{"enemy": "runner", "count": 3}, {"enemy": "scout", "count": 2}]},  # 절정(마지막 누수)
 					 ]},
 
-					# W9 "핀치" — swarm 미끼→runner 침투(낙뢰 쿨 중)→brute 앵커→scout 견제. 간격 2~3s=줄어든 낙뢰 쿨 아래
+					# W9 "핀치(최대 크레셴도)" — 앵커→빌드→무리폭주(경고)→침투→마지막 핀치. 1-3 유일 위협 경고.
 					{"type": "normal", "base_hp": 240, "base_speed": 82, "base_damage": 24,
 					 "pulses": [
-						{"t":  0.0, "spawn": [{"enemy": "brute",  "count": 4}, {"enemy": "normal", "count": 2}]},
-						{"t":  3.0, "spawn": [{"enemy": "swarm",  "count": 8}], "alert": true},  # 미끼 폭주 — 1-3 유일 위협 경고(핀치 직전 1회)
-						{"t":  5.0, "spawn": [{"enemy": "runner", "count": 5}]},  # 침투(낙뢰 쿨 중)
-						{"t":  7.0, "spawn": [{"enemy": "scout",  "count": 4}]},
-						{"t":  9.0, "spawn": [{"enemy": "runner", "count": 4}]},  # 마지막 침투
+						{"t": 0.0, "spawn": [{"enemy": "brute", "count": 3}, {"enemy": "normal", "count": 2}]},  # 탐색(앵커)
+						{"t": 4.0, "spawn": [{"enemy": "brute", "count": 3}, {"enemy": "scout", "count": 2}]},  # 빌드
+						{"t": 8.0, "spawn": [{"enemy": "swarm", "count": 8}], "alert": true},  # 무리 폭주 — 1-3 유일 위협 경고
+						{"t": 11.0, "spawn": [{"enemy": "runner", "count": 5}]},  # 침투(낙뢰 쿨 중)
+						{"t": 14.0, "spawn": [{"enemy": "runner", "count": 4}, {"enemy": "scout", "count": 3}]},  # 절정(마지막 핀치)
 					 ]},
 
 					{"type": "boss", "base_hp": 220, "base_speed": 78, "base_damage": 20,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "brute", "count": 4}]},
-						{"t": 5.0, "spawn": [{"enemy": "swarm", "count": 6}]},
+						{"t": 0.0, "spawn": [{"enemy": "brute", "count": 3}]},  # 탐색
+						{"t": 5.0, "spawn": [{"enemy": "brute", "count": 4}, {"enemy": "swarm", "count": 6}]},  # 빌드(보스전 압박)
 					 ],
 					 "boss_hp": 6000, "boss_speed": 52, "boss_damage": 18,
 					 "boss_name": "정의의 용사 과장", "crown_shards": 15},

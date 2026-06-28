@@ -41,6 +41,8 @@ const MAX_KNOCKBACK: float = 600.0  # 넉백 속도 상한 (px/s) — 나팔 연
 # 스폰 클램프(PLAY_BOUNDS y150)와 별개: 등장 위치는 그대로, *밀려난* 적만 여기서 멈춘다. 노브.
 const KNOCKBACK_CEILING_Y: float = 185.0
 const HIT_TINT:  Color = Color(1.5, 0.4, 0.4, 1.0)    # 피격 순간 플래시(빨강)
+
+var _entering: bool = false  # A안: 스폰선(PLAY_BOUNDS 상단) 위에서 출발해 아직 진입 중 — 상단 클램프 면제
 const SLOW_TINT: Color = Color(0.5, 0.5, 1.5, 1.0)    # 둔화(파랑)
 const VULN_TINT: Color = Color(1.5, 0.45, 1.6, 1.0)   # 취약(자주/보라) — 마법 축 색, 피격 빨강과 구별
 const STUN_TINT: Color = Color(0.45, 1.25, 1.95, 1.0) # 제압(stun) 전용 틴트 — 둔화 파랑(0.5,0.5,1.5)보다 훨씬 밝고 시안
@@ -116,6 +118,19 @@ func _ready() -> void:
 	_vuln_icon.setup(-64.0)
 	_vuln_icon.visible = false
 	_play_anim("idle")
+
+	# A안: 스폰선보다 위에서 출발하면 진입 중 → 상단 클램프 면제(화면 밖 행진 허용)
+	if position.y < PLAY_BOUNDS.position.y:
+		_entering = true
+	# B안: 등장 연출 — 루트 노드 modulate/scale 트윈.
+	# ⚠️ 틴트 중앙계산이 anim_sprite.modulate를 매프레임 덮으므로 *루트 노드*에 적용(무간섭).
+	modulate.a = 0.0
+	scale = Vector2(0.82, 0.82)
+	var entw: Tween = create_tween()
+	entw.set_parallel(true)
+	entw.tween_property(self, "modulate:a", 1.0, 0.28)
+	entw.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	entw.tween_property(self, "scale", Vector2.ONE, 0.32)
 
 static func _get_sprite_frames(folder: String, attack_folder: String) -> SpriteFrames:
 	if folder in _cached_frames:
@@ -275,7 +290,14 @@ func _physics_process(delta: float) -> void:
 		knockback_vel = Vector2.ZERO
 	# 화면 밖 이탈 방지 (넉백·밀림으로 안 보이는 곳으로 새지 않게)
 	global_position.x = clamp(global_position.x, PLAY_BOUNDS.position.x, PLAY_BOUNDS.end.x)
-	global_position.y = clamp(global_position.y, PLAY_BOUNDS.position.y, PLAY_BOUNDS.end.y)
+	# A안: 진입 중인 적은 상단 클램프 면제(화면 밖→아래로 행진). 스폰선 통과 시 정상 복귀.
+	var top_y: float = PLAY_BOUNDS.position.y
+	if _entering:
+		if global_position.y >= PLAY_BOUNDS.position.y:
+			_entering = false
+		else:
+			top_y = -200.0
+	global_position.y = clamp(global_position.y, top_y, PLAY_BOUNDS.end.y)
 
 	# 성벽 키프아웃: 적은 외벽 사각형(CASTLE_HALF 기준) 안으로 진입 불가.
 	# 매 프레임 절대좌표를 보정 → 빠른 이동·넉백 터널링 없음. 가장 가까운 변 바깥으로 고정.

@@ -435,13 +435,18 @@ func start_wave() -> void:
 	var base_speed: float = data["base_speed"]
 	var base_damage: int = data["base_damage"]
 
-	# HUD 하단(~y142) 바로 아래에서 스폰 — 상시 바가 적을 가리지 않도록 (카피바라고 방식)
-	_wave_spawn_y_min = 150.0
-	_wave_spawn_y_max = 240.0
-	if _is_tutorial() and current_wave == 4:
-		_wave_spawn_y_min = 220.0
-		_wave_spawn_y_max = 300.0
-		# 느린 브루트 → 플레이어 사거리 안쪽에서 등장하도록 살짝 아래 스폰
+	# A안: 비튜토리얼은 상단 HUD 위(화면 밖)에서 스폰 → 아래로 행진해 HUD 뒤에서 등장.
+	# 세로 스프레드가 한 펄스를 시간차로 흘려보내 "몰려오는" 흐름을 만든다(노브).
+	# 튜토리얼(1-1)은 FTUE 페이싱 보존 위해 기존 인뷰 밴드 유지.
+	if _is_tutorial():
+		_wave_spawn_y_min = 150.0
+		_wave_spawn_y_max = 240.0
+		if current_wave == 4:
+			_wave_spawn_y_min = 220.0
+			_wave_spawn_y_max = 300.0
+	else:
+		_wave_spawn_y_min = -40.0
+		_wave_spawn_y_max = 140.0
 
 	# 펄스 스케줄 구축
 	_spawn_schedule.clear()

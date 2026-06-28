@@ -25,6 +25,7 @@ var tutorial_completed: bool = false # 1-1 튜토리얼 클리어 여부
 var first_lobby_visit_done: bool = false # 첫 시설업 가이드 완료 여부
 var taught_enhance: bool = false         # 1-1 마물 강화 학습 완료 여부
 var taught_horn: bool = false            # 1-2 나팔(통제형 마법) 학습 완료 여부
+var taught_interrupt: bool = false       # 1-1 방패 성기사 와인드업 낙뢰 끊기 학습 완료 여부
 
 # ── 위엄(Majesty) 저장 필드 ───────────────────────────────────
 var majesty_level: int = 0          # 0~5 (MAJESTY_CAP)
@@ -129,6 +130,7 @@ func save_data():
 	config.set_value("meta", "first_lobby_visit_done", first_lobby_visit_done)
 	config.set_value("meta", "taught_enhance", taught_enhance)
 	config.set_value("meta", "taught_horn", taught_horn)
+	config.set_value("meta", "taught_interrupt", taught_interrupt)
 	for id in facility_levels:
 		config.set_value("facilities", id, facility_levels[id])
 	# 위엄 저장
@@ -153,6 +155,7 @@ func load_data():
 		first_lobby_visit_done = config.get_value("meta", "first_lobby_visit_done", false)
 		taught_enhance = config.get_value("meta", "taught_enhance", false)
 		taught_horn = config.get_value("meta", "taught_horn", false)
+		taught_interrupt = config.get_value("meta", "taught_interrupt", false)
 		for id in facility_levels:
 			facility_levels[id] = config.get_value("facilities", id, 0)
 		# 위엄 로드
@@ -179,6 +182,7 @@ func reset_data() -> void:
 	first_lobby_visit_done = false
 	taught_enhance = false
 	taught_horn = false
+	taught_interrupt = false
 	majesty_level = 0
 	majesty_exp = 0
 	unlock_credits = 0

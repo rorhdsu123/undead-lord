@@ -16,6 +16,9 @@ const BOSS_SCALE_MAP: Dictionary = {
 	"boss_manager":   0.580,
 }
 const BASE_SPRITE_SCALE: float = 0.316
+const SHIELD_SCALE: float = 0.40             # 방패 성기사 전용 스케일 — 1-1 벽 컨셉, 플레이스홀더라도 크게 읽히게
+const SHIELD_FIRST_WINDUP_DELAY: float = 3.0 # 첫 와인드업은 성벽 도달 후 3초(교습 빠른 진입)
+const WINDUP_SCALE_MULT: float = 1.2         # 와인드업 중 스케일 팝(지속) — 피격 팝(0.05)보다 크게, 와인드업 내내 유지
 
 const COLOR_NORMAL: Color  = Color.WHITE
 const COLOR_OVERTIME: Color = Color(1.0, 0.55, 0.3, 1.0)
@@ -65,6 +68,11 @@ var combat_engaged: bool = false
 var minion_attack_timer: float = 0.0
 var boss_name: String = "보스"
 var boss_type: String = "mid_boss"
+var boss_pattern: String = ""   # WaveData "pattern" 키. ""=기존 boss_type 분기, "shield"=방패 성기사
+var shield_dr: bool = false      # 방패 DR(받는 피해 ×0.5) 활성 — 와인드업 중엔 해제(아래 take_damage)
+var _first_windup: bool = true             # 첫 와인드업 여부 — 참이면 SHIELD_FIRST_WINDUP_DELAY, 이후 rage_interval
+var _windup_marker: ProgressBar = null     # 머리 위 카운트다운 게이지 (null=방패 아님/비활성)
+var _teach_label: Node = null              # 와인드업 교습 힌트 레이블 (null=비교습 상태)
 
 var game = null
 var _anim_state: String = ""
@@ -109,8 +117,18 @@ func _ready() -> void:
 		rage_charge_duration = 1.0
 		rage_damage = 35
 
+	if boss_pattern == "shield":
+		# 방패 성기사: 평소 DR로 안 뚫리는 벽 + 와인드업 2초만 취약창. 소환·페이즈 없음.
+		# rage_interval 14s > 낙뢰 쿨(12s) → 다음 와인드업 때 낙뢰가 자연히 차 있음 = 쿨 변경 없이 "항상 끊을 수 있음"
+		rage_interval = 14.0
+		rage_charge_duration = 3.0   # 1-1 튜토: 게이지 차는 시간 넉넉히(보고→낙뢰 버튼 찾고→탭 여유). 플테 노브
+		rage_damage = 40
+		shield_dr = true
+
 	var folder: String = BOSS_SPRITE_MAP.get(boss_name, "boss_intern")
 	var sprite_scale: float = BOSS_SCALE_MAP.get(folder, BASE_SPRITE_SCALE)
+	if boss_pattern == "shield":
+		sprite_scale = SHIELD_SCALE   # 1-1 = 거대 타워실드 '벽' 컨셉, 플레이스홀더라도 크게 읽히게
 	anim_sprite.sprite_frames = _get_sprite_frames(folder)
 	anim_sprite.scale = Vector2.ONE * sprite_scale
 	_sprite_base_scale = anim_sprite.scale
@@ -189,7 +207,9 @@ func _physics_process(delta: float) -> void:
 	if vulnerable_timer > 0.0:
 		vulnerable_timer -= delta
 
-	if boss_type == "mid_boss":
+	if boss_pattern == "shield":
+		_pattern_shield(delta)
+	elif boss_type == "mid_boss":
 		_pattern_intern(delta)
 	else:
 		_pattern_albaeng(delta)
@@ -234,6 +254,28 @@ func _pattern_intern(delta: float) -> void:
 		rage_timer = 0.0
 		var rage_line: String = RAGE_DIALOGUES.get(boss_name, "이건 진심이다.")
 		_start_rage_charge(rage_line, Color(1.0, 0.6, 0.2))
+
+# ============ 방패 성기사 패턴 (1-1) ============
+# 고정 근접 벽. 소환·페이즈 없음. 와인드업(2s)만 DR 해제 취약창 → 그때 낙뢰=캔슬+치명타.
+func _pattern_shield(delta: float) -> void:
+	if is_charging_rage:
+		_process_charge(delta)
+		return
+
+	var castle_pos: Vector2 = game.get_node("Castle").global_position
+	_engage_or_approach(delta, castle_pos)
+
+	# 와인드업은 교전 중에만(멀리서 헛스윙 방지) — 성벽 도달 or 앞 하인에게 막힘.
+	# 하인이 보스를 벽 앞에서 붙들어도 와인드업이 떠야 교습 성립(강타는 막은 하인이 받음).
+	if not _is_at_wall(castle_pos) and not _blocking_minion:
+		return
+	rage_timer += delta
+	var interval: float = SHIELD_FIRST_WINDUP_DELAY if _first_windup else rage_interval
+	if rage_timer >= interval:
+		rage_timer = 0.0
+		_first_windup = false
+		var line: String = RAGE_DIALOGUES.get(boss_name, "막아주마.")
+		_start_rage_charge(line, Color(1.0, 0.6, 0.2))
 
 # ============ 알바생 패턴 ============
 func _pattern_albaeng(delta: float) -> void:
@@ -299,6 +341,8 @@ func _start_rage_charge(dialogue: String, color: Color) -> void:
 		_play_anim("idle")
 	if game and game.has_method("show_dialogue"):
 		game.show_dialogue(dialogue, color, global_position + Vector2(0, -80))
+	if boss_pattern == "shield":
+		_begin_windup_telegraph()
 
 func _process_charge(delta: float) -> void:
 	rage_charge_time += delta
@@ -307,10 +351,13 @@ func _process_charge(delta: float) -> void:
 	var t: float = rage_charge_time / rage_charge_duration
 	var pulse: float = (sin(rage_charge_time * 30.0) + 1.0) * 0.5
 	anim_sprite.modulate = Color(1.0, 0.9 - pulse * 0.5, 0.1 + t * 0.3, 1)
+	if is_instance_valid(_windup_marker):
+		_windup_marker.value = t   # 카운트다운 게이지 진행도 갱신 (0→1, 차오를수록 임팩트 임박)
 	if rage_charge_time >= rage_charge_duration:
 		_execute_rage_attack()
 
 func _execute_rage_attack() -> void:
+	_end_windup_telegraph()   # 방패 외엔 no-op(_windup_marker null 검사)
 	is_charging_rage = false
 	rage_charge_time = 0.0
 	_restore_phase_modulate()
@@ -339,15 +386,74 @@ func _restore_phase_modulate() -> void:
 	else:
 		anim_sprite.modulate = COLOR_NORMAL
 
+# ============ 방패 와인드업 텔레그래프 (방패 성기사 전용) ============
+# "정지(이미)+커짐+글로우(_process_charge 펄스)+게이지" 4신호 → 작은 스프라이트라도 "지금 쳐라"가 읽힘.
+# _windup_marker null = 방패 보스 아님 또는 비활성 → _end_*는 null 검사 후 no-op으로 다른 보스 무영향.
+func _begin_windup_telegraph() -> void:
+	# 기존 피격 팝 tween을 먼저 정리해 scale 충돌 방지
+	if _hit_tween and _hit_tween.is_valid():
+		_hit_tween.kill()
+	# 스케일 팝: 2초간 1.2배 유지(피격 팝과 달리 복귀 없음 — _end_*에서 base로)
+	var pop: Tween = create_tween()
+	pop.tween_property(anim_sprite, "scale", _sprite_base_scale * WINDUP_SCALE_MULT, 0.18) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	# 머리 위 카운트다운 게이지 (차오를수록 임팩트 임박)
+	var bar: ProgressBar = ProgressBar.new()
+	bar.min_value = 0.0
+	bar.max_value = 1.0
+	bar.value = 0.0
+	bar.show_percentage = false
+	# HP바와 동일한 offset 기반 배치 — HP바 바로 위, 상단 HUD 밴드에 안 가리는 안전대.
+	# (position+size 방식은 안 보였음: 보스가 위쪽에 있을 때 -150이 HUD 뒤로 들어감 + Control 렌더 불안정)
+	bar.offset_left = -55.0
+	bar.offset_right = 55.0
+	bar.offset_top = -70.0
+	bar.offset_bottom = -56.0
+	# 어두운 배경 + 검은 테두리 + 밝은(위험) 채움 — 가독성
+	var bg: StyleBoxFlat = StyleBoxFlat.new()
+	bg.bg_color = Color(0.08, 0.08, 0.1, 0.88)
+	bg.set_corner_radius_all(4)
+	bg.set_border_width_all(2)
+	bg.border_color = Color(0.0, 0.0, 0.0, 0.9)
+	var fg: StyleBoxFlat = StyleBoxFlat.new()
+	fg.bg_color = Color(1.0, 0.75, 0.1, 1.0)   # 노랑 (낙뢰 신호색과 호응 — "낙뢰로 끊어라" 단서)
+	fg.set_corner_radius_all(4)
+	bar.add_theme_stylebox_override("background", bg)
+	bar.add_theme_stylebox_override("fill", fg)
+	add_child(bar)
+	_windup_marker = bar
+	# 교습 진행 중이면 게이지 옆 힌트 레이블 + 낙뢰 버튼 스포트라이트
+	if game and game.has_method("is_teaching_interrupt") and game.is_teaching_interrupt():
+		_spawn_windup_teach_label()
+		game.on_boss_windup_started()
+
+func _end_windup_telegraph() -> void:
+	if not is_instance_valid(_windup_marker):
+		return
+	_windup_marker.queue_free()
+	_windup_marker = null
+	# 교습 힌트 레이블 정리
+	if is_instance_valid(_teach_label):
+		_teach_label.queue_free()
+	_teach_label = null
+	# 스케일을 base로 복귀
+	var back: Tween = create_tween()
+	back.tween_property(anim_sprite, "scale", _sprite_base_scale, 0.12) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
 # ============ 와인드업 중단 / 스턴 ============
 func interrupt_windup() -> void:
 	if not is_charging_rage:
 		return
+	_end_windup_telegraph()   # 방패 외엔 no-op(_windup_marker null 검사)
 	is_charging_rage = false
 	rage_charge_time = 0.0
 	_restore_phase_modulate()
 	_spawn_cancel_mark()
 	apply_stun(1.5)
+	# 교습 성공 훅 — Game이 미학습 게이트로 1회만 처리. 비-방패 보스는 _end_windup_telegraph가 null → 이미 early-return
+	if game and game.has_method("on_boss_interrupt_taught"):
+		game.on_boss_interrupt_taught()
 
 func apply_stun(duration: float) -> void:
 	is_stunned = true
@@ -360,6 +466,21 @@ func apply_stun(duration: float) -> void:
 		if is_instance_valid(stars):
 			stars.queue_free()
 	)
+
+## 와인드업 교습 힌트 레이블 — 게이지 상단에 "낙뢰로 내리쳐라!" 텍스트 띄움.
+## _spawn_cancel_mark()와 동일한 방식(Label을 보스 직속 자식으로 추가).
+## 소멸은 _end_windup_telegraph()에서 _teach_label.queue_free()로 처리.
+func _spawn_windup_teach_label() -> void:
+	var lbl: Label = Label.new()
+	lbl.text = Loc.t("windup_teach_hint")
+	lbl.add_theme_font_size_override("font_size", 13)
+	lbl.add_theme_color_override("font_color", Color(1.0, 0.95, 0.3, 1.0))   # 노랑 — 게이지 색과 호응
+	lbl.add_theme_constant_override("outline_size", 2)
+	lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
+	# 게이지(offset_top=-70)보다 약 24px 위에 배치해 겹침 없이 가독
+	lbl.position = Vector2(-65.0, -95.0)
+	add_child(lbl)
+	_teach_label = lbl
 
 func _spawn_cancel_mark() -> void:
 	var container: Node2D = Node2D.new()
@@ -409,6 +530,11 @@ func _spawn_stun_stars() -> Node2D:
 func take_damage(dmg: float, tier: String = "normal") -> void:
 	if _anim_state == "die":
 		return
+	# 방패 DR: 받는 피해 절반. 단 (1) 와인드업 중(is_charging_rage=취약창)엔 해제,
+	# (2) 낙뢰 와인드업 치명타("crit" tier)는 캔슬이 is_charging_rage를 먼저 끄고 들어오지만
+	#     정의상 와인드업을 잡은 풀딜이므로 DR을 통과시킨다.
+	if shield_dr and not is_charging_rage and tier != "crit":
+		dmg *= 0.5
 	if vulnerable_timer > 0.0 and game:
 		dmg *= (1.0 + game.vulnerability_amount)
 	hp -= dmg

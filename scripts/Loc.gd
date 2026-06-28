@@ -144,6 +144,10 @@ static var _strings: Dictionary = {
 	"doctrine_rule_A_desc":   "시야 내 마물 공격속도 ×2",
 	"doctrine_rule_B_name":   "공포",
 	"doctrine_rule_B_desc":   "보스 제외 적 패닉 (무작위 정지)",
+
+	# ── 1-1 방패 성기사 와인드업 끊기 교습 (FTUE) ──────────────────
+	"windup_teach_hint":    "방패를 들었다 — 낙뢰로 내리쳐라!",
+	"windup_teach_success": "그렇지. 틈은 그렇게 여는 거다.",
 }
 
 static func t(key: String) -> String:

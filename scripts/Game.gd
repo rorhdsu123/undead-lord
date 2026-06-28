@@ -514,6 +514,7 @@ func start_wave() -> void:
 		b.base_damage = data["boss_damage"]
 		b.boss_name = data["boss_name"]
 		b.boss_type = data["type"]
+		b.boss_pattern = data.get("pattern", "")
 		b.game = self
 		enemies_node.add_child(b)
 		_on_boss_entered(b)
@@ -708,6 +709,29 @@ func demon_bark_power() -> void:
 	if randf() >= POWER_BARK_CHANCE:
 		return
 	_demon_say("attack", DialogueData.POWER_LINES[randi() % DialogueData.POWER_LINES.size()])
+
+## ── 1-1 방패 성기사 와인드업 끊기 교습 facade (Boss.gd → Game 역호출) ──
+
+## 와인드업 끊기 교습이 진행 중인지 여부: 1-1 튜토 + 아직 미학습 시 true.
+func is_teaching_interrupt() -> bool:
+	return _is_tutorial() and not GameSave.taught_interrupt
+
+## 방패 성기사 와인드업 시작 시 Boss가 호출 — 낙뢰 버튼(슬롯0) 스포트라이트로 "이걸 눌러라" 신호.
+## show_tutorial_tip과 동일한 형태(나팔 교습 line 530 참조). dim=false: 적 조준 필요하므로 생략.
+func on_boss_windup_started() -> void:
+	if not is_teaching_interrupt():
+		return
+	var lb: Control = ability_system.get_field_button(0)
+	if is_instance_valid(lb):
+		show_tutorial_tip(Loc.t("windup_teach_hint"), lb, 3.0, ability_system.get_field_button_rect(0), false)
+
+## 와인드업이 낙뢰로 끊긴 순간 Boss가 호출 — 칭찬 바크 1회 + 플래그 영속화(이후 교습 종료).
+func on_boss_interrupt_taught() -> void:
+	if not is_teaching_interrupt():
+		return
+	GameSave.taught_interrupt = true
+	GameSave.save_data()
+	_demon_say("victory", Loc.t("windup_teach_success"), true)
 
 func end_wave() -> void:
 	if not wave_active:
@@ -1430,28 +1454,41 @@ func _show_crown_shard_gain(pos: Vector2, shards: int) -> void:
 	tween.parallel().tween_property(label, "modulate:a", 0.0, 1.2)
 	tween.tween_callback(label.queue_free)
 
+# 데미지 숫자 포맷 — 1000↑ K, 1e6↑ M (레퍼런스 약어식). 작은 수는 정수 그대로.
+func _fmt_dmg(v: float) -> String:
+	var n: int = int(round(v))
+	if n >= 1000000:
+		return ("%.1fM" % (n / 1000000.0)).replace(".0M", "M")
+	if n >= 1000:
+		return ("%.1fK" % (n / 1000.0)).replace(".0K", "K")
+	return str(n)
+
 func spawn_damage_number(pos: Vector2, dmg: float, tier: String = "normal") -> void:
 	var label: Label = Label.new()
-	label.text = "-%d" % int(dmg)
+	label.text = _fmt_dmg(dmg)   # K/M 약어 — 큰 수 가독성
 	add_child(label)
+	# 두꺼운 어두운 외곽선 — 어수선한 배경 위 가독성의 핵심(레퍼런스 공통). 크기는 tier별로 아래.
+	label.add_theme_color_override("font_outline_color", Color(0.12, 0.09, 0.06, 1))
 
 	match tier:
 		"resist":
-			label.add_theme_font_size_override("font_size", 14)
-			label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6, 1))
+			label.add_theme_font_size_override("font_size", 16)
+			label.add_theme_constant_override("outline_size", 5)
+			label.add_theme_color_override("font_color", Color(0.72, 0.72, 0.74, 1))
 			label.position = pos + Vector2(-12, -32)
 			var tween: Tween = create_tween()
 			tween.parallel().tween_property(label, "position:y", label.position.y - 20, 0.6)
 			tween.parallel().tween_property(label, "modulate:a", 0.0, 0.6)
 			tween.tween_callback(label.queue_free)
 		"crit":
-			label.add_theme_font_size_override("font_size", 32)
-			label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.4, 1))
+			label.add_theme_font_size_override("font_size", 36)
+			label.add_theme_constant_override("outline_size", 10)
+			label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.05, 1))  # 주황 — 노랑 낙뢰/게이지 위에서 안 묻히게
 			label.position = pos + Vector2(-20, -48)
 			var tween: Tween = create_tween()
 			tween.parallel().tween_property(label, "position:y", label.position.y - 45, 0.8)
 			tween.parallel().tween_property(label, "modulate:a", 0.0, 0.8)
-			tween.parallel().tween_property(label, "modulate", Color(1.0, 0.8, 0.1, 1), 0.8)
+			tween.parallel().tween_property(label, "modulate", Color(1.0, 0.55, 0.1, 1), 0.8)  # 페이드 중에도 주황 유지
 			# 좌우 살짝 흔들림
 			var shake_tween: Tween = create_tween()
 			shake_tween.tween_property(label, "position:x", label.position.x + 6.0, 0.08)
@@ -1460,8 +1497,9 @@ func spawn_damage_number(pos: Vector2, dmg: float, tier: String = "normal") -> v
 			shake_tween.tween_property(label, "position:x", label.position.x, 0.06)
 			tween.tween_callback(label.queue_free)
 		_: # "normal"
-			label.add_theme_font_size_override("font_size", 18)
-			label.add_theme_color_override("font_color", Color(1, 0.85, 0.85, 1))
+			label.add_theme_font_size_override("font_size", 20)
+			label.add_theme_constant_override("outline_size", 6)
+			label.add_theme_color_override("font_color", Color(1, 0.9, 0.9, 1))
 			label.position = pos + Vector2(-12, -32)
 			var tween: Tween = create_tween()
 			tween.parallel().tween_property(label, "position:y", label.position.y - 30, 0.6)

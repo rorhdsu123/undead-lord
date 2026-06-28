@@ -76,34 +76,37 @@ const CHAPTERS = [
 						{"t": 5.0, "spawn": [{"enemy": "normal", "count": 1}]},
 					 ],
 					 "boss_hp": 500, "boss_speed": 45, "boss_damage": 10,
-					 "boss_name": "사관후보생", "crown_shards": 2},
+					 "boss_name": "사관후보생", "crown_shards": 2, "pattern": "shield"},
 				]
 			},
 			{   # 스테이지 1-2 (적 타입 하나씩 소개)
 				"waves": [
 					{"type": "normal", "base_hp": 50, "base_speed": 60, "base_damage": 8,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 3}]},
-						{"t": 6.0, "spawn": [{"enemy": "normal", "count": 2}]},
+						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 2}]},  # 탐색
+						{"t": 4.0, "spawn": [{"enemy": "normal", "count": 2}]},  # 빌드
+						{"t": 8.0, "spawn": [{"enemy": "normal", "count": 3}]},  # 절정
 					 ]},
 
 					{"type": "normal", "base_hp": 60, "base_speed": 62, "base_damage": 8,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 4}]},
-						{"t": 5.0, "spawn": [{"enemy": "scout",  "count": 3}]},
+						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 2}]},  # 탐색
+						{"t": 4.0, "spawn": [{"enemy": "normal", "count": 3}]},  # 빌드
+						{"t": 8.0, "spawn": [{"enemy": "scout", "count": 3}]},  # 절정(견제)
 					 ]},
 
 					{"type": "normal", "base_hp": 70, "base_speed": 65, "base_damage": 10,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "brute", "count": 1}, {"enemy": "normal", "count": 2}]},
-						{"t": 6.0, "spawn": [{"enemy": "normal", "count": 3}]},
+						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 2}]},  # 탐색
+						{"t": 4.0, "spawn": [{"enemy": "brute", "count": 1}, {"enemy": "normal", "count": 2}]},  # 빌드(벽)
+						{"t": 8.0, "spawn": [{"enemy": "brute", "count": 1}, {"enemy": "normal", "count": 3}]},  # 절정
 					 ]},
 
 					{"type": "normal", "base_hp": 80, "base_speed": 65, "base_damage": 10,
 					 "pulses": [
-						{"t":  0.0, "spawn": [{"enemy": "normal", "count": 2}, {"enemy": "swarm", "count": 4}]},
-						{"t":  5.0, "spawn": [{"enemy": "swarm",  "count": 4}]},
-						{"t": 10.0, "spawn": [{"enemy": "swarm",  "count": 4}]},
+						{"t": 0.0, "spawn": [{"enemy": "swarm", "count": 3}]},  # 탐색
+						{"t": 4.0, "spawn": [{"enemy": "swarm", "count": 5}]},  # 빌드
+						{"t": 8.0, "spawn": [{"enemy": "swarm", "count": 6}, {"enemy": "normal", "count": 2}]},  # 절정(무리 정점)
 					 ]},
 
 					{"type": "mid_boss", "base_hp": 70, "base_speed": 63, "base_damage": 8,
@@ -118,25 +121,28 @@ const CHAPTERS = [
 
 					{"type": "normal", "base_hp": 90, "base_speed": 68, "base_damage": 12,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 3}]},
-						{"t": 6.0, "spawn": [{"enemy": "runner", "count": 2}]},
+						{"t": 0.0, "spawn": [{"enemy": "normal", "count": 2}]},  # 탐색
+						{"t": 4.0, "spawn": [{"enemy": "normal", "count": 3}]},  # 빌드
+						{"t": 8.0, "spawn": [{"enemy": "runner", "count": 3}]},  # 절정(침투)
 					 ]},
 
-					# W8 "벽+견제+침투(입문)" — runner 누수 도입(W7 2→W8 3→W9 4 단조), 1-3보다 가볍게
+					# W8 "벽+견제+침투(입문)" — 아크 크레셴도, runner 누수 도입
 					{"type": "normal", "base_hp": 100, "base_speed": 70, "base_damage": 12,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "brute",  "count": 2}, {"enemy": "normal", "count": 2}]},
-						{"t": 4.0, "spawn": [{"enemy": "scout",  "count": 3}]},
-						{"t": 8.0, "spawn": [{"enemy": "runner", "count": 3}]},
+						{"t": 0.0, "spawn": [{"enemy": "brute", "count": 2}, {"enemy": "normal", "count": 2}]},  # 탐색(벽)
+						{"t": 4.0, "spawn": [{"enemy": "scout", "count": 3}]},  # 빌드(견제)
+						{"t": 8.0, "spawn": [{"enemy": "runner", "count": 3}]},  # 빌드(침투)
+						{"t": 11.0, "spawn": [{"enemy": "runner", "count": 3}, {"enemy": "normal", "count": 2}]},  # 절정
 					 ]},
 
-					# W9 "핀치(입문)" — swarm 미끼→runner 침투→brute 앵커. 1-3 W9보다 가볍게(runner 4·겹침 적음)
+					# W9 "핀치(입문)" — 앵커→빌드→무리→침투→핀치 크레셴도. 1-3보다 가볍게
 					{"type": "normal", "base_hp": 110, "base_speed": 72, "base_damage": 14,
 					 "pulses": [
-						{"t": 0.0, "spawn": [{"enemy": "brute",  "count": 3}, {"enemy": "normal", "count": 2}]},
-						{"t": 4.0, "spawn": [{"enemy": "swarm",  "count": 5}]},
-						{"t": 6.0, "spawn": [{"enemy": "runner", "count": 4}]},
-						{"t": 8.0, "spawn": [{"enemy": "scout",  "count": 3}]},
+						{"t": 0.0, "spawn": [{"enemy": "brute", "count": 2}, {"enemy": "normal", "count": 2}]},  # 탐색(앵커)
+						{"t": 4.0, "spawn": [{"enemy": "brute", "count": 2}, {"enemy": "scout", "count": 2}]},  # 빌드
+						{"t": 8.0, "spawn": [{"enemy": "swarm", "count": 5}]},  # 무리
+						{"t": 10.0, "spawn": [{"enemy": "runner", "count": 4}]},  # 침투
+						{"t": 12.0, "spawn": [{"enemy": "runner", "count": 3}, {"enemy": "scout", "count": 2}]},  # 절정(핀치)
 					 ]},
 
 					{"type": "boss", "base_hp": 100, "base_speed": 70, "base_damage": 12,
